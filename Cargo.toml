@@ -19,9 +19,9 @@ pio = ["esp-idf-sys/pio"]
 anyhow = "1"
 esp-idf-sys = { version = "0.31.9", features = ["binstart"] }
 esp-idf-hal = "0.38.1"
-esp-idf-svc = "0.42.5"
-embedded-hal = "*"
-embedded-svc = "*"
+esp-idf-svc = { version = "0.42.5", features = ["experimental", "std"] }
+embedded-hal = "0.2.7"
+embedded-svc = { version = "0.22.3", features = ["experimental", "std"] }
 ssd1306 = "0.7.0"
 embedded-graphics = "0.7"
 display-interface = "0.4.1"

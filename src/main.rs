@@ -7,16 +7,20 @@ use esp_idf_hal::gpio::{Gpio4, Gpio5, Unknown};
 use esp_idf_hal::i2c;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::units::FromValueType;
+use esp_idf_svc::http::client::EspHttpClient;
 use esp_idf_svc::netif::EspNetifStack;
 use esp_idf_svc::nvs::EspDefaultNvs;
-use esp_idf_svc::sysloop::EspSysLoopStack;
-use esp_idf_svc::wifi::EspWifi;
+use esp_idf_svc::{sysloop::EspSysLoopStack, wifi::EspWifi};
 
 use std::sync::Arc;
 
-use embedded_svc::wifi::{
-    ClientConfiguration, ClientConnectionStatus, ClientIpStatus, ClientStatus, Configuration,
-    Status, Wifi,
+use embedded_svc::{
+    http::client::{Client, Request, RequestWrite, Response, Status},
+    io::Read,
+    wifi::{
+        ClientConfiguration, ClientConnectionStatus, ClientIpStatus, ClientStatus, Configuration,
+        Status as WifiStatus, Wifi,
+    },
 };
 
 use anyhow::Result;
@@ -124,7 +128,7 @@ fn test_wifi() -> Result<(EspWifi, ClientSettings)> {
     // wait to get connected
     println!("Wait to get connected");
     loop {
-        if let Status(ClientStatus::Started(_), _) = wifi_interface.get_status() {
+        if let WifiStatus(ClientStatus::Started(_), _) = wifi_interface.get_status() {
             break;
         }
     }
@@ -157,7 +161,7 @@ fn test_wifi() -> Result<(EspWifi, ClientSettings)> {
         //     .poll(timestamp())
         //     .unwrap();
 
-        if let Status(
+        if let WifiStatus(
             ClientStatus::Started(ClientConnectionStatus::Connected(ClientIpStatus::Done(config))),
             _,
         ) = wifi_interface.get_status()
@@ -224,6 +228,54 @@ fn main() -> Result<()> {
         led_onboard.toggle().unwrap();
 
         std::thread::sleep(Duration::from_millis(500));
+    }
+
+    get("http://google.com/")?;
+
+    Ok(())
+}
+
+fn get(url: impl AsRef<str>) -> anyhow::Result<()> {
+    // 1. Create a new EspHttpClient. (Check documentation)
+    let mut client = EspHttpClient::new_default()?;
+
+    // 2. Open a GET request to `url`
+    let request = client.get(url.as_ref())?;
+
+    // 3. Requests *may* send data to the server. Turn the request into a writer, specifying 0 bytes as write length
+    // (since we don't send anything - but have to do the writer step anyway)
+    // https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/protocols/esp_http_client.html
+    // If this were a POST request, you'd set a write length > 0 and then writer.do_write(&some_buf);
+
+    let writer = request.into_writer(0)?;
+
+    // 4. Submit our write request and check the status code of the response.
+    // Successful http status codes are in the 200..=299 range.
+
+    let mut response = writer.submit()?;
+    let status = response.status();
+    let mut total_size = 0;
+
+    println!("response code: {}\n", status);
+
+    match status {
+        200..=299 => {
+            // 5. if the status is OK, read response data chunk by chunk into a buffer and print it until done
+            let mut buf = [0_u8; 256];
+            let mut reader = response.reader();
+            loop {
+                if let Ok(size) = Read::read(&mut reader, &mut buf) {
+                    if size == 0 {
+                        break;
+                    }
+                    total_size += size;
+                    // 6. try converting the bytes into a Rust (UTF-8) string and print it
+                    let response_text = std::str::from_utf8(&buf[..size])?;
+                    println!("{}", response_text);
+                }
+            }
+        }
+        _ => anyhow::bail!("unexpected response code: {}", status),
     }
 
     Ok(())
