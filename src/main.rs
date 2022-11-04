@@ -1,4 +1,5 @@
 use core::time::Duration;
+use embedded_svc::ipv4::ClientSettings;
 use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
 use embedded_hal::digital::v2::ToggleableOutputPin;
@@ -27,7 +28,13 @@ use embedded_graphics::{
 };
 use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
 
-fn display_test(i2c0: i2c::I2C0, scl: Gpio4<Unknown>, sda: Gpio5<Unknown>, ip: &str) -> Result<()> {
+fn display_test(
+    i2c0: i2c::I2C0,
+    scl: Gpio4<Unknown>,
+    sda: Gpio5<Unknown>,
+    ip: &str,
+    dns: &str,
+) -> Result<()> {
     let i2c = i2c::Master::new(
         i2c0,
         i2c::MasterPins {
@@ -63,6 +70,15 @@ fn display_test(i2c0: i2c::I2C0, scl: Gpio4<Unknown>, sda: Gpio5<Unknown>, ip: &
     .draw(&mut display)
     .map_err(|e| anyhow::anyhow!("Txt2 error: {:?}", e))?;
 
+    Text::with_baseline(
+        &format!("DNS: {}", dns),
+        Point::new(0, 32),
+        text_style,
+        Baseline::Top,
+    )
+    .draw(&mut display)
+    .map_err(|e| anyhow::anyhow!("Txt3 error: {:?}", e))?;
+
     display
         .flush()
         .map_err(|e| anyhow::anyhow!("Flush error: {:?}", e))?;
@@ -70,7 +86,7 @@ fn display_test(i2c0: i2c::I2C0, scl: Gpio4<Unknown>, sda: Gpio5<Unknown>, ip: &
     Ok(())
 }
 
-fn test_wifi() -> Result<String> {
+fn test_wifi() -> Result<ClientSettings> {
     let netif_stack = Arc::new(EspNetifStack::new()?);
     let sys_look_stack = Arc::new(EspSysLoopStack::new()?);
     let nvs = Arc::new(EspDefaultNvs::new()?);
@@ -94,7 +110,7 @@ fn test_wifi() -> Result<String> {
         client_settings,
     ))) = status.0
     {
-        Ok(format!("{:?}", client_settings.ip))
+        Ok(client_settings)
     } else {
         Err(anyhow::anyhow!("Failed to connect in time."))
     }
@@ -113,12 +129,26 @@ fn main() {
     let mut led_onboard = peripherals.pins.gpio18.into_output().unwrap();
 
     let wifi = test_wifi();
-    let ip = match wifi {
+    let ip = match &wifi {
         Err(e) => {
             println!("Wifi error: {:?}", e);
             format!("ERR: {:?}", e)
         }
-        Ok(s) => s,
+        Ok(s) => s.ip.to_string(),
+    };
+
+    let dns = match &wifi {
+        Err(e) => {
+            // println!("Wifi error: {:?}", e);
+            format!("ERR: {:?}", e)
+        }
+        Ok(s) => {
+            if let Some(value) = s.dns {
+                value.to_string()
+            } else {
+                format!("ERR: Unable to unwrap DNS value")
+            }
+        }
     };
 
     if let Err(e) = display_test(
@@ -126,6 +156,7 @@ fn main() {
         peripherals.pins.gpio4,
         peripherals.pins.gpio5,
         &ip,
+        &dns,
     ) {
         println!("Display error: {:?}", e)
     } else {
