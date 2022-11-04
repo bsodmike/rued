@@ -15,7 +15,8 @@ use esp_idf_svc::wifi::EspWifi;
 use std::sync::Arc;
 
 use embedded_svc::wifi::{
-    ClientConfiguration, ClientConnectionStatus, ClientIpStatus, ClientStatus, Configuration, Wifi,
+    ClientConfiguration, ClientConnectionStatus, ClientIpStatus, ClientStatus, Configuration,
+    Status, Wifi,
 };
 
 use anyhow::Result;
@@ -27,6 +28,9 @@ use embedded_graphics::{
     text::{Baseline, Text},
 };
 use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
+
+const SSID: &str = "foo"; // env!("SSID");
+const PASSWORD: &str = "foo"; // env!("PASSWORD");
 
 fn display_test(
     i2c0: i2c::I2C0,
@@ -86,37 +90,85 @@ fn display_test(
     Ok(())
 }
 
-fn test_wifi() -> Result<ClientSettings> {
+fn test_wifi() -> Result<(EspWifi, ClientSettings)> {
     let netif_stack = Arc::new(EspNetifStack::new()?);
     let sys_look_stack = Arc::new(EspSysLoopStack::new()?);
     let nvs = Arc::new(EspDefaultNvs::new()?);
 
-    let mut wifi = EspWifi::new(netif_stack, sys_look_stack, nvs)?;
+    let wifi = EspWifi::new(netif_stack, sys_look_stack, nvs)?;
+    let mut wifi_interface = wifi;
 
-    wifi.set_configuration(&Configuration::Client(ClientConfiguration {
-        ssid: "iot-test".into(),
-        password: "test1234".into(),
+    println!("{:?}", wifi_interface.get_status());
+
+    println!("Start Wifi Scan");
+    let res = wifi_interface.scan_n::<10>();
+
+    if let Ok((res, _count)) = res {
+        for ap in res {
+            println!("{:?}", ap);
+        }
+    }
+
+    println!("Call wifi_connect");
+    let client_config = Configuration::Client(ClientConfiguration {
+        ssid: SSID.into(),
+        password: PASSWORD.into(),
         ..Default::default()
-    }))?;
+    });
+    let res = wifi_interface.set_configuration(&client_config);
+    println!("wifi_connect returned {:?}", res);
 
-    wifi.wait_status_with_timeout(Duration::from_secs(30), |s| !s.is_transitional())
-        .map_err(|e| anyhow::anyhow!("Wait timeout: {:?}", e))?;
+    println!("{:?}", wifi_interface.get_capabilities());
+    println!("{:?}", wifi_interface.get_status());
 
-    let status = wifi.get_status();
+    // wait to get connected
+    println!("Wait to get connected");
+    loop {
+        if let Status(ClientStatus::Started(_), _) = wifi_interface.get_status() {
+            break;
+        }
+    }
+    let status = wifi_interface.get_status();
+    println!("{:?}", status);
 
-    println!("Status: {:?}", status);
+    // wifi_interface
+    //     .wait_status_with_timeout(Duration::from_secs(30), |s| !s.is_transitional())
+    //     .map_err(|e| anyhow::anyhow!("Wait timeout: {:?}", e))?;
 
-    if let ClientStatus::Started(ClientConnectionStatus::Connected(ClientIpStatus::Done(
-        client_settings,
-    ))) = status.0
-    {
-        Ok(client_settings)
-    } else {
-        Err(anyhow::anyhow!("Failed to connect in time."))
+    // let status = wifi_interface.get_status();
+    // println!("Status: {:?}", status);
+
+    // if let ClientStatus::Started(ClientConnectionStatus::Connected(ClientIpStatus::Done(
+    //     client_settings,
+    // ))) = status.0
+    // {
+    //     Ok((wifi_interface, client_settings))
+    // } else {
+    //     Err(anyhow::anyhow!("Failed to connect in time."))
+    // }
+
+    // wait for getting an ip address
+    println!("Wait to get an ip address");
+    loop {
+        // wifi_interface.poll_dhcp().unwrap();
+
+        // wifi_interface
+        //     .network_interface()
+        //     .poll(timestamp())
+        //     .unwrap();
+
+        if let Status(
+            ClientStatus::Started(ClientConnectionStatus::Connected(ClientIpStatus::Done(config))),
+            _,
+        ) = wifi_interface.get_status()
+        {
+            println!("Got IP: {:?}", config.ip.to_string());
+            return Ok((wifi_interface, config));
+        }
     }
 }
 
-fn main() {
+fn main() -> Result<()> {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
     // or else some patches to the runtime implemented by esp-idf-sys might not link properly.
     esp_idf_sys::link_patches();
@@ -134,7 +186,7 @@ fn main() {
             println!("Wifi error: {:?}", e);
             format!("ERR: {:?}", e)
         }
-        Ok(s) => s.ip.to_string(),
+        Ok(s) => s.1.ip.to_string(),
     };
 
     let dns = match &wifi {
@@ -143,13 +195,15 @@ fn main() {
             format!("ERR: {:?}", e)
         }
         Ok(s) => {
-            if let Some(value) = s.dns {
+            if let Some(value) = s.1.dns {
                 value.to_string()
             } else {
                 format!("ERR: Unable to unwrap DNS value")
             }
         }
     };
+
+    let _wifi_client = wifi?.0;
 
     if let Err(e) = display_test(
         peripherals.i2c0,
@@ -171,4 +225,6 @@ fn main() {
 
         std::thread::sleep(Duration::from_millis(500));
     }
+
+    Ok(())
 }
