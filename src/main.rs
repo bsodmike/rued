@@ -265,6 +265,11 @@ fn main() -> Result<()> {
             println!("{}", format!("Header \"Content-type\": {:?}", value));
         }
 
+        let query_string = request.query_string();
+        if !query_string.is_empty() {
+            println!("{}", format!("Query: {:?}", query_string));
+        }
+
         // fetch url
         let resp = get("http://info.cern.ch/")?;
         let body = if let Some(body) = resp {
