@@ -25,6 +25,8 @@ embedded-svc = { version = "0.22.3", features = ["experimental", "std"] }
 ssd1306 = "0.7.0"
 embedded-graphics = "0.7"
 display-interface = "0.4.1"
+serde = "1.0.147"
+serde_json = "1.0.87"
 
 [build-dependencies]
 embuild = "0.30"
