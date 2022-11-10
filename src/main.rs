@@ -4,13 +4,16 @@ use std::{
     sync::Arc,
 };
 
+#[allow(unused_imports)]
 use embedded_hal::digital::v2::ToggleableOutputPin;
 use esp_idf_hal::gpio::{Gpio14, Gpio27, Gpio4, Gpio5, Output, Unknown};
 use esp_idf_hal::i2c;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::units::FromValueType;
 use esp_idf_svc::http::client::EspHttpClient;
-use esp_idf_svc::http::server::{Configuration as HttpServerConfiguration, EspHttpServer};
+use esp_idf_svc::http::server::{
+    Configuration as HttpServerConfiguration, EspHttpRequest, EspHttpServer,
+};
 use esp_idf_svc::netif::EspNetifStack;
 use esp_idf_svc::nvs::EspDefaultNvs;
 use esp_idf_svc::{sysloop::EspSysLoopStack, wifi::EspWifi};
@@ -18,7 +21,9 @@ use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, alway
 
 use embedded_svc::{
     http::client::{Client, Request, RequestWrite, Response, Status},
-    http::server::{registry::Registry, Response as ServerResponse},
+    http::server::{
+        registry::Registry, Headers, Request as ServerRequest, Response as ServerResponse,
+    },
     io::{Read, Write},
     ipv4::ClientSettings,
     wifi::{
@@ -251,7 +256,16 @@ fn main() -> Result<()> {
     let server_config = HttpServerConfiguration::default();
     let mut server = EspHttpServer::new(&server_config)?;
 
-    server.handle_get("/test", move |_request, response| {
+    server.handle_get("/test", move |request, response| {
+        // let req_id = request.get_request_id();
+        println!("Request Details:");
+
+        let header_type = request.header("Content-type");
+        if let Some(value) = header_type {
+            println!("{}", format!("Header \"Content-type\": {:?}", value));
+        }
+
+        // fetch url
         let resp = get("http://info.cern.ch/")?;
         let body = if let Some(body) = resp {
             println!("Response body: {}", body);
