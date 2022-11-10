@@ -76,7 +76,7 @@ fn main() -> Result<()> {
     // setup http server
     let server_config = HttpServerConfiguration::default();
     let mut server = EspHttpServer::new(&server_config)?;
-    http_server::configure_handlers(server)?;
+    let _resp = http_server::configure_handlers(&mut server)?;
 
     // setup display
     if let Err(e) = display::display_test(

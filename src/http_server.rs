@@ -12,7 +12,7 @@ use embedded_svc::{
 };
 use esp_idf_svc::http::server::EspHttpServer;
 
-pub fn configure_handlers(mut server: EspHttpServer) -> Result<()> {
+pub fn configure_handlers(server: &mut EspHttpServer) -> Result<()> {
     server.handle_get("/test", move |request, mut response| {
         response.set_header("Content-type", "application/json");
 
