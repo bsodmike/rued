@@ -1,22 +1,26 @@
 use core::time::Duration;
-use embedded_svc::ipv4::ClientSettings;
-use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
+use std::{
+    io::{BufRead, BufReader},
+    sync::Arc,
+};
 
 use embedded_hal::digital::v2::ToggleableOutputPin;
-use esp_idf_hal::gpio::{Gpio4, Gpio5, Unknown};
+use esp_idf_hal::gpio::{Gpio14, Gpio27, Gpio4, Gpio5, Output, Unknown};
 use esp_idf_hal::i2c;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::units::FromValueType;
 use esp_idf_svc::http::client::EspHttpClient;
+use esp_idf_svc::http::server::{Configuration as HttpServerConfiguration, EspHttpServer};
 use esp_idf_svc::netif::EspNetifStack;
 use esp_idf_svc::nvs::EspDefaultNvs;
 use esp_idf_svc::{sysloop::EspSysLoopStack, wifi::EspWifi};
-
-use std::sync::Arc;
+use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
 use embedded_svc::{
     http::client::{Client, Request, RequestWrite, Response, Status},
-    io::Read,
+    http::server::{registry::Registry, Response as ServerResponse},
+    io::{Read, Write},
+    ipv4::ClientSettings,
     wifi::{
         ClientConfiguration, ClientConnectionStatus, ClientIpStatus, ClientStatus, Configuration,
         Status as WifiStatus, Wifi,
@@ -104,6 +108,10 @@ fn test_wifi() -> Result<(EspWifi, ClientSettings)> {
 
     println!("{:?}", wifi_interface.get_status());
 
+    unsafe {
+        esp_idf_sys::esp_task_wdt_reset();
+    } // Reset WDT
+
     println!("Start Wifi Scan");
     let res = wifi_interface.scan_n::<10>();
 
@@ -112,6 +120,10 @@ fn test_wifi() -> Result<(EspWifi, ClientSettings)> {
             println!("{:?}", ap);
         }
     }
+
+    unsafe {
+        esp_idf_sys::esp_task_wdt_reset();
+    } // Reset WDT
 
     println!("Call wifi_connect");
     let client_config = Configuration::Client(ClientConfiguration {
@@ -151,9 +163,17 @@ fn test_wifi() -> Result<(EspWifi, ClientSettings)> {
     //     Err(anyhow::anyhow!("Failed to connect in time."))
     // }
 
+    unsafe {
+        esp_idf_sys::esp_task_wdt_reset();
+    } // Reset WDT
+
     // wait for getting an ip address
     println!("Wait to get an ip address");
     loop {
+        unsafe {
+            esp_idf_sys::esp_task_wdt_reset();
+        } // Reset WDT
+
         // wifi_interface.poll_dhcp().unwrap();
 
         // wifi_interface
@@ -167,6 +187,7 @@ fn test_wifi() -> Result<(EspWifi, ClientSettings)> {
         ) = wifi_interface.get_status()
         {
             println!("Got IP: {:?}", config.ip.to_string());
+
             return Ok((wifi_interface, config));
         }
     }
@@ -178,11 +199,20 @@ fn main() -> Result<()> {
     esp_idf_sys::link_patches();
 
     println!("Hello, Rust from an ESP32!");
+    unsafe {
+        esp_idf_sys::esp_task_wdt_reset();
+    } // Reset WDT
 
     //  configure peripherals
     let peripherals = Peripherals::take().unwrap();
-    let mut led = peripherals.pins.gpio17.into_output().unwrap();
-    let mut led_onboard = peripherals.pins.gpio18.into_output().unwrap();
+    // let mut led = peripherals.pins.gpio17.into_output().unwrap();
+    // let mut led_onboard = peripherals.pins.gpio18.into_output().unwrap();
+
+    // D0 - GPIO pin 14, pad 10 on the MicroMod
+    let gpio_d0: Gpio14<Output> = peripherals.pins.gpio14.into_output().unwrap();
+    // D1 - GPIO pin 27, pad 18 on the MicroMod
+    let _gpio_d1: Gpio27<Output> = peripherals.pins.gpio27.into_output().unwrap();
+    let mut led_onboard = gpio_d0;
 
     let wifi = test_wifi();
     let ip = match &wifi {
@@ -192,6 +222,10 @@ fn main() -> Result<()> {
         }
         Ok(s) => s.1.ip.to_string(),
     };
+
+    unsafe {
+        esp_idf_sys::esp_task_wdt_reset();
+    } // Reset WDT
 
     let dns = match &wifi {
         Err(e) => {
@@ -209,6 +243,29 @@ fn main() -> Result<()> {
 
     let _wifi_client = wifi?.0;
 
+    unsafe {
+        esp_idf_sys::esp_task_wdt_reset();
+    } // Reset WDT
+
+    // setup http server
+    let server_config = HttpServerConfiguration::default();
+    let mut server = EspHttpServer::new(&server_config)?;
+
+    server.handle_get("/test", move |_request, response| {
+        let resp = get("http://info.cern.ch/")?;
+        let body = if let Some(body) = resp {
+            println!("Response body: {}", body);
+            body
+        } else {
+            String::default()
+        };
+
+        let mut writer = response.into_writer()?;
+        writer.write_all(body.as_bytes())?;
+        Ok(())
+    })?;
+
+    // setup display
     if let Err(e) = display_test(
         peripherals.i2c0,
         peripherals.pins.gpio4,
@@ -224,18 +281,30 @@ fn main() -> Result<()> {
     // heart-beat sequence
     for i in 0..20 {
         println!("Toggling LED now: {}", i);
-        led.toggle().unwrap();
-        led_onboard.toggle().unwrap();
-
-        std::thread::sleep(Duration::from_millis(500));
+        toggle_led::<anyhow::Error, Gpio14<esp_idf_hal::gpio::Output>>(&mut led_onboard);
     }
 
-    get("http://google.com/")?;
-
-    Ok(())
+    loop {
+        toggle_led::<anyhow::Error, Gpio14<esp_idf_hal::gpio::Output>>(&mut led_onboard);
+    }
 }
 
-fn get(url: impl AsRef<str>) -> anyhow::Result<()> {
+fn toggle_led<E, T>(pin: &mut T)
+where
+    T: embedded_hal::digital::v2::ToggleableOutputPin,
+    E: std::fmt::Debug,
+    <T as embedded_hal::digital::v2::ToggleableOutputPin>::Error: std::fmt::Debug,
+{
+    pin.toggle().unwrap();
+
+    unsafe {
+        esp_idf_sys::esp_task_wdt_reset();
+    } // Reset WDT
+
+    std::thread::sleep(Duration::from_millis(500));
+}
+
+fn get(url: impl AsRef<str>) -> anyhow::Result<Option<String>> {
     // 1. Create a new EspHttpClient. (Check documentation)
     let mut client = EspHttpClient::new_default()?;
 
@@ -254,7 +323,7 @@ fn get(url: impl AsRef<str>) -> anyhow::Result<()> {
 
     let mut response = writer.submit()?;
     let status = response.status();
-    let mut total_size = 0;
+    let mut _total_size = 0;
 
     println!("response code: {}\n", status);
 
@@ -266,17 +335,24 @@ fn get(url: impl AsRef<str>) -> anyhow::Result<()> {
             loop {
                 if let Ok(size) = Read::read(&mut reader, &mut buf) {
                     if size == 0 {
-                        break;
+                        break Ok(None);
                     }
-                    total_size += size;
+                    _total_size += size;
+
+                    // Read raw data from buffer
+                    // let reader = BufReader::new(&buf[..size]);
+                    // for line in reader.lines() {
+                    //     println!("{:?}", line?);
+                    // }
+
                     // 6. try converting the bytes into a Rust (UTF-8) string and print it
                     let response_text = std::str::from_utf8(&buf[..size])?;
-                    println!("{}", response_text);
+                    // println!("{}", response_text);
+
+                    return Ok(Some(String::from(response_text)));
                 }
             }
         }
         _ => anyhow::bail!("unexpected response code: {}", status),
     }
-
-    Ok(())
 }
