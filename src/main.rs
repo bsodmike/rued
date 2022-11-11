@@ -3,6 +3,7 @@
 use core::time::Duration;
 
 use crate::http::server::{Configuration as HttpServerConfiguration, EspHttpServer};
+use crate::sensors::rtc;
 #[allow(unused_imports)]
 use embedded_hal::digital::v2::ToggleableOutputPin;
 use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output};
@@ -19,10 +20,14 @@ mod display;
 mod http;
 mod http_client;
 mod http_server;
+mod sensors;
 mod wifi;
 
 const SSID: &str = "foo"; // env!("SSID");
 const PASSWORD: &str = "foo"; // env!("PASSWORD");
+
+type GpioSda = Gpio21<InputOutput>;
+type GpioScl = Gpio22<Output>;
 
 fn main() -> Result<()> {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
@@ -89,14 +94,15 @@ fn main() -> Result<()> {
     let mut server = EspHttpServer::new(&server_config)?;
     let _resp = http_server::configure_handlers(&mut server)?;
 
+    // setup I2C Master
+    let i2c_master =
+        sensors::i2c::configure::<Error, GpioScl, GpioSda>(peripherals.i2c0, scl, sda)?;
+
+    // setup RTC sensor
+    sensors::rtc::setup::<Error, GpioScl, GpioSda>(i2c_master)?;
+
     // setup display
-    if let Err(e) = display::display_test::<Error, Gpio22<Output>, Gpio21<InputOutput>>(
-        peripherals.i2c0,
-        scl,
-        sda,
-        &ip,
-        &dns,
-    ) {
+    if let Err(e) = display::display_test::<Error, GpioScl, GpioSda>(i2c_master, &ip, &dns) {
         println!("Display error: {:?}", e)
     } else {
         println!("Display ok");
