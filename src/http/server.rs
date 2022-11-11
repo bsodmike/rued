@@ -265,29 +265,38 @@ impl EspHttpServer {
                     }
                 }
                 _ => {
-                    if !response_sent {
-                        info!(
-                            "About to handle internal error [{}], response not sent yet",
-                            &error
-                        );
-
-                        if let Err(error2) = Self::render_error(raw_req, &error) {
-                            warn!(
-                                "Internal error[{}] while rendering another internal error:\n{}",
-                                error2, error
-                            );
-                        }
-                    } else {
-                        warn!(
-                            "Unhandled internal error [{}], response is already sent",
-                            error
-                        );
-                    }
+                    Self::default_error(raw_req, response_sent, error);
                 }
             }
+        } else {
+            Self::default_error(raw_req, response_sent, error);
         }
 
         ESP_OK as _
+    }
+
+    fn default_error<E>(raw_req: *mut httpd_req_t, response_sent: bool, error: E) -> ()
+    where
+        E: Display,
+    {
+        if !response_sent {
+            info!(
+                "About to handle internal error [{}], response not sent yet",
+                &error
+            );
+
+            if let Err(error2) = Self::render_error(raw_req, &error) {
+                warn!(
+                    "Internal error[{}] while rendering another internal error:\n{}",
+                    error2, error
+                );
+            }
+        } else {
+            warn!(
+                "Unhandled internal error [{}], response is already sent",
+                error
+            );
+        }
     }
 
     fn render_error<E>(raw_req: *mut httpd_req_t, error: E) -> Result<(), EspIOError>

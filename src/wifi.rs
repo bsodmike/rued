@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+use log::info;
 use std::sync::Arc;
 
 use esp_idf_svc::netif::EspNetifStack;
@@ -102,7 +103,24 @@ pub fn connect() -> Result<(EspWifi, ClientSettings)> {
             _,
         ) = wifi_interface.get_status()
         {
-            println!("Got IP: {:?}", config.ip.to_string());
+            unsafe {
+                esp_idf_sys::esp_task_wdt_reset();
+            } // Reset WDT
+
+            // let dns = if let Some(value) = config.dns {
+            //     value.to_string()
+            // } else {
+            //     format!("ERR: Unable to unwrap DNS value")
+            // };
+
+            info!(
+                r#"
+                
+->   Wifi Connected: IP: {}
+                
+                "#,
+                config.ip.to_string()
+            );
 
             return Ok((wifi_interface, config));
         }
