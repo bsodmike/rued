@@ -6,15 +6,25 @@ use embedded_svc::{
         server::{
             registry::Registry, Headers, Request as ServerRequest, Response as ServerResponse,
         },
-        SendHeaders,
+        SendHeaders, SendStatus,
     },
     io::Write,
 };
 use esp_idf_svc::http::server::EspHttpServer;
 
 pub fn configure_handlers(server: &mut EspHttpServer) -> Result<()> {
+    server.handle_get("/health", move |_request, mut response| {
+        response.set_ok();
+
+        let mut writer = response.into_writer()?;
+        let buf: [u8; 0] = [];
+        writer.write(&buf)?;
+
+        Ok(())
+    })?;
+
     server.handle_get("/test", move |request, mut response| {
-        response.set_header("Content-type", "application/json");
+        response.set_content_type("application/json");
 
         // let req_id = request.get_request_id();
         println!("Request Details:");
