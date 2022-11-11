@@ -1,0 +1,9 @@
+version: "3"
+
+services:
+  client:
+    build: .
+    ports:
+      - 8000:80
+    volumes:
+      - ./target/xtensa-esp32-espidf/doc:/usr/share/nginx/html
