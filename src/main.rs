@@ -1,17 +1,22 @@
+#![feature(const_btree_new)]
+
 use core::time::Duration;
 
+use crate::http::server::{Configuration as HttpServerConfiguration, EspHttpServer};
 #[allow(unused_imports)]
 use embedded_hal::digital::v2::ToggleableOutputPin;
 use esp_idf_hal::gpio::{Gpio14, Gpio27, Output};
 use esp_idf_hal::i2c;
 use esp_idf_hal::peripherals::Peripherals;
-use esp_idf_svc::http::server::{Configuration as HttpServerConfiguration, EspHttpServer};
+use esp_idf_svc::log::EspLogger;
 
 use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
 use anyhow::Result;
+use log::info;
 
 mod display;
+mod http;
 mod http_client;
 mod http_server;
 mod wifi;
@@ -24,7 +29,23 @@ fn main() -> Result<()> {
     // or else some patches to the runtime implemented by esp-idf-sys might not link properly.
     esp_idf_sys::link_patches();
 
-    println!("Hello, Rust from an ESP32!");
+    // FIXME: Stack overflow?
+    // I (19149) esp_idf_svc::wifi: STA IP event DhcpIpAssigned(DhcpIpAssignment { netif_handle: 0x3ffc659c, ip_se
+    //     ttings: ClientSettings { ip: 10.0.1.121, subnet: Subnet { gateway: 10.0.1.1, mask: Mask(24) }, dns: None, s
+    //     econdary_dns: None }, ip_changed: true }) handled, set status: Status(Started(Connected(Done(ClientSettings
+    //      { ip: 10.0.1.121, subnet: Subnet { gateway: 10.0.1.1, mask: Mask(24) }
+    //     ***ERROR*** A stack overflow in task sys_evt has been detected.
+    //     Backtrace: 0x40081f72:0x3ffbdfb0 0x40088db5:0x3ffbdfd0 0x4008bd9a:0x3ffbdff0 0x4008a85d:0x3ffbe070 0x40088e
+    //     b0:0x3ffbe0a0 0x40088e62:0x3ffaf034 |<-CORRUPTED
+    //     0x40081f72 - panic_abort
+    //         at /home/mdesilva/esp/rust-esp32-blinky/.embuild/espressif/esp-idf/release-v4.4/components/esp_system/p
+    //     anic.c:402
+    //     0x40088db5 - esp_system_abort
+    //         at /home/mdesilva/esp/rust-esp32-blinky/.embuild/espressif/esp-idf/release-v4.4/components/esp_system/e
+    //     sp_system.c:128
+    EspLogger::initialize_default();
+
+    info!("Hello, Rust from an ESP32!");
     unsafe {
         esp_idf_sys::esp_task_wdt_reset();
     } // Reset WDT

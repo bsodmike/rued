@@ -1,16 +1,16 @@
 use anyhow::Result;
+use log::info;
 use serde_json::json;
 
+use crate::http::registry::Registry;
+use crate::http::server::EspHttpServer;
 use embedded_svc::{
     http::{
-        server::{
-            registry::Registry, Headers, Request as ServerRequest, Response as ServerResponse,
-        },
+        server::{Headers, Request as ServerRequest, Response as ServerResponse},
         SendHeaders, SendStatus,
     },
     io::Write,
 };
-use esp_idf_svc::http::server::EspHttpServer;
 
 pub fn configure_handlers(server: &mut EspHttpServer) -> Result<()> {
     server.handle_get("/health", move |_request, mut response| {
@@ -27,20 +27,20 @@ pub fn configure_handlers(server: &mut EspHttpServer) -> Result<()> {
         response.set_content_type("application/json");
 
         // let req_id = request.get_request_id();
-        println!("Request Details:");
+        info!("Request Details:");
 
         let header_type = request.header("Content-type");
         if let Some(value) = header_type {
-            println!("{}", format!("Header \"Content-type\": {:?}", value));
+            info!("{}", format!("Header \"Content-type\": {:?}", value));
         }
 
         let query_string = request.query_string();
         if !query_string.is_empty() {
-            println!("{}", format!("Query: {:?}", query_string));
+            info!("{}", format!("Query: {:?}", query_string));
         }
 
         // fetch url
-        let resp = crate::http_client::get("http://info.cern.ch/")?;
+        let resp = crate::http_client::get("http://info.cern.chx/")?;
         let body = if let Some(body) = resp {
             println!("Response body: {}", body);
             body
