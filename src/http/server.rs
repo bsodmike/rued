@@ -241,7 +241,7 @@ impl EspHttpServer {
     where
         E: Display,
     {
-        let mut req = EspHttpRequest::new(raw_req);
+        let req = EspHttpRequest::new(raw_req);
         if let Some(value) = req.content_type() {
             match value {
                 "application/json" => {

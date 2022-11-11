@@ -1,5 +1,4 @@
 use anyhow::Result;
-use esp_idf_hal::gpio::{Gpio4, Gpio5, Unknown};
 use esp_idf_hal::i2c;
 use esp_idf_hal::units::FromValueType;
 
@@ -11,18 +10,17 @@ use embedded_graphics::{
 };
 use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
 
-pub fn display_test(
-    i2c0: i2c::I2C0,
-    scl: Gpio4<Unknown>,
-    sda: Gpio5<Unknown>,
-    ip: &str,
-    dns: &str,
-) -> Result<()> {
+pub fn display_test<E, T, U>(i2c0: i2c::I2C0, scl: T, sda: U, ip: &str, dns: &str) -> Result<()>
+where
+    T: esp_idf_hal::gpio::Pin + esp_idf_hal::gpio::OutputPin + esp_idf_hal::gpio::InputPin,
+    U: esp_idf_hal::gpio::Pin + esp_idf_hal::gpio::InputPin + esp_idf_hal::gpio::OutputPin,
+    E: std::fmt::Debug,
+{
     let i2c = i2c::Master::new(
         i2c0,
         i2c::MasterPins {
-            scl: scl.into_output().unwrap(),       // O
-            sda: sda.into_input_output().unwrap(), // I+O
+            scl, // O
+            sda, // I+O
         },
         i2c::config::MasterConfig::new().baudrate(400.kHz().into()),
     )?;

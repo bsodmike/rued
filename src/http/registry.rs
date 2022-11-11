@@ -66,6 +66,7 @@ pub struct PrefixedRegistry<'r, R, const N: usize = 128> {
     prefix: &'r str,
 }
 
+#[allow(dead_code)]
 impl<'r, R, const N: usize> PrefixedRegistry<'r, R, N> {
     pub fn new(registry: &'r mut R, prefix: &'r str) -> Self {
         Self { registry, prefix }
@@ -108,6 +109,7 @@ pub struct MiddlewareRegistry<'r, R, M> {
     middleware: M,
 }
 
+#[allow(dead_code)]
 impl<'r, R, M> MiddlewareRegistry<'r, R, M> {
     pub fn new(registry: &'r mut R, middleware: M) -> Self {
         Self {

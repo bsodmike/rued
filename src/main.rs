@@ -5,14 +5,14 @@ use core::time::Duration;
 use crate::http::server::{Configuration as HttpServerConfiguration, EspHttpServer};
 #[allow(unused_imports)]
 use embedded_hal::digital::v2::ToggleableOutputPin;
-use esp_idf_hal::gpio::{Gpio14, Gpio27, Output};
+use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output};
 use esp_idf_hal::i2c;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_svc::log::EspLogger;
 
 use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use log::info;
 
 mod display;
@@ -40,11 +40,16 @@ fn main() -> Result<()> {
     // let mut led = peripherals.pins.gpio17.into_output().unwrap();
     // let mut led_onboard = peripherals.pins.gpio18.into_output().unwrap();
 
+    // SDA - GPIO pin 21, pad 12 on the MicroMod
+    let sda = peripherals.pins.gpio21.into_input_output().unwrap();
+    // SCL - GPIO pin 22, pad 14 on the MicroMod
+    let scl = peripherals.pins.gpio22.into_output().unwrap();
+
     // D0 - GPIO pin 14, pad 10 on the MicroMod
     let gpio_d0: Gpio14<Output> = peripherals.pins.gpio14.into_output().unwrap();
+    let mut led_onboard = gpio_d0;
     // D1 - GPIO pin 27, pad 18 on the MicroMod
     let _gpio_d1: Gpio27<Output> = peripherals.pins.gpio27.into_output().unwrap();
-    let mut led_onboard = gpio_d0;
 
     let wifi = wifi::connect();
     let ip = match &wifi {
@@ -85,10 +90,10 @@ fn main() -> Result<()> {
     let _resp = http_server::configure_handlers(&mut server)?;
 
     // setup display
-    if let Err(e) = display::display_test(
+    if let Err(e) = display::display_test::<Error, Gpio22<Output>, Gpio21<InputOutput>>(
         peripherals.i2c0,
-        peripherals.pins.gpio4,
-        peripherals.pins.gpio5,
+        scl,
+        sda,
         &ip,
         &dns,
     ) {
