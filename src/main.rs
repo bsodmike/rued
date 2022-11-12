@@ -90,35 +90,6 @@ impl From<I2cError> for BlanketError {
     }
 }
 
-// pub struct Proxy<'a, M>(I2cProxy<'a, M>);
-
-// impl<'a, M: shared_bus::BusMutex> embedded_hal::blocking::i2c::Write for Proxy<'a, M>
-// where
-//     M::Bus: embedded_hal::blocking::i2c::Write,
-// {
-//     type Error = <M::Bus as embedded_hal::blocking::i2c::Write>::Error;
-
-//     fn write(&mut self, addr: u8, buffer: &[u8]) -> Result<(), Self::Error> {
-//         self.0.write(addr, buffer)
-//     }
-// }
-
-// impl<'a, M: shared_bus::BusMutex> embedded_hal::blocking::i2c::WriteRead for Proxy<'a, M>
-// where
-//     M::Bus: embedded_hal::blocking::i2c::WriteRead,
-// {
-//     type Error = <M::Bus as embedded_hal::blocking::i2c::WriteRead>::Error;
-
-//     fn write_read(
-//         &mut self,
-//         addr: u8,
-//         buffer_in: &[u8],
-//         buffer_out: &mut [u8],
-//     ) -> Result<(), Self::Error> {
-//         self.0.write_read(addr, buffer_in, buffer_out)
-//     }
-// }
-
 fn main() -> Result<()> {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
     // or else some patches to the runtime implemented by esp-idf-sys might not link properly.
@@ -186,8 +157,7 @@ fn main() -> Result<()> {
     // let _resp = http_server::configure_handlers(&mut server)?;
 
     // setup I2C Master
-    let i2c_master =
-        sensors::i2c::configure::<BlanketError, GpioScl, GpioSda>(peripherals.i2c0, scl, sda)?;
+    let i2c_master = sensors::i2c::configure::<GpioScl, GpioSda>(peripherals.i2c0, scl, sda)?;
 
     unsafe {
         esp_idf_sys::esp_task_wdt_reset();
