@@ -16,13 +16,17 @@ use esp_idf_hal::units::FromValueType;
 pub mod rv8803 {
     #![deny(unsafe_code)]
 
+    use std::error::Error as StdError;
+    use std::fmt;
     use std::num::TryFromIntError;
 
     use anyhow::{Error, Result};
     use embedded_hal::blocking::i2c;
-    use esp_idf_hal::i2c::I2cError;
-    use esp_idf_sys::EspError;
+    use esp_idf_hal::gpio::{Gpio21, Gpio22, InputOutput, Output};
     use log::{error, info};
+    use shared_bus::{I2cProxy, NullMutex};
+
+    use crate::BlanketError;
 
     pub const TIME_ARRAY_LENGTH: usize = 8;
     const RV8803_ENABLE: bool = true;
@@ -62,10 +66,10 @@ pub mod rv8803 {
     impl<I2C, E> RV8803<I2C>
     where
         I2C: i2c::WriteRead<Error = E> + i2c::Write<Error = E>,
-        // E: std::error::Error + std::convert::From<std::io::Error>,
+        BlanketError: From<E>,
     {
         /// Create a new instance of the RV8803.
-        pub fn new(i2c: I2C, address: DeviceAddr) -> Result<Self, E> {
+        pub fn new(i2c: I2C, address: DeviceAddr) -> Result<Self, BlanketError> {
             let rv8803 = RV8803 { i2c, address };
 
             Ok(rv8803)
@@ -99,7 +103,7 @@ pub mod rv8803 {
             Ok(true)
         }
 
-        pub fn update_time(&mut self, dest: &mut [u8]) -> Result<bool, E> {
+        pub fn update_time(&mut self, dest: &mut [u8]) -> Result<bool, crate::BlanketError> {
             if (self.read_multiple_registers(
                 Register::Hundredths.address(),
                 dest,
@@ -147,16 +151,16 @@ pub mod rv8803 {
                 }
             }
 
-            // std::io::copy(&mut &buf[0..buf.len()], &mut dest.as_mut())?;
+            std::io::copy(&mut &buf[0..buf.len()], &mut dest.as_mut())?;
 
-            match std::io::copy(&mut &buf[0..buf.len()], &mut dest.as_mut()) {
-                Ok(value) => value,
-                Err(_e) => {
-                    error! {"update_time: unable to copy buffer!"};
+            // match std::io::copy(&mut &buf[0..buf.len()], &mut dest.as_mut()) {
+            //     Ok(value) => value,
+            //     Err(_e) => {
+            //         error! {"update_time: unable to copy buffer!"};
 
-                    0
-                }
-            };
+            //         0
+            //     }
+            // };
 
             Ok(true)
         }

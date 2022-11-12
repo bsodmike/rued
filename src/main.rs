@@ -8,7 +8,7 @@ use crate::sensors::rtc::rv8803::Weekday;
 #[allow(unused_imports)]
 use embedded_hal::digital::v2::ToggleableOutputPin;
 use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output};
-use esp_idf_hal::i2c;
+use esp_idf_hal::i2c::{self, I2cError, Master, I2C0};
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_svc::log::EspLogger;
 
@@ -16,6 +16,9 @@ use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, alway
 
 use anyhow::{Error, Result};
 use log::{info, warn};
+use shared_bus::{I2cProxy, NullMutex};
+use std::error::Error as StdError;
+use std::fmt;
 
 mod display;
 mod http;
@@ -29,6 +32,92 @@ const PASSWORD: &str = "foo"; // env!("PASSWORD");
 
 type GpioSda = Gpio21<InputOutput>;
 type GpioScl = Gpio22<Output>;
+
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+#[derive(Debug)]
+pub struct BlanketError {
+    inner: BoxError,
+}
+
+impl BlanketError {
+    /// Create a new `Error` from a boxable error.
+    pub fn new(error: impl Into<BoxError>) -> Self {
+        Self {
+            inner: error.into(),
+        }
+    }
+
+    /// Convert an `Error` back into the underlying boxed trait object.
+    pub fn into_inner(self) -> BoxError {
+        self.inner
+    }
+}
+
+impl fmt::Display for BlanketError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
+impl StdError for BlanketError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        Some(&*self.inner)
+    }
+}
+
+impl From<esp_idf_sys::EspError> for BlanketError {
+    fn from(error: esp_idf_sys::EspError) -> Self {
+        Self {
+            inner: error.into(),
+        }
+    }
+}
+
+impl From<std::io::Error> for BlanketError {
+    fn from(error: std::io::Error) -> Self {
+        Self {
+            inner: error.into(),
+        }
+    }
+}
+
+impl From<I2cError> for BlanketError {
+    fn from(error: I2cError) -> Self {
+        Self {
+            inner: error.into(),
+        }
+    }
+}
+
+// pub struct Proxy<'a, M>(I2cProxy<'a, M>);
+
+// impl<'a, M: shared_bus::BusMutex> embedded_hal::blocking::i2c::Write for Proxy<'a, M>
+// where
+//     M::Bus: embedded_hal::blocking::i2c::Write,
+// {
+//     type Error = <M::Bus as embedded_hal::blocking::i2c::Write>::Error;
+
+//     fn write(&mut self, addr: u8, buffer: &[u8]) -> Result<(), Self::Error> {
+//         self.0.write(addr, buffer)
+//     }
+// }
+
+// impl<'a, M: shared_bus::BusMutex> embedded_hal::blocking::i2c::WriteRead for Proxy<'a, M>
+// where
+//     M::Bus: embedded_hal::blocking::i2c::WriteRead,
+// {
+//     type Error = <M::Bus as embedded_hal::blocking::i2c::WriteRead>::Error;
+
+//     fn write_read(
+//         &mut self,
+//         addr: u8,
+//         buffer_in: &[u8],
+//         buffer_out: &mut [u8],
+//     ) -> Result<(), Self::Error> {
+//         self.0.write_read(addr, buffer_in, buffer_out)
+//     }
+// }
 
 fn main() -> Result<()> {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
@@ -98,7 +187,7 @@ fn main() -> Result<()> {
 
     // setup I2C Master
     let i2c_master =
-        sensors::i2c::configure::<Error, GpioScl, GpioSda>(peripherals.i2c0, scl, sda)?;
+        sensors::i2c::configure::<BlanketError, GpioScl, GpioSda>(peripherals.i2c0, scl, sda)?;
 
     unsafe {
         esp_idf_sys::esp_task_wdt_reset();
