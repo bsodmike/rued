@@ -177,9 +177,9 @@ fn main() -> Result<()> {
         sensors::rtc::rv8803::RV8803::new(proxy_1, sensors::rtc::rv8803::DeviceAddr::B011_0010)?;
 
     // rtc.set_time(
-    //     30,
-    //     27,
-    //     9,
+    //     0,
+    //     22,
+    //     12,
     //     rtc::rv8803::Weekday::Saturday.value(),
     //     12,
     //     11,
@@ -218,13 +218,13 @@ fn main() -> Result<()> {
         let weekday: Weekday = _time[4].into();
 
         // FIXME: wierd bug where hundreth's value does not update inside this loop, without the use of debugging output
-        println!("Hundreths: {:?}", &_time);
+        println!("_time: {:?}", &_time);
 
         info!(
             r#"
             
     ->      Hours: {} / Minutes: {} / Seconds: {} / Hundreths: {}
-    ->      {}, Day: {} Month: {}, Year: {}
+    ->      {}, Day: {} Month: {}, Year: 20{}
             
             "#,
             _time[3],

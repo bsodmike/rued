@@ -2,13 +2,8 @@ pub mod rtc;
 
 pub mod i2c {
     use anyhow::Result;
-    use esp_idf_hal::gpio::{InputPin, OutputPin};
-    use esp_idf_hal::i2c::{self as HalI2c, config::MasterConfig, I2c, Master, MasterPins, I2C0};
+    use esp_idf_hal::i2c::{self as HalI2c, Master, I2C0};
     use esp_idf_hal::units::FromValueType;
-    use esp_idf_sys::{
-        esp, i2c_config_t, i2c_config_t__bindgen_ty_1, i2c_config_t__bindgen_ty_1__bindgen_ty_1,
-        i2c_mode_t_I2C_MODE_MASTER, EspError, ESP_ERR_INVALID_ARG,
-    };
     use std::error::Error as StdError;
     use std::fmt;
 
@@ -19,6 +14,7 @@ pub mod i2c {
         inner: BoxError,
     }
 
+    #[allow(dead_code)]
     impl BlanketError {
         /// Create a new `Error` from a boxable error.
         pub fn new(error: impl Into<BoxError>) -> Self {
