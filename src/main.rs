@@ -14,7 +14,7 @@ use esp_idf_svc::log::EspLogger;
 use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
 use anyhow::{Error, Result};
-use log::info;
+use log::{info, warn};
 
 mod display;
 mod http;
@@ -56,66 +56,102 @@ fn main() -> Result<()> {
     // D1 - GPIO pin 27, pad 18 on the MicroMod
     let _gpio_d1: Gpio27<Output> = peripherals.pins.gpio27.into_output().unwrap();
 
-    let wifi = wifi::connect();
-    let ip = match &wifi {
-        Err(e) => {
-            println!("Wifi error: {:?}", e);
-            format!("ERR: {:?}", e)
-        }
-        Ok(s) => s.1.ip.to_string(),
-    };
+    // wifi
+    // let wifi = wifi::connect();
+    // let ip = match &wifi {
+    //     Err(e) => {
+    //         println!("Wifi error: {:?}", e);
+    //         format!("ERR: {:?}", e)
+    //     }
+    //     Ok(s) => s.1.ip.to_string(),
+    // };
 
-    unsafe {
-        esp_idf_sys::esp_task_wdt_reset();
-    } // Reset WDT
+    // unsafe {
+    //     esp_idf_sys::esp_task_wdt_reset();
+    // } // Reset WDT
 
-    let dns = match &wifi {
-        Err(e) => {
-            // println!("Wifi error: {:?}", e);
-            format!("ERR: {:?}", e)
-        }
-        Ok(s) => {
-            if let Some(value) = s.1.dns {
-                value.to_string()
-            } else {
-                format!("ERR: Unable to unwrap DNS value")
-            }
-        }
-    };
+    // let dns = match &wifi {
+    //     Err(e) => {
+    //         // println!("Wifi error: {:?}", e);
+    //         format!("ERR: {:?}", e)
+    //     }
+    //     Ok(s) => {
+    //         if let Some(value) = s.1.dns {
+    //             value.to_string()
+    //         } else {
+    //             format!("ERR: Unable to unwrap DNS value")
+    //         }
+    //     }
+    // };
 
-    let _wifi_client = wifi?.0;
+    // let _wifi_client = wifi?.0;
 
     unsafe {
         esp_idf_sys::esp_task_wdt_reset();
     } // Reset WDT
 
     // setup http server
-    let server_config = HttpServerConfiguration::default();
-    let mut server = EspHttpServer::new(&server_config)?;
-    let _resp = http_server::configure_handlers(&mut server)?;
+    // let server_config = HttpServerConfiguration::default();
+    // let mut server = EspHttpServer::new(&server_config)?;
+    // let _resp = http_server::configure_handlers(&mut server)?;
 
     // setup I2C Master
     let i2c_master =
         sensors::i2c::configure::<Error, GpioScl, GpioSda>(peripherals.i2c0, scl, sda)?;
 
-    // setup RTC sensor
-    sensors::rtc::setup::<Error, GpioScl, GpioSda>(i2c_master)?;
+    unsafe {
+        esp_idf_sys::esp_task_wdt_reset();
+    } // Reset WDT
 
-    // setup display
-    if let Err(e) = display::display_test::<Error, GpioScl, GpioSda>(i2c_master, &ip, &dns) {
-        println!("Display error: {:?}", e)
-    } else {
-        println!("Display ok");
-    }
+    // Instantiate the bus manager, pass the i2c bus.
+    let bus = shared_bus::BusManagerSimple::new(i2c_master);
+
+    // Create two proxies. Now, each sensor can have their own instance of a proxy i2c, which resolves the ownership problem.
+    let proxy_1 = bus.acquire_i2c();
+    let proxy_2 = bus.acquire_i2c();
+
+    info!("Reading RTC Sensor");
+
+    // setup RTC sensor
+    let mut rtc =
+        sensors::rtc::rv8803::RV8803::new(proxy_1, sensors::rtc::rv8803::DeviceAddr::B011_0010)?;
+
+    rtc.set_time(0, 45, 4, 6, 12, 11, 2022)?;
+
+    let mut _time = [0_u8; rtc::rv8803::TIME_ARRAY_LENGTH];
+
+    // // setup display
+    // if let Err(e) = display::display_test::<Error, GpioScl, GpioSda>(i2c_master, &ip, &dns) {
+    //     println!("Display error: {:?}", e)
+    // } else {
+    //     println!("Display ok");
+    // }
 
     // heart-beat sequence
-    for i in 0..20 {
-        println!("Toggling LED now: {}", i);
-        toggle_led::<anyhow::Error, Gpio14<esp_idf_hal::gpio::Output>>(&mut led_onboard);
-    }
+    // for i in 0..3 {
+    //     println!("Toggling LED now: {}", i);
+    //     toggle_led::<anyhow::Error, Gpio14<Output>>(&mut led_onboard);
+    // }
 
     loop {
-        toggle_led::<anyhow::Error, Gpio14<esp_idf_hal::gpio::Output>>(&mut led_onboard);
+        toggle_led::<anyhow::Error, Gpio14<Output>>(&mut led_onboard);
+
+        std::thread::sleep(Duration::from_millis(500));
+
+        if !rtc.update_time(&mut _time)? {
+            warn!("RTC: Failed reading latest time");
+            println!("{:?}", _time);
+        }
+
+        info!(
+            r#"
+            
+    ->      Hours: {} / Minutes: {} / Seconds: {} / Hundreths: {}
+    ->      Date: {} Weekday {}, Month: {}, Year: {}
+            
+            "#,
+            _time[3], _time[2], _time[1], _time[0], _time[5], _time[4], _time[6], _time[7],
+        );
     }
 }
 
