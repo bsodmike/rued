@@ -22,8 +22,11 @@ pub mod rv8803 {
     use embedded_hal::blocking::i2c;
     use esp_idf_hal::i2c::I2cError;
     use esp_idf_sys::EspError;
+    use log::{error, info};
 
     pub const TIME_ARRAY_LENGTH: usize = 8;
+    const RV8803_ENABLE: bool = true;
+    const RV8803_DISABLE: bool = false;
 
     /// RV-8803 device driver.
     /// Datasheet: https://cdn.sparkfun.com/assets/1/2/4/2/3/RV-8803-C7_App-Manual.pdf
@@ -59,6 +62,7 @@ pub mod rv8803 {
     impl<I2C, E> RV8803<I2C>
     where
         I2C: i2c::WriteRead<Error = E> + i2c::Write<Error = E>,
+        // E: std::error::Error + std::convert::From<std::io::Error>,
     {
         /// Create a new instance of the RV8803.
         pub fn new(i2c: I2C, address: DeviceAddr) -> Result<Self, E> {
@@ -77,13 +81,20 @@ pub mod rv8803 {
             month: u8,
             year: u16,
         ) -> Result<bool, E> {
-            self.write_register(Register::Seconds, sec)?;
-            self.write_register(Register::Minutes, min)?;
-            self.write_register(Register::Hours, hour)?;
-            self.write_register(Register::Weekday, 1 << weekday)?;
-            self.write_register(Register::Date, date)?;
-            self.write_register(Register::Month, month)?;
-            self.write_register(Register::Year, (year - 2000) as u8)?;
+            self.write_register(Register::Seconds, dec_to_bcd(sec))?;
+            self.write_register(Register::Minutes, dec_to_bcd(min))?;
+            self.write_register(Register::Hours, dec_to_bcd(hour))?;
+            self.write_register(Register::Date, dec_to_bcd(date))?;
+            self.write_register(Register::Month, dec_to_bcd(month))?;
+            self.write_register(Register::Year, dec_to_bcd((year - 2000) as u8))?;
+            self.write_register(Register::Weekday, weekday)?;
+
+            //Set RESET bit to 0 after setting time to make sure seconds don't get stuck.
+            self.write_bit(
+                Register::Control.address(),
+                Register::ControlReset.address(),
+                RV8803_DISABLE,
+            )?;
 
             Ok(true)
         }
@@ -95,12 +106,15 @@ pub mod rv8803 {
                 TIME_ARRAY_LENGTH,
             )?) == false
             {
+                info!("update_time: attempt read - fail 1");
                 return Ok(false); // Something went wrong
-            };
+            }
 
             // If hundredths are at 99 or seconds are at 59, read again to make sure we didn't accidentally skip a second/minute
-            if (bcd_to_dec(dest[0]) == 99 || bcd_to_dec(dest[1]) == 59) {
+            if bcd_to_dec(dest[0]) == 99 || bcd_to_dec(dest[1]) == 59 {
                 let mut temp_time = [0_u8; TIME_ARRAY_LENGTH];
+
+                info!("update_time: if hundredths are at 99 or seconds are at 59, read again to make sure we didn't accidentally skip a second/minute / Hundreths: {} / Seconds: {}", bcd_to_dec(dest[0]),bcd_to_dec(dest[1]));
 
                 if (self.read_multiple_registers(
                     Register::Hundredths.address(),
@@ -108,26 +122,68 @@ pub mod rv8803 {
                     TIME_ARRAY_LENGTH,
                 )?) == false
                 {
+                    info!("update_time: attempt read - fail 2");
                     return Ok(false); // Something went wrong
                 };
 
-                if (bcd_to_dec(dest[0]) > bcd_to_dec(temp_time[0]))
                 // If the reading for hundredths has rolled over, then our new data is correct, otherwise, we can leave the old data.
-                {
+                if bcd_to_dec(dest[0]) > bcd_to_dec(temp_time[0]) {
+                    info!("update_time: the reading for hundredths has rolled over, then our new data is correct. / Hundreths: {} / temp_time[0]: {}",
+                    bcd_to_dec(dest[0]),
+                    bcd_to_dec(temp_time[0]));
+
                     for (i, el) in temp_time.iter().enumerate() {
                         dest[i] = *el
                     }
                 }
             }
 
-            // return true;
+            let mut buf = [0_u8; 8];
+            for (i, el) in dest.iter().enumerate() {
+                // Note: Weekday does not undergo BCD to Decimal conversion.
+                if i != 4 {
+                    // println!("Raw: {} / BCD to Dec: {}", *el, bcd_to_dec(*el));
+                    buf[i] = bcd_to_dec(*el)
+                }
+            }
+
+            // std::io::copy(&mut &buf[0..buf.len()], &mut dest.as_mut())?;
+
+            match std::io::copy(&mut &buf[0..buf.len()], &mut dest.as_mut()) {
+                Ok(value) => value,
+                Err(_e) => {
+                    error! {"update_time: unable to copy buffer!"};
+
+                    0
+                }
+            };
+
+            Ok(true)
+        }
+
+        pub fn write_bit(
+            &mut self,
+            reg_addr: u8,
+            bit_addr: u8,
+            bit_to_write: bool,
+        ) -> Result<bool, E> {
+            let mut value = 0;
+            if let Ok(reg_value) = self.read_register_by_addr(reg_addr) {
+                value = reg_value
+            }
+
+            value &= !(1 << bit_addr);
+            value |= u8::from(bit_to_write) << bit_addr;
+
+            self.write_register_by_addr(reg_addr, value);
+
             Ok(true)
         }
 
         pub fn read_multiple_registers(
             &mut self,
             addr: u8,
-            mut dest: &mut [u8],
+            dest: &mut [u8],
             len: usize,
         ) -> Result<bool, E> {
             self.i2c.write_read(self.address as u8, &[addr], dest)?;
@@ -155,27 +211,28 @@ pub mod rv8803 {
             self.read_year()
         }
 
-        /// Read PwrMgmt0 configuration
-        pub fn read_pwr_configuration(&mut self) -> Result<PowerManagement, E> {
-            let bits = self.read_register(Register::PwrMgmt0)?;
-            Ok(PowerManagement { bits })
-        }
-
-        /// Write in PwrMgmt0 Register
-        fn write_pwr_mgmt(&mut self, value: u8) -> Result<(), E> {
-            self.write_register(Register::PwrMgmt0, value)
-        }
-
         fn write_register(&mut self, register: Register, value: u8) -> Result<(), E> {
             let byte = value as u8;
             self.i2c
                 .write(self.address as u8, &[register.address(), byte])
         }
 
+        fn write_register_by_addr(&mut self, reg_addr: u8, value: u8) -> Result<(), E> {
+            let byte = value as u8;
+            self.i2c.write(self.address as u8, &[reg_addr, byte])
+        }
+
         fn read_register(&mut self, register: Register) -> Result<u8, E> {
             let mut data = [0];
             self.i2c
                 .write_read(self.address as u8, &[register.address()], &mut data)?;
+            Ok(u8::from_le_bytes(data))
+        }
+
+        fn read_register_by_addr(&mut self, reg_addr: u8) -> Result<u8, E> {
+            let mut data = [0];
+            self.i2c
+                .write_read(self.address as u8, &[reg_addr], &mut data)?;
             Ok(u8::from_le_bytes(data))
         }
     }
@@ -188,14 +245,9 @@ pub mod rv8803 {
         ((value / 10) * 0x10) + (value % 10)
     }
 
-    pub struct PowerManagement {
-        pub bits: u8,
-    }
-
     // Table 14.1
     #[derive(Clone, Copy)]
     pub enum Register {
-        PwrMgmt0 = 0x1F,
         Hundredths = 0x10,
         Seconds = 0x11,
         Minutes = 0x12,
@@ -204,11 +256,57 @@ pub mod rv8803 {
         Date = 0x15,
         Month = 0x16,
         Year = 0x17,
+        ControlReset = 0,
+        Control = 0x1F,
     }
 
     impl Register {
         fn address(&self) -> u8 {
             *self as u8
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    pub enum Weekday {
+        Sunday = 1,
+        Monday = 2,
+        Tuesday = 4,
+        Wednesday = 8,
+        Thursday = 16,
+        Friday = 32,
+        Saturday = 64,
+    }
+
+    impl Weekday {
+        pub fn value(&self) -> u8 {
+            *self as u8
+        }
+
+        pub fn to_s(&self) -> String {
+            match self {
+                Weekday::Sunday => "Sunday".to_string(),
+                Weekday::Monday => "Monday".to_string(),
+                Weekday::Tuesday => "Tuesday".to_string(),
+                Weekday::Wednesday => "Wednesday".to_string(),
+                Weekday::Thursday => "Thursday".to_string(),
+                Weekday::Friday => "Friday".to_string(),
+                Weekday::Saturday => "Saturday".to_string(),
+            }
+        }
+    }
+
+    impl From<u8> for Weekday {
+        fn from(day: u8) -> Self {
+            match day {
+                1 => Self::Sunday,
+                2 => Self::Monday,
+                4 => Self::Tuesday,
+                8 => Self::Wednesday,
+                16 => Self::Thursday,
+                32 => Self::Friday,
+                64 => Self::Saturday,
+                _ => Self::Sunday,
+            }
         }
     }
 }

@@ -4,6 +4,7 @@ use core::time::Duration;
 
 use crate::http::server::{Configuration as HttpServerConfiguration, EspHttpServer};
 use crate::sensors::rtc;
+use crate::sensors::rtc::rv8803::Weekday;
 #[allow(unused_imports)]
 use embedded_hal::digital::v2::ToggleableOutputPin;
 use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output};
@@ -116,7 +117,15 @@ fn main() -> Result<()> {
     let mut rtc =
         sensors::rtc::rv8803::RV8803::new(proxy_1, sensors::rtc::rv8803::DeviceAddr::B011_0010)?;
 
-    rtc.set_time(0, 45, 4, 6, 12, 11, 2022)?;
+    // rtc.set_time(
+    //     30,
+    //     27,
+    //     9,
+    //     rtc::rv8803::Weekday::Saturday.value(),
+    //     12,
+    //     11,
+    //     2022,
+    // )?;
 
     let mut _time = [0_u8; rtc::rv8803::TIME_ARRAY_LENGTH];
 
@@ -133,24 +142,40 @@ fn main() -> Result<()> {
     //     toggle_led::<anyhow::Error, Gpio14<Output>>(&mut led_onboard);
     // }
 
+    unsafe {
+        esp_idf_sys::esp_task_wdt_reset();
+    } // Reset WDT
+
     loop {
         toggle_led::<anyhow::Error, Gpio14<Output>>(&mut led_onboard);
 
         std::thread::sleep(Duration::from_millis(500));
 
-        if !rtc.update_time(&mut _time)? {
+        let update = rtc.update_time(&mut _time)?;
+        if !update {
             warn!("RTC: Failed reading latest time");
             println!("{:?}", _time);
         }
+        let weekday: Weekday = _time[4].into();
+
+        // FIXME: wierd bug where hundreth's value does not update inside this loop, without the use of debugging output
+        println!("Hundreths: {:?}", &_time);
 
         info!(
             r#"
             
     ->      Hours: {} / Minutes: {} / Seconds: {} / Hundreths: {}
-    ->      Date: {} Weekday {}, Month: {}, Year: {}
+    ->      {}, Day: {} Month: {}, Year: {}
             
             "#,
-            _time[3], _time[2], _time[1], _time[0], _time[5], _time[4], _time[6], _time[7],
+            _time[3],
+            _time[2],
+            _time[1],
+            _time[0],
+            weekday.to_s(),
+            _time[5], // day
+            _time[6], // month
+            _time[7], // year
         );
     }
 }
