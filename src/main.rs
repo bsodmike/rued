@@ -1,6 +1,7 @@
 #![feature(const_btree_new)]
 
 use core::time::Duration;
+use cstr_core::CString;
 
 use crate::http::server::{Configuration as HttpServerConfiguration, EspHttpServer};
 use crate::sensors::rtc;
@@ -12,7 +13,16 @@ use esp_idf_hal::i2c::{self, I2cError, Master, I2C0};
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_svc::log::EspLogger;
 
-use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
+use esp_idf_sys::{
+    self as _, esp, sntp_get_sync_interval, sntp_get_sync_status, sntp_restart,
+    sntp_set_sync_interval, sntp_set_sync_mode, sntp_set_time_sync_notification_cb,
+    sntp_sync_mode_t_SNTP_SYNC_MODE_IMMED, timeval,
+}; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
+use esp_idf_sys::{
+    sntp_init, sntp_setoperatingmode, sntp_setservername,
+    sntp_sync_status_t_SNTP_SYNC_STATUS_COMPLETED, sntp_sync_status_t_SNTP_SYNC_STATUS_IN_PROGRESS,
+    sntp_sync_status_t_SNTP_SYNC_STATUS_RESET, SNTP_OPMODE_POLL,
+};
 
 use anyhow::{Error, Result};
 use log::{info, warn};
@@ -88,6 +98,17 @@ impl From<I2cError> for BlanketError {
             inner: error.into(),
         }
     }
+}
+
+pub unsafe extern "C" fn time_sync_notification_cb(timeval: *mut timeval) {
+    info!(
+        r#"
+            
+->      SNTP Callback: {:?}
+                
+        "#,
+        timeval
+    )
 }
 
 fn main() -> Result<()> {
@@ -170,6 +191,21 @@ fn main() -> Result<()> {
     let proxy_1 = bus.acquire_i2c();
     let proxy_2 = bus.acquire_i2c();
 
+    //  configure SNTP
+    //  https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/system_time.html#sntp-time-synchronization
+
+    unsafe {
+        let server = CString::new("pool.ntp.org").unwrap();
+        sntp_setoperatingmode(SNTP_OPMODE_POLL as u8);
+        sntp_setservername(0, server.as_ptr());
+
+        sntp_set_sync_mode(sntp_sync_mode_t_SNTP_SYNC_MODE_IMMED);
+        sntp_set_sync_interval(1 * 1000); // every second; 15s min default.
+        info!("sntp_get_sync_interval: {} ms", sntp_get_sync_interval());
+        sntp_set_time_sync_notification_cb(Some(time_sync_notification_cb));
+        sntp_init();
+    }
+
     info!("Reading RTC Sensor");
 
     // setup RTC sensor
@@ -178,10 +214,10 @@ fn main() -> Result<()> {
 
     // rtc.set_time(
     //     0,
-    //     22,
-    //     12,
+    //     48,
+    //     3,
     //     rtc::rv8803::Weekday::Saturday.value(),
-    //     12,
+    //     13,
     //     11,
     //     2022,
     // )?;
@@ -236,6 +272,22 @@ fn main() -> Result<()> {
             _time[6], // month
             _time[7], // year
         );
+
+        unsafe {
+            let sync = sntp_get_sync_status();
+            let sync_reason = match sync {
+                0 => {
+                    // sntp_restart();
+
+                    "SNTP_SYNC_STATUS_RESET"
+                }
+                1 => "SNTP_SYNC_STATUS_COMPLETED",
+                2 => "SNTP_SYNC_STATUS_IN_PROGRESS",
+                _ => "invalid",
+            };
+
+            info!("sntp_get_sync_status: {}", sync_reason);
+        }
     }
 }
 
