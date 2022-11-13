@@ -100,6 +100,8 @@ pub mod rv8803 {
                 RV8803_DISABLE,
             )?;
 
+            info!("rv8803::set_time: updated RTC clock");
+
             Ok(true)
         }
 
@@ -142,6 +144,7 @@ pub mod rv8803 {
                 }
             }
 
+            // byte order: https://github.com/sparkfun/SparkFun_RV-8803_Arduino_Library/blob/main/src/SparkFun_RV8803.h#L129-L138
             let mut buf = [0_u8; 8];
             for (i, el) in dest.iter().enumerate() {
                 // Note: Weekday does not undergo BCD to Decimal conversion.
@@ -153,13 +156,6 @@ pub mod rv8803 {
 
             std::io::copy(&mut &buf[0..buf.len()], &mut dest.as_mut())?;
 
-            // match std::io::copy(&mut &buf[0..buf.len()], &mut dest.as_mut()) {
-            //     Ok(value) => value,
-            //     Err(_e) => {
-            //         error! {"update_time: unable to copy buffer!"};
-
-            //         0
-            //     }
             // };
 
             Ok(true)
@@ -179,7 +175,7 @@ pub mod rv8803 {
             value &= !(1 << bit_addr);
             value |= u8::from(bit_to_write) << bit_addr;
 
-            self.write_register_by_addr(reg_addr, value);
+            self.write_register_by_addr(reg_addr, value)?;
 
             Ok(true)
         }
@@ -310,6 +306,20 @@ pub mod rv8803 {
                 32 => Self::Friday,
                 64 => Self::Saturday,
                 _ => Self::Sunday,
+            }
+        }
+    }
+
+    impl From<time::Weekday> for Weekday {
+        fn from(day: time::Weekday) -> Self {
+            match day {
+                time::Weekday::Sunday => Self::Sunday,
+                time::Weekday::Monday => Self::Monday,
+                time::Weekday::Tuesday => Self::Tuesday,
+                time::Weekday::Wednesday => Self::Wednesday,
+                time::Weekday::Thursday => Self::Thursday,
+                time::Weekday::Friday => Self::Friday,
+                time::Weekday::Saturday => Self::Saturday,
             }
         }
     }

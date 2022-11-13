@@ -25,7 +25,7 @@ use embedded_svc::sys_time::SystemTime;
 use esp_idf_svc::systime::EspSystemTime;
 
 use time::macros::offset;
-use time::{OffsetDateTime, UtcOffset};
+use time::{Date, OffsetDateTime, Time, UtcOffset};
 
 use esp_idf_svc::sntp::{self, EspSntp};
 use esp_idf_svc::sntp::{OperatingMode, SntpConf, SyncMode, SyncStatus};
@@ -112,17 +112,50 @@ pub struct RTCReading {
     minutes: u8,
     seconds: u8,
     hundreths: u8,
-    day: u8,
+    weekday: u8,
+    date: u8,
     month: u8,
     year: u32,
 }
 
 impl RTCReading {
     fn to_s(&self) -> Result<String> {
-        let date_str = format!("{}-{}-{}", self.day, self.month, self.year);
+        let date_str = format!("{}-{}-{}", self.date, self.month, self.year);
         let time_str = format!("{}:{}:{}", self.hours, self.minutes, self.seconds);
 
-        Ok(format!("RTC Clock: {} @ {}", time_str, date_str))
+        Ok(format!("RTC Clock:\t{} @ {}", time_str, date_str))
+    }
+}
+
+#[derive(Debug)]
+pub struct SystemTimeBuffer {
+    date: u8,
+    month: u8,
+    year: u16,
+    hours: u8,
+    minutes: u8,
+    seconds: u8,
+    full_date: Date,
+    full_time: Time,
+}
+
+impl SystemTimeBuffer {
+    fn to_s(&self) -> Result<String> {
+        let date_str = format!("{:0>2}-{:0>2}-{}", self.date, self.month, self.year);
+        let time_str = format!(
+            "{:0>2}:{:0>2}:{:0>2}",
+            self.hours, self.minutes, self.seconds
+        );
+
+        Ok(format!("System Clock:\t{} @ {}", time_str, date_str))
+    }
+
+    fn to_rfc3339(&self) -> Result<String> {
+        todo!();
+    }
+
+    fn weekday(&self) -> Result<time::Weekday> {
+        Ok(self.full_date.weekday())
     }
 }
 
@@ -176,39 +209,6 @@ fn main() -> Result<()> {
     // or else some patches to the runtime implemented by esp-idf-sys might not link properly.
     esp_idf_sys::link_patches();
     EspLogger::initialize_default();
-
-    // unsafe {
-    //     let duration = EspTimerService::new()?.now().as_millis() as i32;
-    //     let now = &mut duration;
-
-    //     esp_idf_sys::time(now);
-
-    //     /// This needs to be converted into Rust equiv.
-    //     struct tm timeinfo;
-    //     localtime_r(now, &timeinfo);
-    //     // Is time set? If not, tm_year will be (1970 - 1900).
-    //     if (timeinfo.tm_year < (2016 - 1900)) {
-    //         ESP_LOGI(
-    //             TAG,
-    //             "Time is not set yet. Connecting to WiFi and getting time over NTP.",
-    //         );
-    //         obtain_time();
-    //         // update 'now' variable with current time
-    //         time(&now);
-    //     }
-    //     /// <--- pending, any ideas?
-
-    //     let server = CString::new("pool.ntp.org").unwrap();
-
-    //     sntp_set_sync_mode(sntp_sync_mode_t_SNTP_SYNC_MODE_IMMED);
-    //     sntp_setoperatingmode(SNTP_OPMODE_POLL as u8);
-    //     sntp_setservername(0, server.as_ptr());
-
-    //     sntp_set_sync_interval(15 * 1000); // 15s min default
-    //     info!("sntp_get_sync_interval: {} ms", sntp_get_sync_interval());
-    //     sntp_set_time_sync_notification_cb(Some(time_sync_notification_cb));
-    //     sntp_init();
-    // }
 
     info!("Hello, Rust from an ESP32!");
     unsafe {
@@ -321,13 +321,25 @@ fn main() -> Result<()> {
 
     unsafe {
         let sntp = sntp_setup()?;
+        let latest_system_time = get_system_time()?;
+
+        let weekday: time::Weekday = latest_system_time.weekday()?;
+        let rtc_weekday: rtc::rv8803::Weekday = weekday.into();
+
+        rtc.set_time(
+            latest_system_time.seconds,
+            latest_system_time.minutes,
+            latest_system_time.hours,
+            rtc_weekday.value(),
+            latest_system_time.date,
+            latest_system_time.month,
+            latest_system_time.year,
+        )?;
 
         loop {
             toggle_led::<anyhow::Error, Gpio14<Output>>(&mut led_onboard);
 
             std::thread::sleep(Duration::from_millis(500));
-
-            get_system_time()?;
 
             // Fetch time from RTC.
             let update = rtc.update_time(&mut _time)?;
@@ -345,21 +357,25 @@ fn main() -> Result<()> {
                 minutes: _time[2],
                 seconds: _time[1],
                 hundreths: _time[0],
-                day: _time[5],
+                weekday: _time[4],
+                date: _time[5],
                 month: _time[6],
                 year: format!("20{}", _time[7])
                     .to_string()
                     .parse::<u32>()
                     .unwrap_or_default(),
             };
+            let latest_system_time = get_system_time()?;
 
             info!(
                 r#"
                 
         ->      {}
+        ->      {}
                 
                 "#,
-                reading.to_s()?
+                latest_system_time.to_s()?,
+                reading.to_s()?,
             );
 
             let sync_status = match sntp.get_sync_status() {
@@ -408,7 +424,7 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
     Ok(sntp)
 }
 
-unsafe fn get_system_time() -> Result<()> {
+unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
     let timer: *mut time_t = ptr::null_mut();
     let timestamp = esp_idf_sys::time(timer);
     let utc_with_offset =
@@ -418,26 +434,24 @@ unsafe fn get_system_time() -> Result<()> {
     let actual_date = utc_with_offset.date();
 
     let (hours, mins, secs) = actual_time.as_hms();
-    let (year, month, day) = actual_date.to_calendar_date();
+    let (year, month, date) = actual_date.to_calendar_date();
 
-    let weekday = actual_date.weekday();
-    let rfc3339_date = actual_date;
-
-    let date_str = format!("{}-{}-{}", day, month, year);
-    let time_str = format!("{}:{}:{}", hours, mins, secs);
-    info!(
-        r#"
-            
-        ->      System time: {} @ {}
-            
-        "#,
-        time_str, date_str
-    );
+    let year_short = year - 2000;
+    let buf = SystemTimeBuffer {
+        date,
+        year: year as u16,
+        hours,
+        minutes: mins,
+        seconds: secs,
+        month: month.into(),
+        full_date: actual_date,
+        full_time: actual_time,
+    };
 
     let mut now: u64 = 0;
     let mut time_buf: u64 = 0;
 
-    Ok(())
+    Ok(buf)
 }
 
 fn toggle_led<E, T>(pin: &mut T)
