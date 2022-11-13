@@ -33,7 +33,7 @@ pub mod rv8803 {
     const RV8803_DISABLE: bool = false;
 
     /// RV-8803 device driver.
-    /// Datasheet: https://cdn.sparkfun.com/assets/1/2/4/2/3/RV-8803-C7_App-Manual.pdf
+    /// Datasheet: <https://cdn.sparkfun.com/assets/1/2/4/2/3/RV-8803-C7_App-Manual.pdf>
     ///
     #[derive(Debug)]
     pub struct RV8803<I2C> {

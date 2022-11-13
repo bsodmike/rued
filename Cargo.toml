@@ -32,7 +32,7 @@ heapless = { version = "0.7.16", default-features = false }
 cstr_core = "0.2.6"
 uncased = { version = "0.9.7" }
 shared-bus = "0.2.4"
-
+time = { version = "0.3.17", features = ["macros"] }
 
 [build-dependencies]
 embuild = "0.30"
