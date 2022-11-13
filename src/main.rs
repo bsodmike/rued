@@ -25,13 +25,13 @@ use embedded_svc::sys_time::SystemTime;
 use esp_idf_svc::systime::EspSystemTime;
 
 use time::macros::offset;
-use time::OffsetDateTime;
+use time::{OffsetDateTime, UtcOffset};
 
 use esp_idf_svc::sntp::{self, EspSntp};
 use esp_idf_svc::sntp::{OperatingMode, SntpConf, SyncMode, SyncStatus};
 
 use anyhow::{Error, Result};
-use log::{info, warn};
+use log::{debug, info, warn};
 use shared_bus::{I2cProxy, NullMutex};
 use std::error::Error as StdError;
 use std::fmt;
@@ -107,7 +107,7 @@ impl From<I2cError> for BlanketError {
 }
 
 #[derive(Debug)]
-pub struct DateBuffer {
+pub struct RTCReading {
     hours: u8,
     minutes: u8,
     seconds: u8,
@@ -117,26 +117,58 @@ pub struct DateBuffer {
     year: u32,
 }
 
+impl RTCReading {
+    fn to_s(&self) -> Result<String> {
+        let date_str = format!("{}-{}-{}", self.day, self.month, self.year);
+        let time_str = format!("{}:{}:{}", self.hours, self.minutes, self.seconds);
+
+        Ok(format!("RTC Clock: {} @ {}", time_str, date_str))
+    }
+}
+
+const UTC_OFFSET: UtcOffset = UtcOffset::UTC;
+
 pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut timeval) {
-    println!(
+    info!(
         r#"
 
-        ->      SNTP Sync cb called: sec: {}, usec: {}
+        ->      SNTP Sync Callback called: sec: {}, usec: {}
 
         "#,
         (*tv).tv_sec,
         (*tv).tv_usec,
     );
 
-    info!(
-        r#"
+    let err_value: i64 = 0;
+    let offset = match OffsetDateTime::from_unix_timestamp((*tv).tv_sec as i64) {
+        Ok(value) => value,
+        Err(_) => OffsetDateTime::from_unix_timestamp(err_value).unwrap(),
+    };
 
-        ->      SNTP Sync cb called: sec: {}, usec: {}
+    let utc_with_offset = offset.to_offset(UTC_OFFSET);
+    let actual_time = utc_with_offset.time();
+    let actual_date = utc_with_offset.date();
+    let offset = utc_with_offset.offset();
 
-        "#,
-        (*tv).tv_sec,
-        (*tv).tv_usec,
-    )
+    let (hours, mins, secs) = actual_time.as_hms();
+    let (year, month, day) = actual_date.to_calendar_date();
+
+    if year == 1970 {
+        // Do not update RTC.
+    } else {
+        // Update RTC
+
+        let date_str = format!("{}-{}-{}", day, month, year);
+        let time_str = format!("{}:{}:{}", hours, mins, secs);
+        info!(
+            r#"
+                
+        ->      SNTP Sync: {} @ {}
+                
+            "#,
+            time_str, date_str
+        );
+    }
 }
 
 fn main() -> Result<()> {
@@ -308,21 +340,26 @@ fn main() -> Result<()> {
             // FIXME: wierd bug where hundreth's value does not update inside this loop, without the use of debugging output
             println!("_time: {:?}", &_time);
 
+            let reading = RTCReading {
+                hours: _time[3],
+                minutes: _time[2],
+                seconds: _time[1],
+                hundreths: _time[0],
+                day: _time[5],
+                month: _time[6],
+                year: format!("20{}", _time[7])
+                    .to_string()
+                    .parse::<u32>()
+                    .unwrap_or_default(),
+            };
+
             info!(
                 r#"
                 
-        ->      Hours: {} / Minutes: {} / Seconds: {} / Hundreths: {}
-        ->      {}, Day: {} Month: {}, Year: 20{}
+        ->      {}
                 
                 "#,
-                _time[3],
-                _time[2],
-                _time[1],
-                _time[0],
-                weekday.to_s(),
-                _time[5], // day
-                _time[6], // month
-                _time[7], // year
+                reading.to_s()?
             );
 
             let sync_status = match sntp.get_sync_status() {
@@ -331,7 +368,7 @@ fn main() -> Result<()> {
                 SyncStatus::InProgress => "SNTP_SYNC_STATUS_IN_PROGRESS",
             };
 
-            info!("sntp_get_sync_status: {}", sync_status);
+            debug!("sntp_get_sync_status: {}", sync_status);
         }
     }
 }
@@ -373,12 +410,12 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
 
 unsafe fn get_system_time() -> Result<()> {
     let timer: *mut time_t = ptr::null_mut();
-    let mut timestamp = esp_idf_sys::time(timer);
+    let timestamp = esp_idf_sys::time(timer);
     let utc_with_offset =
-        OffsetDateTime::from_unix_timestamp(timestamp as i64)?.to_offset(offset!(+0));
+        OffsetDateTime::from_unix_timestamp(timestamp as i64)?.to_offset(UTC_OFFSET);
 
-    let mut actual_time = utc_with_offset.time();
-    let mut actual_date = utc_with_offset.date();
+    let actual_time = utc_with_offset.time();
+    let actual_date = utc_with_offset.date();
 
     let (hours, mins, secs) = actual_time.as_hms();
     let (year, month, day) = actual_date.to_calendar_date();
@@ -386,12 +423,12 @@ unsafe fn get_system_time() -> Result<()> {
     let weekday = actual_date.weekday();
     let rfc3339_date = actual_date;
 
-    let mut date_str = format!("{}-{}-{}", day, month, year);
+    let date_str = format!("{}-{}-{}", day, month, year);
     let time_str = format!("{}:{}:{}", hours, mins, secs);
     info!(
         r#"
             
-    ->      {} @ {}
+        ->      System time: {} @ {}
             
         "#,
         time_str, date_str
