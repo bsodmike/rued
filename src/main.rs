@@ -123,7 +123,7 @@ impl RTCReading {
         let date_str = format!("{}-{}-{}", self.date, self.month, self.year);
         let time_str = format!("{}:{}:{}", self.hours, self.minutes, self.seconds);
 
-        Ok(format!("RTC Clock:\t{} @ {}", time_str, date_str))
+        Ok(format!("RTC Clock: {} @ {}", time_str, date_str))
     }
 }
 
@@ -147,7 +147,7 @@ impl SystemTimeBuffer {
             self.hours, self.minutes, self.seconds
         );
 
-        Ok(format!("System Clock:\t{} @ {}", time_str, date_str))
+        Ok(format!("System Clock: {} @ {}", time_str, date_str))
     }
 
     fn to_rfc3339(&self) -> Result<String> {
