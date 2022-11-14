@@ -287,16 +287,6 @@ fn main() -> Result<()> {
     let mut rtc =
         sensors::rtc::rv8803::RV8803::new(proxy_1, sensors::rtc::rv8803::DeviceAddr::B011_0010)?;
 
-    // rtc.set_time(
-    //     0,
-    //     48,
-    //     3,
-    //     rtc::rv8803::Weekday::Saturday.value(),
-    //     13,
-    //     11,
-    //     2022,
-    // )?;
-
     let mut _time = [0_u8; rtc::rv8803::TIME_ARRAY_LENGTH];
 
     // // setup display
@@ -323,15 +313,15 @@ fn main() -> Result<()> {
         let weekday: time::Weekday = latest_system_time.weekday()?;
         let rtc_weekday: rtc::rv8803::Weekday = weekday.into();
 
-        // rtc.set_time(
-        //     latest_system_time.seconds,
-        //     latest_system_time.minutes,
-        //     latest_system_time.hours,
-        //     rtc_weekday.value(),
-        //     latest_system_time.date,
-        //     latest_system_time.month,
-        //     latest_system_time.year,
-        // )?;
+        rtc.set_time(
+            latest_system_time.seconds,
+            latest_system_time.minutes,
+            latest_system_time.hours,
+            rtc_weekday.value(),
+            latest_system_time.date,
+            latest_system_time.month,
+            latest_system_time.year,
+        )?;
 
         loop {
             toggle_led::<anyhow::Error, Gpio14<Output>>(&mut led_onboard);
