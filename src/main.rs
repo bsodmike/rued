@@ -120,8 +120,11 @@ pub struct RTCReading {
 
 impl RTCReading {
     fn to_s(&self) -> Result<String> {
-        let date_str = format!("{}-{}-{}", self.date, self.month, self.year);
-        let time_str = format!("{}:{}:{}", self.hours, self.minutes, self.seconds);
+        let date_str = format!("{:0>2}-{:0>2}-{}", self.date, self.month, self.year);
+        let time_str = format!(
+            "{:0>2}:{:0>2}:{:0>2}",
+            self.hours, self.minutes, self.seconds
+        );
 
         Ok(format!("RTC Clock: {} @ {}", time_str, date_str))
     }
@@ -162,16 +165,6 @@ impl SystemTimeBuffer {
 const UTC_OFFSET: UtcOffset = UtcOffset::UTC;
 
 pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut timeval) {
-    info!(
-        r#"
-
-        ->      SNTP Sync Callback called: sec: {}, usec: {}
-
-        "#,
-        (*tv).tv_sec,
-        (*tv).tv_usec,
-    );
-
     let err_value: i64 = 0;
     let offset = match OffsetDateTime::from_unix_timestamp((*tv).tv_sec as i64) {
         Ok(value) => value,
@@ -191,15 +184,19 @@ pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut time
     } else {
         // Update RTC
 
-        let date_str = format!("{}-{}-{}", day, month, year);
-        let time_str = format!("{}:{}:{}", hours, mins, secs);
+        let date_str = format!("{:0>2}-{:0>2}-{}", day, month, year);
+        let time_str = format!("{:0>2}:{:0>2}:{:0>2}", hours, mins, secs);
         info!(
             r#"
-                
+
+        ->      SNTP Sync Callback called: sec: {}, usec: {}        
         ->      SNTP Sync: {} @ {}
                 
             "#,
-            time_str, date_str
+            (*tv).tv_sec,
+            (*tv).tv_usec,
+            time_str,
+            date_str
         );
     }
 }
@@ -326,15 +323,15 @@ fn main() -> Result<()> {
         let weekday: time::Weekday = latest_system_time.weekday()?;
         let rtc_weekday: rtc::rv8803::Weekday = weekday.into();
 
-        rtc.set_time(
-            latest_system_time.seconds,
-            latest_system_time.minutes,
-            latest_system_time.hours,
-            rtc_weekday.value(),
-            latest_system_time.date,
-            latest_system_time.month,
-            latest_system_time.year,
-        )?;
+        // rtc.set_time(
+        //     latest_system_time.seconds,
+        //     latest_system_time.minutes,
+        //     latest_system_time.hours,
+        //     rtc_weekday.value(),
+        //     latest_system_time.date,
+        //     latest_system_time.month,
+        //     latest_system_time.year,
+        // )?;
 
         loop {
             toggle_led::<anyhow::Error, Gpio14<Output>>(&mut led_onboard);
@@ -436,7 +433,6 @@ unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
     let (hours, mins, secs) = actual_time.as_hms();
     let (year, month, date) = actual_date.to_calendar_date();
 
-    let year_short = year - 2000;
     let buf = SystemTimeBuffer {
         date,
         year: year as u16,
