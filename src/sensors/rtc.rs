@@ -277,6 +277,12 @@ pub mod rv8803 {
         Saturday = 64,
     }
 
+    impl fmt::Display for Weekday {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{}", self.to_s())
+        }
+    }
+
     impl Weekday {
         pub fn value(&self) -> u8 {
             *self as u8
