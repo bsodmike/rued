@@ -1,6 +1,6 @@
 #![feature(const_btree_new)]
 
-use core::time::Duration;
+use ::core::time::Duration;
 use cstr_core::CString;
 use once_cell::sync::Lazy;
 use std::os::unix::raw::time_t;
@@ -8,7 +8,6 @@ use std::{ptr, sync::Mutex, time::*};
 
 use crate::http::server::{Configuration as HttpServerConfiguration, EspHttpServer};
 use crate::sensors::rtc;
-use crate::sensors::rtc::rv8803::Weekday;
 #[allow(unused_imports)]
 use embedded_hal::digital::v2::ToggleableOutputPin;
 use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output};
@@ -37,6 +36,7 @@ use shared_bus::{I2cProxy, NullMutex};
 use std::error::Error as StdError;
 use std::fmt;
 
+mod core;
 mod display;
 mod http;
 mod http_client;
@@ -183,33 +183,9 @@ impl SystemTimeBuffer {
     }
 }
 
-static UPDATE_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 const UTC_OFFSET: UtcOffset = UtcOffset::UTC;
-
-fn update_rtc_enable() {
-    let mut flag = UPDATE_RTC
-        .lock()
-        .expect("Could not lock mutex, when attempting to enable flag");
-    *flag = true;
-}
-
-fn update_rtc_disable() {
-    let mut flag = UPDATE_RTC
-        .lock()
-        .expect("Could not lock mutex, when attempting to disable flag");
-    *flag = false;
-}
-
-fn get_update_rtc_flag() -> bool {
-    let flag = UPDATE_RTC
-        .lock()
-        .expect("Could not lock mutex, when attempting to read flag value");
-
-    let value = *flag;
-    std::mem::drop(flag);
-
-    value
-}
+static UPDATE_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+static FALLBACK_TO_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut timeval) {
     let err_value: i64 = 0;
@@ -225,9 +201,12 @@ pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut time
 
     if year == 1970 {
         // Do not update RTC.
+        core::fallback_to_rtc_enable();
+
+        info!("SNTP Sync Callback: Falling back to RTC for sync.");
     } else {
         // Update RTC
-        update_rtc_enable();
+        core::update_rtc_enable();
 
         debug!(
             "SNTP Sync Callback called: sec: {}, usec: {}",
@@ -344,14 +323,20 @@ fn main() -> Result<()> {
 
     unsafe {
         let sntp = sntp_setup()?;
-        let latest_system_time = get_system_time()?;
-
-        update_rtc_from_local(&mut rtc, &latest_system_time)?;
+        get_system_time_with_fallback(&mut rtc)?;
 
         loop {
             toggle_led::<anyhow::Error, Gpio14<Output>>(&mut led_onboard);
 
+            let sync_status = match sntp.get_sync_status() {
+                SyncStatus::Reset => "SNTP_SYNC_STATUS_RESET",
+                SyncStatus::Completed => "SNTP_SYNC_STATUS_COMPLETED",
+                SyncStatus::InProgress => "SNTP_SYNC_STATUS_IN_PROGRESS",
+            };
+            debug!("sntp_get_sync_status: {}", sync_status);
+
             std::thread::sleep(Duration::from_millis(500));
+            esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
 
             // Fetch time from RTC.
             let update = rtc.update_time(&mut _time)?;
@@ -376,7 +361,7 @@ fn main() -> Result<()> {
                     .parse::<u32>()
                     .unwrap_or_default(),
             };
-            let latest_system_time = get_system_time()?;
+            let latest_system_time = get_system_time_with_fallback(&mut rtc)?;
 
             info!(
                 r#"
@@ -392,24 +377,41 @@ fn main() -> Result<()> {
                 reading.to_s()?,
             );
 
-            let sync_status = match sntp.get_sync_status() {
-                SyncStatus::Reset => "SNTP_SYNC_STATUS_RESET",
-                SyncStatus::Completed => "SNTP_SYNC_STATUS_COMPLETED",
-                SyncStatus::InProgress => "SNTP_SYNC_STATUS_IN_PROGRESS",
-            };
-
-            debug!("sntp_get_sync_status: {}", sync_status);
-
-            if get_update_rtc_flag() {
+            if core::get_update_rtc_flag() {
                 update_rtc_from_local(&mut rtc, &latest_system_time)?;
                 info!("[OK]: Updated RTC Clock from Local time");
 
                 esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
 
-                update_rtc_disable();
+                core::update_rtc_disable();
+            }
+
+            if core::get_fallback_to_rtc_flag() {
+                todo!();
+                info!("[OK]: Updated System Clock from RTC time");
+
+                esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
+
+                core::fallback_to_rtc_disable()
             }
         }
     }
+}
+
+unsafe fn get_system_time_with_fallback(
+    rtc: &mut crate::sensors::rtc::rv8803::RV8803<
+        I2cProxy<NullMutex<Master<I2C0, Gpio21<InputOutput>, Gpio22<Output>>>>,
+    >,
+) -> Result<SystemTimeBuffer> {
+    let system_time = get_system_time()?;
+
+    if system_time.year >= 2022 {
+        update_rtc_from_local(rtc, &system_time)?;
+    } else {
+        todo!();
+    }
+
+    Ok(system_time)
 }
 
 fn update_rtc_from_local(
