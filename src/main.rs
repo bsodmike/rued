@@ -8,6 +8,7 @@ use chrono::{
 };
 use cstr_core::CString;
 use once_cell::sync::Lazy;
+use std::env;
 use std::os::unix::raw::time_t;
 use std::{ptr, sync::Mutex, time::*};
 
@@ -49,8 +50,8 @@ mod http_server;
 mod sensors;
 mod wifi;
 
-const SSID: &str = "foo"; // env!("SSID");
-const PASSWORD: &str = "foo"; // env!("PASSWORD");
+const SSID: &str = env!("SSID");
+const PASSWORD: &str = env!("WIFI_PASS");
 
 type GpioSda = Gpio21<InputOutput>;
 type GpioScl = Gpio22<Output>;
