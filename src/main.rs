@@ -208,6 +208,12 @@ const UTC_OFFSET_CHRONO: Utc = Utc;
 static UPDATE_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 static FALLBACK_TO_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
+// false: SNTP is enabled
+static DISABLE_SNTP: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+
+// false: HTTPd is eanbled
+static DISABLE_HTTPD: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+
 pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut timeval) {
     let naive_dt_opt = NaiveDateTime::from_timestamp_opt((*tv).tv_sec as i64, 0);
     let naive_dt = if let Some(value) = naive_dt_opt {
@@ -508,7 +514,10 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
 
     // redefine and restart the callback.
     sntp_set_time_sync_notification_cb(Some(sntp_set_time_sync_notification_cb_custom));
-    sntp_init();
+
+    if !core::get_disable_sntp_flag() {
+        sntp_init();
+    }
 
     esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
 
