@@ -369,9 +369,11 @@ fn main() -> Result<()> {
  System clock synchronized: 
                NTP service: 
            RTC in local TZ: 
+                NTP status: {}
                 "#,
                 latest_system_time.to_s()?,
                 rtc_reading.to_s()?,
+                sync_status
             );
 
             if core::get_update_rtc_flag() {
@@ -417,6 +419,10 @@ unsafe fn get_system_time_with_fallback(
         // FIXME: Disabled as this is done via the callback flag.
         // update_rtc_from_local(rtc, &system_time)?;
     } else {
+        // When SNTP is unavailable, this will be called once where the system
+        // clock will be updated from RTC and the conditional above (that compares the years), will prevent this from being called further.
+        //
+        // It's better to re-establish a valid SNTP update.
         update_local_from_rtc(&system_time, rtc, rtc_clock)?;
     }
 
