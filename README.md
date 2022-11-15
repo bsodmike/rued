@@ -15,16 +15,9 @@ Conecting to Wifi can be flakey at times, I usually have to reboot it once after
 
 ## Features
 
-To enable the Httpd server, make sure you add the corresponding feature into the `Cargo.toml` file and recompile.
-
-```
-[features]
-default = ["wifi", "sntp", "httpd_server"]
-```
+To enable the Httpd server, use the features provided such as `cargo build --features httpd_server_enabled --release`.
 
 ## Httpd Server
-
-Make sure this feature is enabled first.
 
 ### GET /test
 
