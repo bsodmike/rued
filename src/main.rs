@@ -9,6 +9,7 @@ use once_cell::sync::Lazy;
 use shared_bus::{I2cProxy, NullMutex};
 use std::{env, ptr, sync::Mutex};
 
+#[allow(unused_imports)]
 use crate::http::server::{Configuration as HttpServerConfiguration, EspHttpServer};
 use crate::sensors::rtc;
 use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output};
@@ -270,45 +271,51 @@ fn main() -> Result<()> {
     let _gpio_d1: Gpio27<Output> = peripherals.pins.gpio27.into_output().unwrap();
 
     // wifi
-    let wifi = wifi::connect();
-    let ip = match &wifi {
-        Err(e) => {
-            println!("Wifi error: {:?}", e);
-            format!("ERR: {:?}", e)
-        }
-        Ok(s) => s.1.ip.to_string(),
-    };
-
-    unsafe {
-        esp_idf_sys::esp_task_wdt_reset();
-    } // Reset WDT
-
-    let dns = match &wifi {
-        Err(e) => {
-            // println!("Wifi error: {:?}", e);
-            format!("ERR: {:?}", e)
-        }
-        Ok(s) => {
-            if let Some(value) = s.1.dns {
-                value.to_string()
-            } else {
-                format!("ERR: Unable to unwrap DNS value")
+    #[cfg(feature = "wifi")]
+    {
+        let wifi = wifi::connect();
+        let ip = match &wifi {
+            Err(e) => {
+                println!("Wifi error: {:?}", e);
+                format!("ERR: {:?}", e)
             }
-        }
-    };
+            Ok(s) => s.1.ip.to_string(),
+        };
 
-    let _wifi_client = wifi?.0;
+        unsafe {
+            esp_idf_sys::esp_task_wdt_reset();
+        } // Reset WDT
+
+        let dns = match &wifi {
+            Err(e) => {
+                // println!("Wifi error: {:?}", e);
+                format!("ERR: {:?}", e)
+            }
+            Ok(s) => {
+                if let Some(value) = s.1.dns {
+                    value.to_string()
+                } else {
+                    format!("ERR: Unable to unwrap DNS value")
+                }
+            }
+        };
+
+        let _wifi_client = wifi?.0;
+    }
 
     unsafe {
         esp_idf_sys::esp_task_wdt_reset();
     } // Reset WDT
 
     // setup http server
-    let server_config = HttpServerConfiguration::default();
-    let mut server = EspHttpServer::new(&server_config)?;
+    #[cfg(feature = "httpd_server")]
+    {
+        let server_config = HttpServerConfiguration::default();
+        let mut server = EspHttpServer::new(&server_config)?;
 
-    if !core::get_disable_httpd_flag() {
-        let _resp = http_server::configure_handlers(&mut server)?;
+        if !core::get_disable_httpd_flag() {
+            let _resp = http_server::configure_handlers(&mut server)?;
+        }
     }
 
     // setup I2C Master

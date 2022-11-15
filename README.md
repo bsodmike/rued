@@ -13,7 +13,18 @@ If you have questions, [find me on Discord](https://discord.gg/rust-lang-communi
 
 Conecting to Wifi can be flakey at times, I usually have to reboot it once after each flashing attempt to connect.
 
+## Features
+
+To enable the Httpd server, make sure you add the corresponding feature into the `Cargo.toml` file and recompile.
+
+```
+[features]
+default = ["wifi", "sntp", "httpd_server"]
+```
+
 ## Httpd Server
+
+Make sure this feature is enabled first.
 
 ### GET /test
 
