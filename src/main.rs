@@ -1,49 +1,36 @@
 #![feature(const_btree_new)]
+#![allow(dead_code, unused_variables)]
 
 use ::core::time::Duration;
-use chrono::{
-    naive::NaiveDate,
-    offset::{FixedOffset, Utc},
-    DateTime, Datelike, NaiveDateTime, Timelike, Weekday,
-};
-use cstr_core::CString;
+use anyhow::{Error, Result};
+use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
+use log::{debug, info, warn};
 use once_cell::sync::Lazy;
-use std::env;
-use std::os::unix::raw::time_t;
-use std::{ptr, sync::Mutex, time::*};
+use shared_bus::{I2cProxy, NullMutex};
+use std::{env, ptr, sync::Mutex};
 
 use crate::http::server::{Configuration as HttpServerConfiguration, EspHttpServer};
 use crate::sensors::rtc;
+use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output};
+use esp_idf_hal::i2c::{Master, I2C0};
+use esp_idf_hal::peripherals::Peripherals;
+use esp_idf_svc::{
+    log::EspLogger,
+    sntp::{self, EspSntp, OperatingMode, SntpConf, SyncMode, SyncStatus},
+};
+
 #[allow(unused_imports)]
 use embedded_hal::digital::v2::ToggleableOutputPin;
-use esp_idf_hal::i2c::{self, I2cError, Master, I2C0};
-use esp_idf_hal::peripherals::Peripherals;
-use esp_idf_hal::{
-    gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output},
-    serial::config::DataBits,
-};
-use esp_idf_svc::log::EspLogger;
-use esp_idf_svc::timer::EspTimerService;
+
+#[allow(unused_imports)]
 use esp_idf_sys::{
     self as _, settimeofday, sntp_init, sntp_set_sync_interval, sntp_set_time_sync_notification_cb,
-    sntp_stop, timeval, timezone,
+    sntp_stop, time_t, timeval, timezone,
 }; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
-
-// Time stuff
-use embedded_svc::sys_time::SystemTime;
-use esp_idf_svc::systime::EspSystemTime;
-
-use esp_idf_svc::sntp::{self, EspSntp};
-use esp_idf_svc::sntp::{OperatingMode, SntpConf, SyncMode, SyncStatus};
-
-use anyhow::{Error, Result};
-use log::{debug, info, warn};
-use shared_bus::{I2cProxy, NullMutex};
-use std::error::Error as StdError;
-use std::fmt;
 
 mod core;
 mod display;
+mod error;
 mod http;
 mod http_client;
 mod http_server;
@@ -55,63 +42,6 @@ const PASSWORD: &str = env!("WIFI_PASS");
 
 type GpioSda = Gpio21<InputOutput>;
 type GpioScl = Gpio22<Output>;
-
-pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
-
-#[derive(Debug)]
-pub struct BlanketError {
-    inner: BoxError,
-}
-
-impl BlanketError {
-    /// Create a new `Error` from a boxable error.
-    pub fn new(error: impl Into<BoxError>) -> Self {
-        Self {
-            inner: error.into(),
-        }
-    }
-
-    /// Convert an `Error` back into the underlying boxed trait object.
-    pub fn into_inner(self) -> BoxError {
-        self.inner
-    }
-}
-
-impl fmt::Display for BlanketError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.inner.fmt(f)
-    }
-}
-
-impl StdError for BlanketError {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        Some(&*self.inner)
-    }
-}
-
-impl From<esp_idf_sys::EspError> for BlanketError {
-    fn from(error: esp_idf_sys::EspError) -> Self {
-        Self {
-            inner: error.into(),
-        }
-    }
-}
-
-impl From<std::io::Error> for BlanketError {
-    fn from(error: std::io::Error) -> Self {
-        Self {
-            inner: error.into(),
-        }
-    }
-}
-
-impl From<I2cError> for BlanketError {
-    fn from(error: I2cError) -> Self {
-        Self {
-            inner: error.into(),
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct RTClock {
@@ -273,6 +203,7 @@ impl SystemTimeBuffer {
     }
 }
 
+const CURRENT_YEAR: u16 = 2022;
 const UTC_OFFSET_CHRONO: Utc = Utc;
 static UPDATE_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 static FALLBACK_TO_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
@@ -287,7 +218,7 @@ pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut time
     };
     let dt = DateTime::<Utc>::from_utc(naive_dt, Utc);
 
-    if dt.year() == 1970 {
+    if dt.year() < CURRENT_YEAR.into() {
         // Do not update RTC.
         core::fallback_to_rtc_enable();
 
@@ -366,9 +297,9 @@ fn main() -> Result<()> {
     } // Reset WDT
 
     // setup http server
-    // let server_config = HttpServerConfiguration::default();
-    // let mut server = EspHttpServer::new(&server_config)?;
-    // let _resp = http_server::configure_handlers(&mut server)?;
+    let server_config = HttpServerConfiguration::default();
+    let mut server = EspHttpServer::new(&server_config)?;
+    let _resp = http_server::configure_handlers(&mut server)?;
 
     // setup I2C Master
     let i2c_master = sensors::i2c::configure::<GpioScl, GpioSda>(peripherals.i2c0, scl, sda)?;
@@ -452,8 +383,10 @@ fn main() -> Result<()> {
                 core::update_rtc_disable();
             }
 
+            // This only occurs if SNTP update resolves in a valid update, but the updated
+            // year is < the current year.
             if core::get_fallback_to_rtc_flag() {
-                todo!();
+                update_local_from_rtc(&latest_system_time, &mut rtc, &mut rtc_clock)?;
                 info!("[OK]: Updated System Clock from RTC time");
 
                 esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
@@ -472,36 +405,48 @@ unsafe fn get_system_time_with_fallback(
 ) -> Result<SystemTimeBuffer> {
     let system_time = get_system_time()?;
 
-    if system_time.year >= 2022 {
+    if system_time.year >= CURRENT_YEAR {
         // Update RTC clock from System time due to SNTP update
         update_rtc_from_local(rtc, &system_time)?;
     } else {
-        // This should be from the RTC clock
-        rtc_clock.update_time(rtc)?;
-        let dt = rtc_clock.datetime()?;
-
-        // If the System time has not been updated due to any SNTP failure,
-        // update the System time from the RTC clock.
-        let tz = timezone {
-            tz_minuteswest: 0,
-            tz_dsttime: 0,
-        };
-
-        let tv_sec = dt.timestamp() as i32;
-        let tv_usec = dt.timestamp_subsec_micros() as i32;
-        let tm = timeval { tv_sec, tv_usec };
-
-        settimeofday(&tm, &tz);
-        info!(
-            "Updated System Clock from RTC time: {} / sec: {}, usec: {}",
-            system_time.to_rfc3339()?,
-            tv_sec,
-            tv_usec
-        );
-        info!("timestamp: {}", dt.timestamp());
+        update_local_from_rtc(&system_time, rtc, rtc_clock)?;
     }
 
     Ok(system_time)
+}
+
+unsafe fn update_local_from_rtc(
+    system_time: &SystemTimeBuffer,
+    rtc: &mut crate::sensors::rtc::rv8803::RV8803<
+        I2cProxy<NullMutex<Master<I2C0, Gpio21<InputOutput>, Gpio22<Output>>>>,
+    >,
+    rtc_clock: &mut RTClock,
+) -> Result<bool> {
+    // This should be from the RTC clock
+    rtc_clock.update_time(rtc)?;
+    let dt = rtc_clock.datetime()?;
+
+    // If the System time has not been updated due to any SNTP failure,
+    // update the System time from the RTC clock.
+    let tz = timezone {
+        tz_minuteswest: 0,
+        tz_dsttime: 0,
+    };
+
+    let tv_sec = dt.timestamp() as i32;
+    let tv_usec = dt.timestamp_subsec_micros() as i32;
+    let tm = timeval { tv_sec, tv_usec };
+
+    settimeofday(&tm, &tz);
+    info!(
+        "Updated System Clock from RTC time: {} / sec: {}, usec: {}",
+        system_time.to_rfc3339()?,
+        tv_sec,
+        tv_usec
+    );
+    info!("timestamp: {}", dt.timestamp());
+
+    Ok(true)
 }
 
 fn update_rtc_from_local(

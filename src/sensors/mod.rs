@@ -45,7 +45,7 @@ pub mod i2c {
         i2c0: HalI2c::I2C0,
         scl: T,
         sda: U,
-    ) -> Result<Master<I2C0, U, T>, crate::BlanketError>
+    ) -> Result<Master<I2C0, U, T>, crate::error::BlanketError>
     where
         T: esp_idf_hal::gpio::Pin + esp_idf_hal::gpio::OutputPin + esp_idf_hal::gpio::InputPin,
         U: esp_idf_hal::gpio::Pin + esp_idf_hal::gpio::InputPin + esp_idf_hal::gpio::OutputPin,
