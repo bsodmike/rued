@@ -205,6 +205,7 @@ impl SystemTimeBuffer {
 
 const CURRENT_YEAR: u16 = 2022;
 const UTC_OFFSET_CHRONO: Utc = Utc;
+const SNTP_RETRY_COUNT: u32 = 200_000;
 static UPDATE_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 static FALLBACK_TO_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
@@ -305,7 +306,10 @@ fn main() -> Result<()> {
     // setup http server
     let server_config = HttpServerConfiguration::default();
     let mut server = EspHttpServer::new(&server_config)?;
-    let _resp = http_server::configure_handlers(&mut server)?;
+
+    if !core::get_disable_httpd_flag() {
+        let _resp = http_server::configure_handlers(&mut server)?;
+    }
 
     // setup I2C Master
     let i2c_master = sensors::i2c::configure::<GpioScl, GpioSda>(peripherals.i2c0, scl, sda)?;
@@ -530,7 +534,7 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
 
         i += 1;
 
-        if i >= 50000 {
+        if i >= SNTP_RETRY_COUNT {
             warn!("SNTP attempted connection {} times. Now quitting.", i);
             success = false;
             break;
