@@ -9,6 +9,7 @@ use once_cell::sync::Lazy;
 use shared_bus::{I2cProxy, NullMutex};
 use std::{env, ptr, sync::Mutex};
 
+#[allow(unused_imports)]
 use crate::http::server::{Configuration as HttpServerConfiguration, EspHttpServer};
 use crate::sensors::rtc;
 use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output};
@@ -205,8 +206,15 @@ impl SystemTimeBuffer {
 
 const CURRENT_YEAR: u16 = 2022;
 const UTC_OFFSET_CHRONO: Utc = Utc;
+const SNTP_RETRY_COUNT: u32 = 200_000;
 static UPDATE_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 static FALLBACK_TO_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+
+// false: SNTP is enabled
+static DISABLE_SNTP: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+
+// false: HTTPd is enabled
+static DISABLE_HTTPD: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut timeval) {
     let naive_dt_opt = NaiveDateTime::from_timestamp_opt((*tv).tv_sec as i64, 0);
@@ -263,43 +271,52 @@ fn main() -> Result<()> {
     let _gpio_d1: Gpio27<Output> = peripherals.pins.gpio27.into_output().unwrap();
 
     // wifi
-    let wifi = wifi::connect();
-    let ip = match &wifi {
-        Err(e) => {
-            println!("Wifi error: {:?}", e);
-            format!("ERR: {:?}", e)
-        }
-        Ok(s) => s.1.ip.to_string(),
-    };
-
-    unsafe {
-        esp_idf_sys::esp_task_wdt_reset();
-    } // Reset WDT
-
-    let dns = match &wifi {
-        Err(e) => {
-            // println!("Wifi error: {:?}", e);
-            format!("ERR: {:?}", e)
-        }
-        Ok(s) => {
-            if let Some(value) = s.1.dns {
-                value.to_string()
-            } else {
-                format!("ERR: Unable to unwrap DNS value")
+    #[cfg(feature = "wifi")]
+    {
+        let wifi = wifi::connect();
+        let ip = match &wifi {
+            Err(e) => {
+                println!("Wifi error: {:?}", e);
+                format!("ERR: {:?}", e)
             }
-        }
-    };
+            Ok(s) => s.1.ip.to_string(),
+        };
 
-    let _wifi_client = wifi?.0;
+        unsafe {
+            esp_idf_sys::esp_task_wdt_reset();
+        } // Reset WDT
+
+        let dns = match &wifi {
+            Err(e) => {
+                // println!("Wifi error: {:?}", e);
+                format!("ERR: {:?}", e)
+            }
+            Ok(s) => {
+                if let Some(value) = s.1.dns {
+                    value.to_string()
+                } else {
+                    format!("ERR: Unable to unwrap DNS value")
+                }
+            }
+        };
+
+        let _wifi_client = wifi?.0;
+    }
 
     unsafe {
         esp_idf_sys::esp_task_wdt_reset();
     } // Reset WDT
 
     // setup http server
-    let server_config = HttpServerConfiguration::default();
-    let mut server = EspHttpServer::new(&server_config)?;
-    let _resp = http_server::configure_handlers(&mut server)?;
+    #[cfg(feature = "httpd_server")]
+    {
+        let server_config = HttpServerConfiguration::default();
+        let mut server = EspHttpServer::new(&server_config)?;
+
+        if !core::get_disable_httpd_flag() {
+            let _resp = http_server::configure_handlers(&mut server)?;
+        }
+    }
 
     // setup I2C Master
     let i2c_master = sensors::i2c::configure::<GpioScl, GpioSda>(peripherals.i2c0, scl, sda)?;
@@ -508,7 +525,10 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
 
     // redefine and restart the callback.
     sntp_set_time_sync_notification_cb(Some(sntp_set_time_sync_notification_cb_custom));
-    sntp_init();
+
+    if !core::get_disable_sntp_flag() {
+        sntp_init();
+    }
 
     esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
 
@@ -521,7 +541,7 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
 
         i += 1;
 
-        if i >= 50000 {
+        if i >= SNTP_RETRY_COUNT {
             warn!("SNTP attempted connection {} times. Now quitting.", i);
             success = false;
             break;

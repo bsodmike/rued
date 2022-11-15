@@ -13,6 +13,10 @@ If you have questions, [find me on Discord](https://discord.gg/rust-lang-communi
 
 Conecting to Wifi can be flakey at times, I usually have to reboot it once after each flashing attempt to connect.
 
+## Features
+
+To enable the Httpd server, use the features provided such as `cargo build --features httpd_server_enabled --release`.
+
 ## Httpd Server
 
 ### GET /test

@@ -14,6 +14,12 @@ opt-level = "z"
 
 [features]
 pio = ["esp-idf-sys/pio"]
+default = ["wifi", "sntp"]
+httpd_server_enabled = ["wifi", "sntp", "httpd_server"]
+
+wifi = []
+sntp = []
+httpd_server = []
 
 [dependencies]
 anyhow = "1"
