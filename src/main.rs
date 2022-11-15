@@ -487,7 +487,7 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
 
     // redefine and restart the callback.
     sntp_set_time_sync_notification_cb(Some(sntp_set_time_sync_notification_cb_custom));
-    // sntp_init();
+    sntp_init();
 
     esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
 
