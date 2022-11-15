@@ -1,6 +1,5 @@
 use anyhow::Result;
-use esp_idf_hal::i2c::{self, Master, I2C0};
-use esp_idf_hal::units::FromValueType;
+use esp_idf_hal::i2c::{Master, I2C0};
 
 use embedded_graphics::{
     mono_font::{ascii::FONT_6X10, MonoTextStyleBuilder},

@@ -1,32 +1,11 @@
-use anyhow::{Error, Result};
-use esp_idf_hal::i2c::{self, Master, I2C0};
-use esp_idf_hal::units::FromValueType;
-
-// pub fn setup<E, T, U>(master: Master<I2C0, U, T>) -> Result<Master<I2C0, U, T>>
-// where
-//     T: esp_idf_hal::gpio::Pin + esp_idf_hal::gpio::OutputPin + esp_idf_hal::gpio::InputPin,
-//     U: esp_idf_hal::gpio::Pin + esp_idf_hal::gpio::InputPin + esp_idf_hal::gpio::OutputPin,
-//     E: std::fmt::Debug,
-// {
-//     let i2c = master;
-
-//     Ok(i2c)
-// }
-
 pub mod rv8803 {
     #![deny(unsafe_code)]
 
-    use std::error::Error as StdError;
-    use std::fmt;
-    use std::num::TryFromIntError;
-
-    use anyhow::{Error, Result};
+    use crate::error::BlanketError;
+    use anyhow::Result;
     use embedded_hal::blocking::i2c;
-    use esp_idf_hal::gpio::{Gpio21, Gpio22, InputOutput, Output};
-    use log::{error, info};
-    use shared_bus::{I2cProxy, NullMutex};
-
-    use crate::BlanketError;
+    use log::{debug, info};
+    use std::fmt;
 
     pub const TIME_ARRAY_LENGTH: usize = 8;
     const RV8803_ENABLE: bool = true;
@@ -100,12 +79,12 @@ pub mod rv8803 {
                 RV8803_DISABLE,
             )?;
 
-            info!("rv8803::set_time: updated RTC clock");
+            debug!("rv8803::set_time: updated RTC clock");
 
             Ok(true)
         }
 
-        pub fn update_time(&mut self, dest: &mut [u8]) -> Result<bool, crate::BlanketError> {
+        pub fn update_time(&mut self, dest: &mut [u8]) -> Result<bool, crate::error::BlanketError> {
             if (self.read_multiple_registers(
                 Register::Hundredths.address(),
                 dest,

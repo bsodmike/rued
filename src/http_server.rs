@@ -40,7 +40,7 @@ pub fn configure_handlers(server: &mut EspHttpServer) -> Result<()> {
         }
 
         // fetch url
-        let resp = crate::http_client::get("http://info.cern.chx/")?;
+        let resp = crate::http_client::get("http://info.cern.ch/")?;
         let body = if let Some(body) = resp {
             println!("Response body: {}", body);
             body
