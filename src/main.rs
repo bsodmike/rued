@@ -405,9 +405,17 @@ unsafe fn get_system_time_with_fallback(
 ) -> Result<SystemTimeBuffer> {
     let system_time = get_system_time()?;
 
+    // debug!(
+    //     "System time Year: ({} / {}) / Current Year {}",
+    //     &system_time.year,
+    //     &system_time.to_rfc3339()?,
+    //     CURRENT_YEAR
+    // );
     if system_time.year >= CURRENT_YEAR {
         // Update RTC clock from System time due to SNTP update
-        update_rtc_from_local(rtc, &system_time)?;
+
+        // FIXME: Disabled as this is done via the callback flag.
+        // update_rtc_from_local(rtc, &system_time)?;
     } else {
         update_local_from_rtc(&system_time, rtc, rtc_clock)?;
     }
@@ -457,7 +465,7 @@ fn update_rtc_from_local(
 ) -> Result<bool> {
     let weekday = latest_system_time.weekday()?;
 
-    Ok(rtc.set_time(
+    let resp = rtc.set_time(
         latest_system_time.seconds,
         latest_system_time.minutes,
         latest_system_time.hours,
@@ -465,7 +473,14 @@ fn update_rtc_from_local(
         latest_system_time.date,
         latest_system_time.month,
         latest_system_time.year,
-    )?)
+    )?;
+
+    info!(
+        "Updated RTC Clock from local time: {}",
+        latest_system_time.to_rfc3339()?
+    );
+
+    Ok(resp)
 }
 
 /// Configure SNTP
@@ -493,14 +508,14 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
 
     info!("SNTP initialized, waiting for status!");
 
-    let mut i: u16 = 0;
+    let mut i: u32 = 0;
     let mut success = true;
     while sntp.get_sync_status() != SyncStatus::Completed {
         esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
 
         i += 1;
 
-        if i >= 1024 {
+        if i >= 50000 {
             warn!("SNTP attempted connection {} times. Now quitting.", i);
             success = false;
             break;
@@ -508,7 +523,7 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
     }
 
     if success {
-        info!("SNTP status received!");
+        info!("SNTP status received! / Re-try count: {}", i);
     }
 
     Ok(sntp)

@@ -4,7 +4,7 @@ pub mod rv8803 {
     use crate::error::BlanketError;
     use anyhow::Result;
     use embedded_hal::blocking::i2c;
-    use log::info;
+    use log::{debug, info};
     use std::fmt;
 
     pub const TIME_ARRAY_LENGTH: usize = 8;
@@ -79,7 +79,7 @@ pub mod rv8803 {
                 RV8803_DISABLE,
             )?;
 
-            info!("rv8803::set_time: updated RTC clock");
+            debug!("rv8803::set_time: updated RTC clock");
 
             Ok(true)
         }
