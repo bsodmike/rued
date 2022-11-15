@@ -151,12 +151,12 @@ pub mod rv8803 {
                 if i != 4 {
                     // println!("Raw: {} / BCD to Dec: {}", *el, bcd_to_dec(*el));
                     buf[i] = bcd_to_dec(*el)
+                } else {
+                    buf[i] = *el
                 }
             }
 
             std::io::copy(&mut &buf[0..buf.len()], &mut dest.as_mut())?;
-
-            // };
 
             Ok(true)
         }
@@ -312,20 +312,6 @@ pub mod rv8803 {
                 32 => Self::Friday,
                 64 => Self::Saturday,
                 _ => Self::Sunday,
-            }
-        }
-    }
-
-    impl From<time::Weekday> for Weekday {
-        fn from(day: time::Weekday) -> Self {
-            match day {
-                time::Weekday::Sunday => Self::Sunday,
-                time::Weekday::Monday => Self::Monday,
-                time::Weekday::Tuesday => Self::Tuesday,
-                time::Weekday::Wednesday => Self::Wednesday,
-                time::Weekday::Thursday => Self::Thursday,
-                time::Weekday::Friday => Self::Friday,
-                time::Weekday::Saturday => Self::Saturday,
             }
         }
     }

@@ -4,7 +4,7 @@ use ::core::time::Duration;
 use chrono::{
     naive::NaiveDate,
     offset::{FixedOffset, Utc},
-    DateTime, Datelike, Weekday,
+    DateTime, Datelike, NaiveDateTime, Timelike, Weekday,
 };
 use cstr_core::CString;
 use once_cell::sync::Lazy;
@@ -31,9 +31,6 @@ use esp_idf_sys::{
 // Time stuff
 use embedded_svc::sys_time::SystemTime;
 use esp_idf_svc::systime::EspSystemTime;
-
-use time::macros::offset;
-use time::{Date, Month, OffsetDateTime, Time, UtcOffset};
 
 use esp_idf_svc::sntp::{self, EspSntp};
 use esp_idf_svc::sntp::{OperatingMode, SntpConf, SyncMode, SyncStatus};
@@ -214,11 +211,6 @@ pub struct RTCReading {
 
 impl RTCReading {
     fn to_s(&self) -> Result<String> {
-        let mut utc_offset = UTC_OFFSET.to_string();
-        if UTC_OFFSET.is_utc() {
-            utc_offset = String::from("UTC");
-        }
-
         let weekday: crate::rtc::rv8803::Weekday = self.weekday.into();
 
         Ok(format!(
@@ -230,7 +222,7 @@ impl RTCReading {
             self.hours,
             self.minutes,
             self.seconds,
-            utc_offset
+            UTC_OFFSET_CHRONO
         ))
     }
 }
@@ -269,8 +261,10 @@ impl SystemTimeBuffer {
         Ok(self.datetime.to_rfc3339())
     }
 
-    fn weekday(&self) -> Result<Weekday> {
-        Ok(self.datetime.weekday())
+    fn weekday(&self) -> Result<rtc::rv8803::Weekday> {
+        let rtc_weekday: rtc::rv8803::Weekday = self.datetime.weekday().into();
+
+        Ok(rtc_weekday)
     }
 
     fn datetime(&self) -> Result<DateTime<Utc>> {
@@ -278,24 +272,21 @@ impl SystemTimeBuffer {
     }
 }
 
-const UTC_OFFSET: UtcOffset = UtcOffset::UTC;
 const UTC_OFFSET_CHRONO: Utc = Utc;
 static UPDATE_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 static FALLBACK_TO_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut timeval) {
-    let err_value: i64 = 0;
-    let offset = match OffsetDateTime::from_unix_timestamp((*tv).tv_sec as i64) {
-        Ok(value) => value,
-        Err(_) => OffsetDateTime::from_unix_timestamp(err_value).unwrap(),
+    let naive_dt_opt = NaiveDateTime::from_timestamp_opt((*tv).tv_sec as i64, 0);
+    let naive_dt = if let Some(value) = naive_dt_opt {
+        value
+    } else {
+        // FIXME this is bad.
+        NaiveDateTime::default()
     };
+    let dt = DateTime::<Utc>::from_utc(naive_dt, Utc);
 
-    let utc_with_offset = offset.to_offset(UTC_OFFSET);
-    let _offset = utc_with_offset.offset();
-
-    let (year, _, _) = utc_with_offset.date().to_calendar_date();
-
-    if year == 1970 {
+    if dt.year() == 1970 {
         // Do not update RTC.
         core::fallback_to_rtc_enable();
 
@@ -518,14 +509,13 @@ fn update_rtc_from_local(
     >,
     latest_system_time: &SystemTimeBuffer,
 ) -> Result<bool> {
-    let weekday: Weekday = latest_system_time.weekday()?;
-    let rtc_weekday: rtc::rv8803::Weekday = weekday.into();
+    let weekday = latest_system_time.weekday()?;
 
     Ok(rtc.set_time(
         latest_system_time.seconds,
         latest_system_time.minutes,
         latest_system_time.hours,
-        rtc_weekday.value(),
+        weekday.value(),
         latest_system_time.date,
         latest_system_time.month,
         latest_system_time.year,
@@ -581,28 +571,25 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
 unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
     let timer: *mut time_t = ptr::null_mut();
     let timestamp = esp_idf_sys::time(timer);
-    let utc_with_offset =
-        OffsetDateTime::from_unix_timestamp(timestamp as i64)?.to_offset(UTC_OFFSET);
 
-    let actual_time = utc_with_offset.time();
-    let actual_date = utc_with_offset.date();
+    let naive_dt_opt = NaiveDateTime::from_timestamp_opt(timestamp as i64, 0);
+    let naivedatetime_utc = if let Some(value) = naive_dt_opt {
+        value
+    } else {
+        return Err(Error::msg(
+            "Unable to unwrap NaiveDateTime, when attempting to parse UNIX timestamp",
+        ));
+    };
 
-    let (hours, mins, secs) = actual_time.as_hms();
-    let (year, month, date) = actual_date.to_calendar_date();
-
-    let naivedatetime_utc = NaiveDate::from_ymd_opt(year, month as u32, date as u32)
-        .unwrap()
-        .and_hms_opt(hours as u32, mins as u32, secs as u32)
-        .unwrap();
     let datetime_utc = DateTime::<Utc>::from_utc(naivedatetime_utc, UTC_OFFSET_CHRONO);
 
     let buf = SystemTimeBuffer {
-        date,
-        year: year as u16,
-        hours,
-        minutes: mins,
-        seconds: secs,
-        month: month.into(),
+        date: datetime_utc.day() as u8,
+        year: datetime_utc.year() as u16,
+        hours: datetime_utc.hour() as u8,
+        minutes: datetime_utc.minute() as u8,
+        seconds: datetime_utc.second() as u8,
+        month: datetime_utc.month() as u8,
         datetime: datetime_utc,
     };
 
