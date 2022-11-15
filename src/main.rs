@@ -500,8 +500,8 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
 
         i += 1;
 
-        if i >= 30 {
-            info!("SNTP attempted connection {} times. Now quitting.", i);
+        if i >= 1024 {
+            warn!("SNTP attempted connection {} times. Now quitting.", i);
             success = false;
             break;
         }
