@@ -1,6 +1,11 @@
 #![feature(const_btree_new)]
 
 use ::core::time::Duration;
+use chrono::{
+    naive::NaiveDate,
+    offset::{FixedOffset, Utc},
+    DateTime, Datelike, Weekday,
+};
 use cstr_core::CString;
 use once_cell::sync::Lazy;
 use std::os::unix::raw::time_t;
@@ -10,14 +15,17 @@ use crate::http::server::{Configuration as HttpServerConfiguration, EspHttpServe
 use crate::sensors::rtc;
 #[allow(unused_imports)]
 use embedded_hal::digital::v2::ToggleableOutputPin;
-use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output};
 use esp_idf_hal::i2c::{self, I2cError, Master, I2C0};
 use esp_idf_hal::peripherals::Peripherals;
+use esp_idf_hal::{
+    gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output},
+    serial::config::DataBits,
+};
 use esp_idf_svc::log::EspLogger;
 use esp_idf_svc::timer::EspTimerService;
 use esp_idf_sys::{
-    self as _, sntp_init, sntp_set_sync_interval, sntp_set_time_sync_notification_cb, sntp_stop,
-    timeval,
+    self as _, settimeofday, sntp_init, sntp_set_sync_interval, sntp_set_time_sync_notification_cb,
+    sntp_stop, timeval, timezone,
 }; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
 // Time stuff
@@ -25,7 +33,7 @@ use embedded_svc::sys_time::SystemTime;
 use esp_idf_svc::systime::EspSystemTime;
 
 use time::macros::offset;
-use time::{Date, OffsetDateTime, Time, UtcOffset};
+use time::{Date, Month, OffsetDateTime, Time, UtcOffset};
 
 use esp_idf_svc::sntp::{self, EspSntp};
 use esp_idf_svc::sntp::{OperatingMode, SntpConf, SyncMode, SyncStatus};
@@ -108,6 +116,91 @@ impl From<I2cError> for BlanketError {
 }
 
 #[derive(Debug)]
+pub struct RTClock {
+    datetime: Option<DateTime<Utc>>,
+}
+
+impl RTClock {
+    fn new() -> Self {
+        Self { datetime: None }
+    }
+
+    fn update_time(
+        &mut self,
+        rtc: &mut crate::sensors::rtc::rv8803::RV8803<
+            I2cProxy<NullMutex<Master<I2C0, Gpio21<InputOutput>, Gpio22<Output>>>>,
+        >,
+    ) -> Result<RTCReading> {
+        let mut time = [0_u8; rtc::rv8803::TIME_ARRAY_LENGTH];
+
+        // Fetch time from RTC.
+        let update = rtc.update_time(&mut time)?;
+        if !update {
+            warn!("RTC: Failed reading latest time");
+            println!("{:?}", time);
+        }
+
+        // FIXME: wierd bug where hundreth's value does not update inside this loop, without the use of debugging output
+        println!("_time: {:?}", &time);
+
+        let reading = RTCReading {
+            hours: time[3],
+            minutes: time[2],
+            seconds: time[1],
+            hundreths: time[0],
+            weekday: time[4],
+            date: time[5],
+            month: time[6],
+            year: format!("20{}", time[7])
+                .to_string()
+                .parse::<u32>()
+                .unwrap_or_default(),
+        };
+
+        let naivedatetime_utc = NaiveDate::from_ymd_opt(
+            reading.year as i32,
+            reading.month as u32,
+            reading.date as u32,
+        )
+        .unwrap()
+        .and_hms_opt(
+            reading.hours as u32,
+            reading.minutes as u32,
+            reading.seconds as u32,
+        )
+        .unwrap();
+        let datetime_utc = DateTime::<Utc>::from_utc(naivedatetime_utc, UTC_OFFSET_CHRONO);
+        self.datetime = Some(datetime_utc);
+
+        Ok(reading)
+    }
+
+    fn to_timestamp(&self) -> Result<i64> {
+        let datetime = if let Some(dt) = self.datetime {
+            dt
+        } else {
+            return Err(Error::msg(
+                "Unable to unwrap datetime, when attempting to return UNIX timestamp",
+            ));
+        };
+
+        Ok(datetime.timestamp())
+    }
+
+    fn datetime(&self) -> Result<DateTime<Utc>> {
+        let datetime = if let Some(dt) = self.datetime {
+            dt
+        } else {
+            return Err(Error::msg(
+                "Unable to unwrap datetime, when attempting to return UNIX timestamp",
+            ));
+        };
+
+        Ok(datetime)
+    }
+}
+
+#[derive(Debug)]
 pub struct RTCReading {
     hours: u8,
     minutes: u8,
@@ -150,17 +243,11 @@ pub struct SystemTimeBuffer {
     hours: u8,
     minutes: u8,
     seconds: u8,
-    full_date: Date,
-    full_time: Time,
+    datetime: DateTime<Utc>,
 }
 
 impl SystemTimeBuffer {
     fn to_s(&self) -> Result<String> {
-        let mut utc_offset = UTC_OFFSET.to_string();
-        if UTC_OFFSET.is_utc() {
-            utc_offset = String::from("UTC");
-        }
-
         Ok(format!(
             "{} {}-{:0>2}-{:0>2} {:0>2}:{:0>2}:{:0>2} {}",
             self.weekday()?,
@@ -170,20 +257,29 @@ impl SystemTimeBuffer {
             self.hours,
             self.minutes,
             self.seconds,
-            utc_offset
+            UTC_OFFSET_CHRONO
         ))
     }
 
-    fn to_rfc3339(&self) -> Result<String> {
-        todo!();
+    fn to_timestamp(&self) -> Result<i64> {
+        Ok(self.datetime.timestamp())
     }
 
-    fn weekday(&self) -> Result<time::Weekday> {
-        Ok(self.full_date.weekday())
+    fn to_rfc3339(&self) -> Result<String> {
+        Ok(self.datetime.to_rfc3339())
+    }
+
+    fn weekday(&self) -> Result<Weekday> {
+        Ok(self.datetime.weekday())
+    }
+
+    fn datetime(&self) -> Result<DateTime<Utc>> {
+        Ok(self.datetime)
     }
 }
 
 const UTC_OFFSET: UtcOffset = UtcOffset::UTC;
+const UTC_OFFSET_CHRONO: Utc = Utc;
 static UPDATE_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 static FALLBACK_TO_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
@@ -302,8 +398,6 @@ fn main() -> Result<()> {
     let mut rtc =
         sensors::rtc::rv8803::RV8803::new(proxy_1, sensors::rtc::rv8803::DeviceAddr::B011_0010)?;
 
-    let mut _time = [0_u8; rtc::rv8803::TIME_ARRAY_LENGTH];
-
     // // setup display
     // if let Err(e) = display::display_test::<Error, GpioScl, GpioSda>(i2c_master, &ip, &dns) {
     //     println!("Display error: {:?}", e)
@@ -322,8 +416,10 @@ fn main() -> Result<()> {
     } // Reset WDT
 
     unsafe {
+        let mut rtc_clock = RTClock::new();
+
         let sntp = sntp_setup()?;
-        get_system_time_with_fallback(&mut rtc)?;
+        get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
 
         loop {
             toggle_led::<anyhow::Error, Gpio14<Output>>(&mut led_onboard);
@@ -338,30 +434,8 @@ fn main() -> Result<()> {
             std::thread::sleep(Duration::from_millis(500));
             esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
 
-            // Fetch time from RTC.
-            let update = rtc.update_time(&mut _time)?;
-            if !update {
-                warn!("RTC: Failed reading latest time");
-                println!("{:?}", _time);
-            }
-
-            // FIXME: wierd bug where hundreth's value does not update inside this loop, without the use of debugging output
-            println!("_time: {:?}", &_time);
-
-            let reading = RTCReading {
-                hours: _time[3],
-                minutes: _time[2],
-                seconds: _time[1],
-                hundreths: _time[0],
-                weekday: _time[4],
-                date: _time[5],
-                month: _time[6],
-                year: format!("20{}", _time[7])
-                    .to_string()
-                    .parse::<u32>()
-                    .unwrap_or_default(),
-            };
-            let latest_system_time = get_system_time_with_fallback(&mut rtc)?;
+            let rtc_reading = &rtc_clock.update_time(&mut rtc)?;
+            let latest_system_time = get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
 
             info!(
                 r#"
@@ -374,7 +448,7 @@ fn main() -> Result<()> {
            RTC in local TZ: 
                 "#,
                 latest_system_time.to_s()?,
-                reading.to_s()?,
+                rtc_reading.to_s()?,
             );
 
             if core::get_update_rtc_flag() {
@@ -402,13 +476,37 @@ unsafe fn get_system_time_with_fallback(
     rtc: &mut crate::sensors::rtc::rv8803::RV8803<
         I2cProxy<NullMutex<Master<I2C0, Gpio21<InputOutput>, Gpio22<Output>>>>,
     >,
+    rtc_clock: &mut RTClock,
 ) -> Result<SystemTimeBuffer> {
     let system_time = get_system_time()?;
 
     if system_time.year >= 2022 {
+        // Update RTC clock from System time due to SNTP update
         update_rtc_from_local(rtc, &system_time)?;
     } else {
-        todo!();
+        // This should be from the RTC clock
+        rtc_clock.update_time(rtc)?;
+        let dt = rtc_clock.datetime()?;
+
+        // If the System time has not been updated due to any SNTP failure,
+        // update the System time from the RTC clock.
+        let tz = timezone {
+            tz_minuteswest: 0,
+            tz_dsttime: 0,
+        };
+
+        let tv_sec = dt.timestamp() as i32;
+        let tv_usec = dt.timestamp_subsec_micros() as i32;
+        let tm = timeval { tv_sec, tv_usec };
+
+        settimeofday(&tm, &tz);
+        info!(
+            "Updated System Clock from RTC time: {} / sec: {}, usec: {}",
+            system_time.to_rfc3339()?,
+            tv_sec,
+            tv_usec
+        );
+        info!("timestamp: {}", dt.timestamp());
     }
 
     Ok(system_time)
@@ -420,7 +518,7 @@ fn update_rtc_from_local(
     >,
     latest_system_time: &SystemTimeBuffer,
 ) -> Result<bool> {
-    let weekday: time::Weekday = latest_system_time.weekday()?;
+    let weekday: Weekday = latest_system_time.weekday()?;
     let rtc_weekday: rtc::rv8803::Weekday = weekday.into();
 
     Ok(rtc.set_time(
@@ -453,18 +551,29 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
 
     // redefine and restart the callback.
     sntp_set_time_sync_notification_cb(Some(sntp_set_time_sync_notification_cb_custom));
-    sntp_init();
+    // sntp_init();
 
     esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
 
     info!("SNTP initialized, waiting for status!");
 
+    let mut i: u16 = 0;
+    let mut success = true;
     while sntp.get_sync_status() != SyncStatus::Completed {
         esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
+
+        i += 1;
+
+        if i >= 30 {
+            info!("SNTP attempted connection {} times. Now quitting.", i);
+            success = false;
+            break;
+        }
     }
 
-    info!("SNTP status received!");
-    esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
+    if success {
+        info!("SNTP status received!");
+    }
 
     Ok(sntp)
 }
@@ -481,6 +590,12 @@ unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
     let (hours, mins, secs) = actual_time.as_hms();
     let (year, month, date) = actual_date.to_calendar_date();
 
+    let naivedatetime_utc = NaiveDate::from_ymd_opt(year, month as u32, date as u32)
+        .unwrap()
+        .and_hms_opt(hours as u32, mins as u32, secs as u32)
+        .unwrap();
+    let datetime_utc = DateTime::<Utc>::from_utc(naivedatetime_utc, UTC_OFFSET_CHRONO);
+
     let buf = SystemTimeBuffer {
         date,
         year: year as u16,
@@ -488,12 +603,8 @@ unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
         minutes: mins,
         seconds: secs,
         month: month.into(),
-        full_date: actual_date,
-        full_time: actual_time,
+        datetime: datetime_utc,
     };
-
-    let mut now: u64 = 0;
-    let mut time_buf: u64 = 0;
 
     Ok(buf)
 }

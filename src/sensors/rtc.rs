@@ -329,4 +329,18 @@ pub mod rv8803 {
             }
         }
     }
+
+    impl From<chrono::Weekday> for Weekday {
+        fn from(day: chrono::Weekday) -> Self {
+            match day {
+                chrono::Weekday::Sun => Self::Sunday,
+                chrono::Weekday::Mon => Self::Monday,
+                chrono::Weekday::Tue => Self::Tuesday,
+                chrono::Weekday::Wed => Self::Wednesday,
+                chrono::Weekday::Thu => Self::Thursday,
+                chrono::Weekday::Fri => Self::Friday,
+                chrono::Weekday::Sat => Self::Saturday,
+            }
+        }
+    }
 }
