@@ -269,14 +269,22 @@ pub mod rv8803 {
 
         pub fn to_s(&self) -> String {
             match self {
-                Weekday::Sunday => "Sunday".to_string(),
-                Weekday::Monday => "Monday".to_string(),
-                Weekday::Tuesday => "Tuesday".to_string(),
-                Weekday::Wednesday => "Wednesday".to_string(),
-                Weekday::Thursday => "Thursday".to_string(),
-                Weekday::Friday => "Friday".to_string(),
-                Weekday::Saturday => "Saturday".to_string(),
+                Self::Sunday => "Sunday".to_string(),
+                Self::Monday => "Monday".to_string(),
+                Self::Tuesday => "Tuesday".to_string(),
+                Self::Wednesday => "Wednesday".to_string(),
+                Self::Thursday => "Thursday".to_string(),
+                Self::Friday => "Friday".to_string(),
+                Self::Saturday => "Saturday".to_string(),
             }
+        }
+
+        // Returns the first 3-letters of the day of the week
+        pub fn to_short(&self) -> Result<String> {
+            let day = self.to_s();
+            let result: String = day.chars().take(3).collect();
+
+            Ok(result)
         }
     }
 
