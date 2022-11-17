@@ -49,7 +49,7 @@ pub trait Board<CHIP, SKU> {
     type Processor;
     type BoardSKU;
 
-    fn gpio_sda<'a>(&'a self, chip: &Self::Processor) -> Result<&chip::GpioSda>;
+    fn gpio_sda(&self) -> Result<&chip::GpioSda>;
 }
 
 pub struct MicroModMCU {}
@@ -68,11 +68,8 @@ where
     type BoardSKU = BoardSKU;
     type Processor = Chip;
 
-    fn gpio_sda<'a>(&'a self, _chip: &Self::Processor) -> Result<&chip::GpioSda> {
-        Ok(match &Self::Processor {
-            Chip::ESP32 => &self.sda,
-            _ => todo!(),
-        })
+    fn gpio_sda(&self) -> Result<&chip::GpioSda> {
+        Ok(&self.sda)
     }
 }
 
@@ -109,6 +106,6 @@ mod test {
 
         let board: MicroModBoard<Chip, BoardSKU> = MicroModBoard::new(chip, sku).unwrap();
 
-        board.gpio_sda(&Chip::ESP32).unwrap();
+        board.gpio_sda().unwrap();
     }
 }
