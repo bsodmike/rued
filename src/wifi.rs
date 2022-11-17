@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use log::info;
+use log::{info, warn};
 use std::sync::Arc;
 
 use esp_idf_svc::netif::EspNetifStack;
@@ -57,6 +57,10 @@ pub fn connect() -> Result<(EspWifi, ClientSettings)> {
     // wait to get connected
     println!("Wait to get connected");
     loop {
+        unsafe {
+            esp_idf_sys::esp_task_wdt_reset();
+        } // Reset WDT
+
         if let WifiStatus(ClientStatus::Started(_), _) = wifi_interface.get_status() {
             break;
         }

@@ -69,9 +69,6 @@ impl RTClock {
             println!("{:?}", time);
         }
 
-        // FIXME: wierd bug where hundreth's value does not update inside this loop, without the use of debugging output
-        println!("_time: {:?}", &time);
-
         let reading = RTCReading {
             hours: time[3],
             minutes: time[2],
@@ -206,7 +203,7 @@ impl SystemTimeBuffer {
 
 const CURRENT_YEAR: u16 = 2022;
 const UTC_OFFSET_CHRONO: Utc = Utc;
-const SNTP_RETRY_COUNT: u32 = 200_000;
+const SNTP_RETRY_COUNT: u32 = 500_000;
 static UPDATE_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 static FALLBACK_TO_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
@@ -314,7 +311,10 @@ fn main() -> Result<()> {
         let mut server = EspHttpServer::new(&server_config)?;
 
         if !core::get_disable_httpd_flag() {
+            info!("Httpd Server handlers: Enabled");
             let _resp = http_server::configure_handlers(&mut server)?;
+        } else {
+            warn!("Httpd Server handlers: Disabled");
         }
     }
 
@@ -527,7 +527,10 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
     sntp_set_time_sync_notification_cb(Some(sntp_set_time_sync_notification_cb_custom));
 
     if !core::get_disable_sntp_flag() {
+        info!("SNTP: Enabled");
         sntp_init();
+    } else {
+        warn!("SNTP: Disabled");
     }
 
     esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
