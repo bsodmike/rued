@@ -29,6 +29,9 @@ use esp_idf_sys::{
     sntp_stop, time_t, timeval, timezone,
 }; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
+extern crate rust_esp32_blinky as blinky;
+use blinky::micromod;
+
 mod core;
 mod display;
 mod error;
@@ -40,9 +43,6 @@ mod wifi;
 
 const SSID: &str = env!("SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
-
-type GpioSda = Gpio21<InputOutput>;
-type GpioScl = Gpio22<Output>;
 
 #[derive(Debug)]
 pub struct RTClock {
@@ -319,7 +319,11 @@ fn main() -> Result<()> {
     }
 
     // setup I2C Master
-    let i2c_master = sensors::i2c::configure::<GpioScl, GpioSda>(peripherals.i2c0, scl, sda)?;
+    let i2c_master = sensors::i2c::configure::<micromod::chip::GpioScl, micromod::chip::GpioSda>(
+        peripherals.i2c0,
+        scl,
+        sda,
+    )?;
 
     unsafe {
         esp_idf_sys::esp_task_wdt_reset();
