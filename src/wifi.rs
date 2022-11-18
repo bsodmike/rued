@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use log::{info, warn};
+use log::info;
 use std::sync::Arc;
 
 use esp_idf_svc::netif::EspNetifStack;

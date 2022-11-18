@@ -29,6 +29,9 @@ use esp_idf_sys::{
     sntp_stop, time_t, timeval, timezone,
 }; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
+extern crate rust_esp32_blinky as blinky;
+use blinky::micromod;
+
 mod core;
 mod display;
 mod error;
@@ -40,9 +43,6 @@ mod wifi;
 
 const SSID: &str = env!("SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
-
-type GpioSda = Gpio21<InputOutput>;
-type GpioScl = Gpio22<Output>;
 
 #[derive(Debug)]
 pub struct RTClock {
@@ -203,7 +203,7 @@ impl SystemTimeBuffer {
 
 const CURRENT_YEAR: u16 = 2022;
 const UTC_OFFSET_CHRONO: Utc = Utc;
-const SNTP_RETRY_COUNT: u32 = 500_000;
+const SNTP_RETRY_COUNT: u32 = 1_000_000;
 static UPDATE_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 static FALLBACK_TO_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
@@ -222,6 +222,11 @@ pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut time
         NaiveDateTime::default()
     };
     let dt = DateTime::<Utc>::from_utc(naive_dt, Utc);
+
+    info!(
+        "SNTP Sync Callback fired. Timestamp: {}",
+        dt.timestamp().to_string()
+    );
 
     if dt.year() < CURRENT_YEAR.into() {
         // Do not update RTC.
@@ -255,17 +260,6 @@ fn main() -> Result<()> {
     let peripherals = Peripherals::take().unwrap();
     // let mut led = peripherals.pins.gpio17.into_output().unwrap();
     // let mut led_onboard = peripherals.pins.gpio18.into_output().unwrap();
-
-    // SDA - GPIO pin 21, pad 12 on the MicroMod
-    let sda = peripherals.pins.gpio21.into_input_output().unwrap();
-    // SCL - GPIO pin 22, pad 14 on the MicroMod
-    let scl = peripherals.pins.gpio22.into_output().unwrap();
-
-    // D0 - GPIO pin 14, pad 10 on the MicroMod
-    let gpio_d0: Gpio14<Output> = peripherals.pins.gpio14.into_output().unwrap();
-    let mut led_onboard = gpio_d0;
-    // D1 - GPIO pin 27, pad 18 on the MicroMod
-    let _gpio_d1: Gpio27<Output> = peripherals.pins.gpio27.into_output().unwrap();
 
     // wifi
     #[cfg(feature = "wifi")]
@@ -318,17 +312,11 @@ fn main() -> Result<()> {
         }
     }
 
-    // setup I2C Master
-    let i2c_master = sensors::i2c::configure::<GpioScl, GpioSda>(peripherals.i2c0, scl, sda)?;
-
-    unsafe {
-        esp_idf_sys::esp_task_wdt_reset();
-    } // Reset WDT
-
-    // Instantiate the bus manager, pass the i2c bus.
-    let bus = shared_bus::BusManagerSimple::new(i2c_master);
-
     // Create two proxies. Now, each sensor can have their own instance of a proxy i2c, which resolves the ownership problem.
+    let (mut active_peripherals, bus) = micromod::chip::configure(peripherals)?;
+
+    let mut led_onboard = active_peripherals.led_onboard();
+
     let proxy_1 = bus.acquire_i2c();
     let proxy_2 = bus.acquire_i2c();
 
@@ -358,18 +346,29 @@ fn main() -> Result<()> {
     unsafe {
         let mut rtc_clock = RTClock::new();
 
-        let sntp = sntp_setup()?;
+        #[cfg(feature = "sntp")]
+        {
+            let sntp = sntp_setup()?;
+        }
         get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
 
         loop {
-            toggle_led::<anyhow::Error, Gpio14<Output>>(&mut led_onboard);
+            toggle_led::<anyhow::Error, micromod::chip::OnboardLed>(&mut led_onboard);
 
-            let sync_status = match sntp.get_sync_status() {
-                SyncStatus::Reset => "SNTP_SYNC_STATUS_RESET",
-                SyncStatus::Completed => "SNTP_SYNC_STATUS_COMPLETED",
-                SyncStatus::InProgress => "SNTP_SYNC_STATUS_IN_PROGRESS",
-            };
-            debug!("sntp_get_sync_status: {}", sync_status);
+            let mut sync_status = "";
+            #[cfg(feature = "sntp")]
+            {
+                let sync_status = match sntp.get_sync_status() {
+                    SyncStatus::Reset => "SNTP_SYNC_STATUS_RESET",
+                    SyncStatus::Completed => "SNTP_SYNC_STATUS_COMPLETED",
+                    SyncStatus::InProgress => "SNTP_SYNC_STATUS_IN_PROGRESS",
+                };
+                debug!("sntp_get_sync_status: {}", sync_status);
+            }
+            #[cfg(not(feature = "sntp"))]
+            {
+                sync_status = "SNTP_DISABLED";
+            }
 
             std::thread::sleep(Duration::from_millis(500));
             esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
@@ -506,13 +505,28 @@ fn update_rtc_from_local(
     Ok(resp)
 }
 
+#[cfg(feature = "sntp")]
 /// Configure SNTP
 /// - <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/system_time.html#sntp-time-synchronization>
 /// - <https://wokwi.com/projects/342312626601067091>
 unsafe fn sntp_setup() -> Result<EspSntp> {
+    let server_array: [&str; 4] = [
+        "0.sg.pool.ntp.org",
+        "1.sg.pool.ntp.org",
+        "0.pool.ntp.org",
+        "3.pool.ntp.org",
+    ];
+
     let mut sntp_conf = SntpConf::default();
     sntp_conf.operating_mode = OperatingMode::Poll;
     sntp_conf.sync_mode = SyncMode::Immediate;
+
+    let mut servers: [&str; 1 as usize] = Default::default();
+    let copy_len = ::core::cmp::min(servers.len(), server_array.len());
+
+    servers[..copy_len].copy_from_slice(&server_array[..copy_len]);
+    sntp_conf.servers = servers;
+    info!("SNTP Servers: {:?}", servers);
 
     sntp_set_sync_interval(15 * 1000);
     let sntp = sntp::EspSntp::new(&sntp_conf)?;
@@ -532,8 +546,6 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
     } else {
         warn!("SNTP: Disabled");
     }
-
-    esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
 
     info!("SNTP initialized, waiting for status!");
 
