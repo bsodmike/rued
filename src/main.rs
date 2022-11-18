@@ -256,17 +256,6 @@ fn main() -> Result<()> {
     // let mut led = peripherals.pins.gpio17.into_output().unwrap();
     // let mut led_onboard = peripherals.pins.gpio18.into_output().unwrap();
 
-    // SDA - GPIO pin 21, pad 12 on the MicroMod
-    let sda = peripherals.pins.gpio21.into_input_output().unwrap();
-    // SCL - GPIO pin 22, pad 14 on the MicroMod
-    let scl = peripherals.pins.gpio22.into_output().unwrap();
-
-    // D0 - GPIO pin 14, pad 10 on the MicroMod
-    let gpio_d0: Gpio14<Output> = peripherals.pins.gpio14.into_output().unwrap();
-    let mut led_onboard = gpio_d0;
-    // D1 - GPIO pin 27, pad 18 on the MicroMod
-    let _gpio_d1: Gpio27<Output> = peripherals.pins.gpio27.into_output().unwrap();
-
     // wifi
     #[cfg(feature = "wifi")]
     {
@@ -319,7 +308,10 @@ fn main() -> Result<()> {
     }
 
     // Create two proxies. Now, each sensor can have their own instance of a proxy i2c, which resolves the ownership problem.
-    let bus = micromod::chip::fetch_bus()?;
+    let (mut active_peripherals, bus) = micromod::chip::configure(peripherals)?;
+
+    let mut led_onboard = active_peripherals.led_onboard();
+
     let proxy_1 = bus.acquire_i2c();
     let proxy_2 = bus.acquire_i2c();
 
