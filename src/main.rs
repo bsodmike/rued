@@ -4,6 +4,7 @@
 use ::core::time::Duration;
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
+use esp_idf_sys::{timer_group_t, timer_idx_t};
 use log::{debug, info, warn};
 use once_cell::sync::Lazy;
 use shared_bus::{I2cProxy, NullMutex};
@@ -29,6 +30,16 @@ use esp_idf_sys::{
     sntp_stop, time_t, timeval, timezone,
 }; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
+const TIMER_DIVIDER: u32 = 16;
+use esp_idf_sys::{
+    c_types::c_void, timer_alarm_t_TIMER_ALARM_EN, timer_autoreload_t_TIMER_AUTORELOAD_EN,
+    timer_config_t, timer_count_dir_t_TIMER_COUNT_UP, timer_enable_intr,
+    timer_group_t_TIMER_GROUP_0, timer_idx_t_TIMER_0, timer_init,
+    timer_intr_mode_t_TIMER_INTR_LEVEL, timer_isr_callback_add, timer_isr_t, timer_set_alarm_value,
+    timer_set_counter_value, timer_start_t_TIMER_START, xQueueGenericCreate, xQueueGiveFromISR,
+    xQueueReceive, QueueHandle_t, TIMER_BASE_CLK,
+};
+
 extern crate rust_esp32_blinky as blinky;
 use blinky::micromod;
 
@@ -43,6 +54,19 @@ mod wifi;
 
 const SSID: &str = env!("SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
+
+// This `static mut` holds the queue handle we are going to get from `xQueueGenericCreate`.
+// This is unsafe, but we are careful not to enable our GPIO interrupt handler until after this value has been initialised, and then never modify it again
+static mut EVENT_QUEUE: Option<QueueHandle_t> = None;
+
+type TimerInterruptHandler = unsafe extern "C" fn(arg1: *mut c_void) -> bool;
+
+#[link_section = ".iram0.text"]
+unsafe extern "C" fn timer0_interrupt(arg1: *mut c_void) -> bool {
+    xQueueGiveFromISR(EVENT_QUEUE.unwrap(), std::ptr::null_mut());
+
+    true
+}
 
 #[derive(Debug)]
 pub struct RTClock {
@@ -245,6 +269,13 @@ pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut time
     }
 }
 
+pub struct TimerInfo {
+    timer_group: timer_group_t,
+    timer_idx: timer_idx_t,
+    alarm_interval: u32,
+    auto_reload: bool,
+}
+
 fn main() -> Result<()> {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
     // or else some patches to the runtime implemented by esp-idf-sys might not link properly.
@@ -351,6 +382,57 @@ fn main() -> Result<()> {
             let sntp = sntp_setup()?;
         }
         get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
+
+        // Queue configurations
+        const QUEUE_TYPE_BASE: u8 = 0;
+        const ITEM_SIZE: u32 = 0; // we're not posting any actual data, just notifying
+        const QUEUE_SIZE: u32 = 1;
+
+        const TIMER_SCALE: u32 = TIMER_BASE_CLK / TIMER_DIVIDER;
+        let timer_conf = timer_config_t {
+            alarm_en: timer_alarm_t_TIMER_ALARM_EN,
+            counter_en: timer_start_t_TIMER_START,
+            intr_type: timer_intr_mode_t_TIMER_INTR_LEVEL,
+            counter_dir: timer_count_dir_t_TIMER_COUNT_UP,
+            auto_reload: timer_autoreload_t_TIMER_AUTORELOAD_EN,
+            divider: TIMER_DIVIDER,
+        };
+
+        // Instantiates the event queue
+        EVENT_QUEUE = Some(xQueueGenericCreate(QUEUE_SIZE, ITEM_SIZE, QUEUE_TYPE_BASE));
+
+        timer_set_counter_value(timer_group_t_TIMER_GROUP_0, timer_idx_t_TIMER_0, 0);
+
+        timer_init(
+            timer_group_t_TIMER_GROUP_0,
+            timer_idx_t_TIMER_0,
+            &timer_conf,
+        );
+
+        let timer_interval_sec: u32 = 5;
+        timer_set_alarm_value(
+            timer_group_t_TIMER_GROUP_0,
+            timer_idx_t_TIMER_0,
+            (timer_interval_sec * TIMER_SCALE) as u64,
+        );
+        timer_enable_intr(timer_group_t_TIMER_GROUP_0, timer_idx_t_TIMER_0);
+
+        let mut timer_info = &TimerInfo {
+            timer_group: timer_group_t_TIMER_GROUP_0,
+            timer_idx: timer_idx_t_TIMER_0,
+            alarm_interval: timer_interval_sec,
+            auto_reload: true,
+        };
+        let t_info_ptr: *mut TimerInfo = &mut timer_info;
+
+        let h: TimerInterruptHandler = timer0_interrupt;
+        timer_isr_callback_add(
+            timer_group_t_TIMER_GROUP_0,
+            timer_idx_t_TIMER_0,
+            Some(h),
+            t_info_ptr,
+            todo!(),
+        );
 
         loop {
             toggle_led::<anyhow::Error, micromod::chip::OnboardLed>(&mut led_onboard);
