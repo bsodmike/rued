@@ -4,7 +4,7 @@
 use ::core::time::Duration;
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
-use esp_idf_sys::{timer_group_t, timer_idx_t};
+use esp_idf_sys::{c_types, timer_group_t, timer_idx_t};
 use log::{debug, info, warn};
 use once_cell::sync::Lazy;
 use shared_bus::{I2cProxy, NullMutex};
@@ -13,16 +13,14 @@ use std::{env, ptr, sync::Mutex};
 #[allow(unused_imports)]
 use crate::http::server::{Configuration as HttpServerConfiguration, EspHttpServer};
 use crate::sensors::rtc;
-use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output};
-use esp_idf_hal::i2c::{Master, I2C0};
+use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output, PinDriver};
+use esp_idf_hal::i2c::{config::Config as I2cConfig, I2cDriver, I2C0};
 use esp_idf_hal::peripherals::Peripherals;
+// use esp_idf_hal::timer;
 use esp_idf_svc::{
     log::EspLogger,
     sntp::{self, EspSntp, OperatingMode, SntpConf, SyncMode, SyncStatus},
 };
-
-#[allow(unused_imports)]
-use embedded_hal::digital::v2::ToggleableOutputPin;
 
 #[allow(unused_imports)]
 use esp_idf_sys::{
@@ -32,7 +30,7 @@ use esp_idf_sys::{
 
 const TIMER_DIVIDER: u32 = 16;
 use esp_idf_sys::{
-    c_types::c_void, timer_alarm_t_TIMER_ALARM_EN, timer_autoreload_t_TIMER_AUTORELOAD_EN,
+    c_types::c_void, esp, timer_alarm_t_TIMER_ALARM_EN, timer_autoreload_t_TIMER_AUTORELOAD_EN,
     timer_config_t, timer_count_dir_t_TIMER_COUNT_UP, timer_enable_intr,
     timer_group_t_TIMER_GROUP_0, timer_idx_t_TIMER_0, timer_init,
     timer_intr_mode_t_TIMER_INTR_LEVEL, timer_isr_callback_add, timer_isr_t, timer_set_alarm_value,
@@ -68,6 +66,31 @@ unsafe extern "C" fn timer0_interrupt(arg1: *mut c_void) -> bool {
     true
 }
 
+struct UnsafeCallback(*mut Box<dyn FnMut() + 'static>);
+
+impl UnsafeCallback {
+    #[allow(clippy::type_complexity)]
+    pub fn from(boxed: &mut Box<Box<dyn FnMut() + 'static>>) -> Self {
+        Self(boxed.as_mut())
+    }
+
+    pub unsafe fn from_ptr(ptr: *mut c_types::c_void) -> Self {
+        Self(ptr as *mut _)
+    }
+
+    pub fn as_ptr(&self) -> *mut c_types::c_void {
+        self.0 as *mut _
+    }
+
+    pub unsafe fn call(&mut self) {
+        let reference = self.0.as_mut().unwrap();
+
+        (reference)();
+    }
+}
+
+// REST OF THE STUFF
+
 #[derive(Debug)]
 pub struct RTClock {
     datetime: Option<DateTime<Utc>>,
@@ -80,9 +103,7 @@ impl RTClock {
 
     fn update_time(
         &mut self,
-        rtc: &mut crate::sensors::rtc::rv8803::RV8803<
-            I2cProxy<NullMutex<Master<I2C0, Gpio21<InputOutput>, Gpio22<Output>>>>,
-        >,
+        rtc: &mut crate::sensors::rtc::rv8803::RV8803<I2cProxy<NullMutex<()>>>,
     ) -> Result<RTCReading> {
         let mut time = [0_u8; rtc::rv8803::TIME_ARRAY_LENGTH];
 
@@ -287,16 +308,13 @@ fn main() -> Result<()> {
         esp_idf_sys::esp_task_wdt_reset();
     } // Reset WDT
 
-    //  configure peripherals
-    let peripherals = Peripherals::take().unwrap();
-    // let mut led = peripherals.pins.gpio17.into_output().unwrap();
-    // let mut led_onboard = peripherals.pins.gpio18.into_output().unwrap();
-
     // wifi
+    let mut ip = String::default();
+    let mut dns = String::default();
     #[cfg(feature = "wifi")]
     {
         let wifi = wifi::connect();
-        let ip = match &wifi {
+        ip = match &wifi {
             Err(e) => {
                 println!("Wifi error: {:?}", e);
                 format!("ERR: {:?}", e)
@@ -308,7 +326,7 @@ fn main() -> Result<()> {
             esp_idf_sys::esp_task_wdt_reset();
         } // Reset WDT
 
-        let dns = match &wifi {
+        dns = match &wifi {
             Err(e) => {
                 // println!("Wifi error: {:?}", e);
                 format!("ERR: {:?}", e)
@@ -343,11 +361,25 @@ fn main() -> Result<()> {
         }
     }
 
+    //  configure peripherals
+    let peripherals = Peripherals::take().unwrap();
+
     // Create two proxies. Now, each sensor can have their own instance of a proxy i2c, which resolves the ownership problem.
     let (mut active_peripherals, bus) = micromod::chip::configure(peripherals)?;
 
     let mut led_onboard = active_peripherals.led_onboard();
 
+    let i2c0 = peripherals.i2c0;
+    let sda = PinDriver::input_output(peripherals.pins.gpio21)?;
+    let scl = PinDriver::output(peripherals.pins.gpio22)?;
+
+    let mut config = I2cConfig::new();
+    config.baudrate(400.kHz().into());
+    let i2c_driver = I2cDriver::new(i2c0, sda, scl, config)?;
+
+    let bus = shared_bus::BusManagerSimple::new(i2c_driver);
+
+    // FIXME
     let proxy_1 = bus.acquire_i2c();
     let proxy_2 = bus.acquire_i2c();
 
@@ -357,12 +389,18 @@ fn main() -> Result<()> {
     let mut rtc =
         sensors::rtc::rv8803::RV8803::new(proxy_1, sensors::rtc::rv8803::DeviceAddr::B011_0010)?;
 
-    // // setup display
-    // if let Err(e) = display::display_test::<Error, GpioScl, GpioSda>(i2c_master, &ip, &dns) {
-    //     println!("Display error: {:?}", e)
-    // } else {
-    //     println!("Display ok");
-    // }
+    //  setup display
+    #[cfg(not(feature = "wifi"))]
+    {
+        ip = "WIFI_DISABLED".to_string();
+        dns = "WIFI_DISABLED".to_string();
+    }
+
+    if let Err(e) = display::display_test(i2c_driver, &ip, &dns) {
+        println!("Display error: {:?}", e)
+    } else {
+        println!("Display ok");
+    }
 
     // heart-beat sequence
     // for i in 0..3 {
@@ -417,22 +455,23 @@ fn main() -> Result<()> {
         );
         timer_enable_intr(timer_group_t_TIMER_GROUP_0, timer_idx_t_TIMER_0);
 
+        // let callback: Box<dyn FnMut() + 'static> = Box::new(|| unsafe { timer0_interrupt });
+
         let mut timer_info = &TimerInfo {
             timer_group: timer_group_t_TIMER_GROUP_0,
             timer_idx: timer_idx_t_TIMER_0,
             alarm_interval: timer_interval_sec,
             auto_reload: true,
         };
-        let t_info_ptr: *mut TimerInfo = &mut timer_info;
 
-        let h: TimerInterruptHandler = timer0_interrupt;
-        timer_isr_callback_add(
-            timer_group_t_TIMER_GROUP_0,
-            timer_idx_t_TIMER_0,
-            Some(h),
-            t_info_ptr,
-            todo!(),
-        );
+        // let h: TimerInterruptHandler = timer0_interrupt;
+        // timer_isr_callback_add(
+        //     timer_group_t_TIMER_GROUP_0,
+        //     timer_idx_t_TIMER_0,
+        //     Some(h),
+        //     t_info_ptr,
+        //     todo!(),
+        // );
 
         loop {
             toggle_led::<anyhow::Error, micromod::chip::OnboardLed>(&mut led_onboard);
@@ -497,10 +536,10 @@ fn main() -> Result<()> {
     }
 }
 
+type I2cProxyType<'a> = I2cProxy<'a, NullMutex<I2cDriver<'a>>>;
+
 unsafe fn get_system_time_with_fallback(
-    rtc: &mut crate::sensors::rtc::rv8803::RV8803<
-        I2cProxy<NullMutex<Master<I2C0, Gpio21<InputOutput>, Gpio22<Output>>>>,
-    >,
+    rtc: &mut crate::sensors::rtc::rv8803::RV8803<I2cProxyType>,
     rtc_clock: &mut RTClock,
 ) -> Result<SystemTimeBuffer> {
     let system_time = get_system_time()?;
@@ -529,9 +568,7 @@ unsafe fn get_system_time_with_fallback(
 
 unsafe fn update_local_from_rtc(
     system_time: &SystemTimeBuffer,
-    rtc: &mut crate::sensors::rtc::rv8803::RV8803<
-        I2cProxy<NullMutex<Master<I2C0, Gpio21<InputOutput>, Gpio22<Output>>>>,
-    >,
+    rtc: &mut crate::sensors::rtc::rv8803::RV8803<I2cProxy<NullMutex<I2cProxyType>>>,
     rtc_clock: &mut RTClock,
 ) -> Result<bool> {
     // This should be from the RTC clock
@@ -562,9 +599,7 @@ unsafe fn update_local_from_rtc(
 }
 
 fn update_rtc_from_local(
-    rtc: &mut crate::sensors::rtc::rv8803::RV8803<
-        I2cProxy<NullMutex<Master<I2C0, Gpio21<InputOutput>, Gpio22<Output>>>>,
-    >,
+    rtc: &mut crate::sensors::rtc::rv8803::RV8803<I2cProxy<NullMutex<I2cProxyType>>>,
     latest_system_time: &SystemTimeBuffer,
 ) -> Result<bool> {
     let weekday = latest_system_time.weekday()?;
@@ -682,9 +717,8 @@ unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
 
 fn toggle_led<E, T>(pin: &mut T)
 where
-    T: embedded_hal::digital::v2::ToggleableOutputPin,
+    T: embedded_hal::digital::ToggleableOutputPin,
     E: std::fmt::Debug,
-    <T as embedded_hal::digital::v2::ToggleableOutputPin>::Error: std::fmt::Debug,
 {
     pin.toggle().unwrap();
 
