@@ -346,18 +346,29 @@ fn main() -> Result<()> {
     unsafe {
         let mut rtc_clock = RTClock::new();
 
-        let sntp = sntp_setup()?;
+        #[cfg(feature = "sntp")]
+        {
+            let sntp = sntp_setup()?;
+        }
         get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
 
         loop {
             toggle_led::<anyhow::Error, micromod::chip::OnboardLed>(&mut led_onboard);
 
-            let sync_status = match sntp.get_sync_status() {
-                SyncStatus::Reset => "SNTP_SYNC_STATUS_RESET",
-                SyncStatus::Completed => "SNTP_SYNC_STATUS_COMPLETED",
-                SyncStatus::InProgress => "SNTP_SYNC_STATUS_IN_PROGRESS",
-            };
-            debug!("sntp_get_sync_status: {}", sync_status);
+            let mut sync_status = "";
+            #[cfg(feature = "sntp")]
+            {
+                let sync_status = match sntp.get_sync_status() {
+                    SyncStatus::Reset => "SNTP_SYNC_STATUS_RESET",
+                    SyncStatus::Completed => "SNTP_SYNC_STATUS_COMPLETED",
+                    SyncStatus::InProgress => "SNTP_SYNC_STATUS_IN_PROGRESS",
+                };
+                debug!("sntp_get_sync_status: {}", sync_status);
+            }
+            #[cfg(not(feature = "sntp"))]
+            {
+                sync_status = "SNTP_DISABLED";
+            }
 
             std::thread::sleep(Duration::from_millis(500));
             esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
@@ -494,6 +505,7 @@ fn update_rtc_from_local(
     Ok(resp)
 }
 
+#[cfg(feature = "sntp")]
 /// Configure SNTP
 /// - <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/system_time.html#sntp-time-synchronization>
 /// - <https://wokwi.com/projects/342312626601067091>
