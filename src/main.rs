@@ -18,6 +18,7 @@ use esp_idf_hal::{
 };
 use esp_idf_hal::{peripheral::PeripheralRef, peripherals::Peripherals};
 // use esp_idf_hal::timer;
+use embedded_hal::i2c::I2c;
 use esp_idf_svc::{
     log::EspLogger,
     sntp::{self, EspSntp, OperatingMode, SntpConf, SyncMode, SyncStatus},
@@ -104,7 +105,7 @@ impl RTClock {
 
     fn update_time(
         &mut self,
-        rtc: &mut crate::sensors::rtc::rv8803::RV8803<I2cProxy<NullMutex<()>>>,
+        rtc: &mut crate::sensors::rtc::rv8803::RV8803<RtcDriverType>,
     ) -> Result<RTCReading> {
         let mut time = [0_u8; rtc::rv8803::TIME_ARRAY_LENGTH];
 
@@ -387,10 +388,8 @@ fn main() -> Result<()> {
     info!("Reading RTC Sensor");
 
     // setup RTC sensor
-    let mut rtc = sensors::rtc::rv8803::RV8803::new(
-        &mut proxy_1.into(),
-        sensors::rtc::rv8803::DeviceAddr::B011_0010,
-    )?;
+    let mut rtc =
+        sensors::rtc::rv8803::RV8803::new(i2c_driver, sensors::rtc::rv8803::DeviceAddr::B011_0010)?;
 
     //  setup display
     #[cfg(not(feature = "wifi"))]
@@ -539,10 +538,10 @@ fn main() -> Result<()> {
     }
 }
 
-type I2cProxyType<'a> = I2cProxy<'a, NullMutex<I2cDriver<'a>>>;
+type RtcDriverType<'a> = I2cDriver<'a>;
 
 unsafe fn get_system_time_with_fallback(
-    rtc: &mut crate::sensors::rtc::rv8803::RV8803<I2cProxyType>,
+    rtc: &mut crate::sensors::rtc::rv8803::RV8803<RtcDriverType>,
     rtc_clock: &mut RTClock,
 ) -> Result<SystemTimeBuffer> {
     let system_time = get_system_time()?;
@@ -571,7 +570,7 @@ unsafe fn get_system_time_with_fallback(
 
 unsafe fn update_local_from_rtc(
     system_time: &SystemTimeBuffer,
-    rtc: &mut crate::sensors::rtc::rv8803::RV8803<I2cProxy<NullMutex<I2cProxyType>>>,
+    rtc: &mut crate::sensors::rtc::rv8803::RV8803<RtcDriverType>,
     rtc_clock: &mut RTClock,
 ) -> Result<bool> {
     // This should be from the RTC clock
@@ -602,7 +601,7 @@ unsafe fn update_local_from_rtc(
 }
 
 fn update_rtc_from_local(
-    rtc: &mut crate::sensors::rtc::rv8803::RV8803<I2cProxy<NullMutex<I2cProxyType>>>,
+    rtc: &mut crate::sensors::rtc::rv8803::RV8803<RtcDriverType>,
     latest_system_time: &SystemTimeBuffer,
 ) -> Result<bool> {
     let weekday = latest_system_time.weekday()?;

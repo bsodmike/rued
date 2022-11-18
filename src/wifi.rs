@@ -11,7 +11,7 @@ pub fn connect() -> Result<(EspWifi<'static>, String, String)> {
     let peripherals = Peripherals::take().context("failed to take Peripherals")?;
 
     let mut wifi = EspWifi::new::<Modem>(
-        peripherals.modem.into_ref(),
+        peripherals.modem,
         sysloop.clone(),
         Some(nvs_default_partition),
     )?;

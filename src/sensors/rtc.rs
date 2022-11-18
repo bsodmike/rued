@@ -44,11 +44,11 @@ pub mod rv8803 {
 
     impl<I2C, E> RV8803<I2C>
     where
-        I2C: i2c::I2c<Error = E> + i2c::AddressMode,
+        I2C: i2c::I2c<Error = E>,
         BlanketError: From<E>,
     {
         /// Create a new instance of the RV8803.
-        pub fn new(i2c: &mut I2C, address: DeviceAddr) -> Result<RV8803<&mut I2C>, BlanketError> {
+        pub fn new(i2c: I2C, address: DeviceAddr) -> Result<RV8803<I2C>, BlanketError> {
             let rv8803 = RV8803 { i2c, address };
 
             Ok(rv8803)
