@@ -4,12 +4,14 @@
 use ::core::time::Duration;
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
+use esp_idf_hal::i2c::I2cError;
 use esp_idf_sys::{c_types, timer_group_t, timer_idx_t};
 use log::{debug, info, warn};
 use once_cell::sync::Lazy;
 use shared_bus::{I2cProxy, NullMutex};
-use std::{env, ptr, sync::Mutex};
+use std::{env, error::Error as StdError, fmt, ptr, sync::Mutex};
 
+use crate::error::BoxError;
 use crate::sensors::rtc;
 use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output, PinDriver};
 use esp_idf_hal::{
@@ -105,7 +107,7 @@ impl RTClock {
 
     fn update_time(
         &mut self,
-        rtc: &mut crate::sensors::rtc::rv8803::RV8803<RtcDriverType>,
+        rtc: &mut crate::sensors::rtc::rv8803::RV8803<I2cDriverType, CustomError>,
     ) -> Result<RTCReading> {
         let mut time = [0_u8; rtc::rv8803::TIME_ARRAY_LENGTH];
 
@@ -299,6 +301,60 @@ pub struct TimerInfo {
     auto_reload: bool,
 }
 
+#[derive(Debug)]
+pub struct CustomError(Option<BoxError>);
+
+impl CustomError {
+    /// Create a new `Error` from a boxable error.
+    pub fn new() -> Self {
+        Self(None)
+    }
+
+    pub fn set_error(&mut self, error: impl Into<BoxError>) {
+        self.0 = Some(error.into());
+    }
+
+    /// Convert an `Error` back into the underlying boxed trait object.
+    pub fn into_inner(self) -> BoxError {
+        self.0.expect("Unwrapping option for CustomError")
+    }
+}
+
+impl fmt::Display for CustomError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0
+            .as_ref()
+            .expect("Unwrapping option for CustomError")
+            .fmt(f)
+    }
+}
+
+impl StdError for CustomError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        Some(
+            &*self
+                .0
+                .as_deref()
+                .expect("Unwrapping option for CustomError"),
+        )
+    }
+}
+
+impl From<anyhow::Error> for CustomError {
+    fn from(error: anyhow::Error) -> Self {
+        let mut e = Self::new();
+        e.set_error(error);
+
+        e
+    }
+}
+
+impl From<CustomError> for crate::error::BlanketError {
+    fn from(error: CustomError) -> Self {
+        Self::new(error)
+    }
+}
+
 fn main() -> Result<()> {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
     // or else some patches to the runtime implemented by esp-idf-sys might not link properly.
@@ -367,11 +423,11 @@ fn main() -> Result<()> {
     let peripherals = Peripherals::take().unwrap();
 
     // Create two proxies. Now, each sensor can have their own instance of a proxy i2c, which resolves the ownership problem.
-    let (mut active_peripherals, bus) = micromod::chip::configure(peripherals)?;
+    // let (mut active_peripherals, bus) = micromod::chip::configure(peripherals)?;
 
-    let mut led_onboard = active_peripherals.led_onboard();
+    // let mut led_onboard = active_peripherals.led_onboard();
 
-    let i2c0 = peripherals.i2c0;
+    let mut i2c0 = peripherals.i2c0;
     let sda = PeripheralRef::new(peripherals.pins.gpio21);
     let scl = PeripheralRef::new(peripherals.pins.gpio22);
 
@@ -379,30 +435,40 @@ fn main() -> Result<()> {
     config.baudrate(Hertz::from(400 as u32));
     let mut i2c_driver = I2cDriver::new(i2c0, sda, scl, &config)?;
 
-    let bus = shared_bus::BusManagerSimple::new(i2c_driver);
+    let peripherals = Peripherals::take().unwrap();
+    let mut i2c0_2 = peripherals.i2c0;
+    let sda2 = PeripheralRef::new(peripherals.pins.gpio21);
+    let scl2 = PeripheralRef::new(peripherals.pins.gpio22);
+    let mut i2c_driver2 = I2cDriver::new(i2c0_2, sda2, scl2, &config)?;
+    // let bus = shared_bus::BusManagerSimple::new(i2c_driver);
 
-    // FIXME
-    let mut proxy_1 = bus.acquire_i2c();
-    let proxy_2 = bus.acquire_i2c();
+    // // FIXME
+    // let mut proxy_1 = bus.acquire_i2c();
+    // let proxy_2 = bus.acquire_i2c();
 
     info!("Reading RTC Sensor");
 
     // setup RTC sensor
-    let mut rtc =
-        sensors::rtc::rv8803::RV8803::new(i2c_driver, sensors::rtc::rv8803::DeviceAddr::B011_0010)?;
+    let rtc_err = CustomError::new();
+    let mut rtc = sensors::rtc::rv8803::RV8803::new(
+        i2c_driver,
+        sensors::rtc::rv8803::DeviceAddr::B011_0010,
+        &mut i2c_driver2,
+        rtc_err,
+    )?;
 
     //  setup display
-    #[cfg(not(feature = "wifi"))]
-    {
-        ip = "WIFI_DISABLED".to_string();
-        dns = "WIFI_DISABLED".to_string();
-    }
+    // #[cfg(not(feature = "wifi"))]
+    // {
+    //     ip = "WIFI_DISABLED".to_string();
+    //     dns = "WIFI_DISABLED".to_string();
+    // }
 
-    if let Err(e) = display::display_test(proxy_1, &ip, &dns) {
-        println!("Display error: {:?}", e)
-    } else {
-        println!("Display ok");
-    }
+    // if let Err(e) = display::display_test(i2c_driver, &ip, &dns) {
+    //     println!("Display error: {:?}", e)
+    // } else {
+    //     println!("Display ok");
+    // }
 
     // heart-beat sequence
     // for i in 0..3 {
@@ -476,7 +542,8 @@ fn main() -> Result<()> {
         // );
 
         loop {
-            toggle_led::<anyhow::Error, micromod::chip::OnboardLed>(&mut led_onboard);
+            // FIXME
+            // toggle_led::<anyhow::Error, micromod::chip::OnboardLed>(&mut led_onboard);
 
             let mut sync_status = "";
             #[cfg(feature = "sntp")]
@@ -538,10 +605,10 @@ fn main() -> Result<()> {
     }
 }
 
-type RtcDriverType<'a> = I2cDriver<'a>;
+type I2cDriverType<'a> = I2cDriver<'a>;
 
 unsafe fn get_system_time_with_fallback(
-    rtc: &mut crate::sensors::rtc::rv8803::RV8803<RtcDriverType>,
+    rtc: &mut crate::sensors::rtc::rv8803::RV8803<I2cDriverType, CustomError>,
     rtc_clock: &mut RTClock,
 ) -> Result<SystemTimeBuffer> {
     let system_time = get_system_time()?;
@@ -570,7 +637,7 @@ unsafe fn get_system_time_with_fallback(
 
 unsafe fn update_local_from_rtc(
     system_time: &SystemTimeBuffer,
-    rtc: &mut crate::sensors::rtc::rv8803::RV8803<RtcDriverType>,
+    rtc: &mut crate::sensors::rtc::rv8803::RV8803<I2cDriverType, CustomError>,
     rtc_clock: &mut RTClock,
 ) -> Result<bool> {
     // This should be from the RTC clock
@@ -601,7 +668,7 @@ unsafe fn update_local_from_rtc(
 }
 
 fn update_rtc_from_local(
-    rtc: &mut crate::sensors::rtc::rv8803::RV8803<RtcDriverType>,
+    rtc: &mut crate::sensors::rtc::rv8803::RV8803<I2cDriverType, CustomError>,
     latest_system_time: &SystemTimeBuffer,
 ) -> Result<bool> {
     let weekday = latest_system_time.weekday()?;

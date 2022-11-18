@@ -8,7 +8,7 @@ use embedded_graphics::{
 };
 use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
 
-pub fn display_test(driver: crate::I2cProxyType, ip: &str, dns: &str) -> Result<()> {
+pub fn display_test(driver: crate::I2cDriverType, ip: &str, dns: &str) -> Result<()> {
     let i2c = driver;
     let interface = I2CDisplayInterface::new(i2c);
 

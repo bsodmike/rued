@@ -59,3 +59,11 @@ impl From<I2cError> for BlanketError {
         }
     }
 }
+
+impl From<anyhow::Error> for BlanketError {
+    fn from(error: anyhow::Error) -> Self {
+        Self {
+            inner: error.into(),
+        }
+    }
+}
