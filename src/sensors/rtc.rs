@@ -3,7 +3,7 @@ pub mod rv8803 {
 
     use crate::error::BlanketError;
     use anyhow::Result;
-    use embedded_hal::blocking::i2c;
+    use embedded_hal::i2c;
     use log::{debug, info};
     use std::fmt;
 
@@ -44,11 +44,11 @@ pub mod rv8803 {
 
     impl<I2C, E> RV8803<I2C>
     where
-        I2C: i2c::WriteRead<Error = E> + i2c::Write<Error = E>,
+        I2C: i2c::I2c<Error = E> + i2c::AddressMode,
         BlanketError: From<E>,
     {
         /// Create a new instance of the RV8803.
-        pub fn new(i2c: I2C, address: DeviceAddr) -> Result<Self, BlanketError> {
+        pub fn new(i2c: &mut I2C, address: DeviceAddr) -> Result<RV8803<&mut I2C>, BlanketError> {
             let rv8803 = RV8803 { i2c, address };
 
             Ok(rv8803)

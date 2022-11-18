@@ -23,13 +23,14 @@ sntp = []
 httpd_server = []
 
 [dependencies]
+esp-idf-sys = { version = "0.31.11", features = ["binstart"] }
+esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal" }
+esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc", features = ["experimental", "std"] }
+embedded-hal = { git = "https://github.com/rust-embedded/embedded-hal" }
+embedded-svc = { git = "https://github.com/esp-rs/embedded-svc", features = ["experimental", "std"] }
+
 anyhow = "1"
 log = "0.4.17"
-esp-idf-sys = { version = "0.31.11", features = ["binstart"] }
-esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal", branch = "master" }
-esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc", branch = "master", features = ["experimental", "std"] }
-embedded-hal = { git = "https://github.com/rust-embedded/embedded-hal", branch = "master" }
-embedded-svc = { git = "https://github.com/esp-rs/embedded-svc", branch = "master", features = ["experimental", "std"] }
 ssd1306 = "0.7.0"
 embedded-graphics = "0.7"
 display-interface = "0.4.1"

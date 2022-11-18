@@ -10,12 +10,13 @@ use once_cell::sync::Lazy;
 use shared_bus::{I2cProxy, NullMutex};
 use std::{env, ptr, sync::Mutex};
 
-#[allow(unused_imports)]
-use crate::http::server::{Configuration as HttpServerConfiguration, EspHttpServer};
 use crate::sensors::rtc;
 use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output, PinDriver};
-use esp_idf_hal::i2c::{config::Config as I2cConfig, I2cDriver, I2C0};
-use esp_idf_hal::peripherals::Peripherals;
+use esp_idf_hal::{
+    i2c::{config::Config as I2cConfig, I2cDriver, I2C0},
+    units::Hertz,
+};
+use esp_idf_hal::{peripheral::PeripheralRef, peripherals::Peripherals};
 // use esp_idf_hal::timer;
 use esp_idf_svc::{
     log::EspLogger,
@@ -370,24 +371,26 @@ fn main() -> Result<()> {
     let mut led_onboard = active_peripherals.led_onboard();
 
     let i2c0 = peripherals.i2c0;
-    let sda = PinDriver::input_output(peripherals.pins.gpio21)?;
-    let scl = PinDriver::output(peripherals.pins.gpio22)?;
+    let sda = PeripheralRef::new(peripherals.pins.gpio21);
+    let scl = PeripheralRef::new(peripherals.pins.gpio22);
 
     let mut config = I2cConfig::new();
-    config.baudrate(400.kHz().into());
-    let i2c_driver = I2cDriver::new(i2c0, sda, scl, config)?;
+    config.baudrate(Hertz::from(400 as u32));
+    let mut i2c_driver = I2cDriver::new(i2c0, sda, scl, &config)?;
 
     let bus = shared_bus::BusManagerSimple::new(i2c_driver);
 
     // FIXME
-    let proxy_1 = bus.acquire_i2c();
+    let mut proxy_1 = bus.acquire_i2c();
     let proxy_2 = bus.acquire_i2c();
 
     info!("Reading RTC Sensor");
 
     // setup RTC sensor
-    let mut rtc =
-        sensors::rtc::rv8803::RV8803::new(proxy_1, sensors::rtc::rv8803::DeviceAddr::B011_0010)?;
+    let mut rtc = sensors::rtc::rv8803::RV8803::new(
+        &mut proxy_1.into(),
+        sensors::rtc::rv8803::DeviceAddr::B011_0010,
+    )?;
 
     //  setup display
     #[cfg(not(feature = "wifi"))]
@@ -396,7 +399,7 @@ fn main() -> Result<()> {
         dns = "WIFI_DISABLED".to_string();
     }
 
-    if let Err(e) = display::display_test(i2c_driver, &ip, &dns) {
+    if let Err(e) = display::display_test(proxy_1, &ip, &dns) {
         println!("Display error: {:?}", e)
     } else {
         println!("Display ok");
