@@ -9,6 +9,7 @@ target = "xtensa-esp32-espidf"
 [target.xtensa-esp32-espidf]
 linker = "ldproxy"
 runner = "espflash --monitor"
+# rustflags = ["--cfg", "soc=\"esp32\""]
 
 [target.xtensa-esp32s2-espidf]
 linker = "ldproxy"

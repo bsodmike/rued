@@ -318,21 +318,8 @@ fn main() -> Result<()> {
         }
     }
 
-    // setup I2C Master
-    let i2c_master = sensors::i2c::configure::<micromod::chip::GpioScl, micromod::chip::GpioSda>(
-        peripherals.i2c0,
-        scl,
-        sda,
-    )?;
-
-    unsafe {
-        esp_idf_sys::esp_task_wdt_reset();
-    } // Reset WDT
-
-    // Instantiate the bus manager, pass the i2c bus.
-    let bus = shared_bus::BusManagerSimple::new(i2c_master);
-
     // Create two proxies. Now, each sensor can have their own instance of a proxy i2c, which resolves the ownership problem.
+    let bus = micromod::chip::fetch_bus()?;
     let proxy_1 = bus.acquire_i2c();
     let proxy_2 = bus.acquire_i2c();
 
