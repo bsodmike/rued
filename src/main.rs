@@ -203,7 +203,7 @@ impl SystemTimeBuffer {
 
 const CURRENT_YEAR: u16 = 2022;
 const UTC_OFFSET_CHRONO: Utc = Utc;
-const SNTP_RETRY_COUNT: u32 = 500_000;
+const SNTP_RETRY_COUNT: u32 = 1_000_000;
 static UPDATE_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 static FALLBACK_TO_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
@@ -222,6 +222,11 @@ pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut time
         NaiveDateTime::default()
     };
     let dt = DateTime::<Utc>::from_utc(naive_dt, Utc);
+
+    info!(
+        "SNTP Sync Callback fired. Timestamp: {}",
+        dt.timestamp().to_string()
+    );
 
     if dt.year() < CURRENT_YEAR.into() {
         // Do not update RTC.
@@ -345,7 +350,7 @@ fn main() -> Result<()> {
         get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
 
         loop {
-            toggle_led::<anyhow::Error, Gpio14<Output>>(&mut led_onboard);
+            toggle_led::<anyhow::Error, micromod::chip::OnboardLed>(&mut led_onboard);
 
             let sync_status = match sntp.get_sync_status() {
                 SyncStatus::Reset => "SNTP_SYNC_STATUS_RESET",
@@ -493,9 +498,23 @@ fn update_rtc_from_local(
 /// - <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/system_time.html#sntp-time-synchronization>
 /// - <https://wokwi.com/projects/342312626601067091>
 unsafe fn sntp_setup() -> Result<EspSntp> {
+    let server_array: [&str; 4] = [
+        "0.sg.pool.ntp.org",
+        "1.sg.pool.ntp.org",
+        "0.pool.ntp.org",
+        "3.pool.ntp.org",
+    ];
+
     let mut sntp_conf = SntpConf::default();
     sntp_conf.operating_mode = OperatingMode::Poll;
     sntp_conf.sync_mode = SyncMode::Immediate;
+
+    let mut servers: [&str; 1 as usize] = Default::default();
+    let copy_len = ::core::cmp::min(servers.len(), server_array.len());
+
+    servers[..copy_len].copy_from_slice(&server_array[..copy_len]);
+    sntp_conf.servers = servers;
+    info!("SNTP Servers: {:?}", servers);
 
     sntp_set_sync_interval(15 * 1000);
     let sntp = sntp::EspSntp::new(&sntp_conf)?;
@@ -515,8 +534,6 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
     } else {
         warn!("SNTP: Disabled");
     }
-
-    esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
 
     info!("SNTP initialized, waiting for status!");
 
