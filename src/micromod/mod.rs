@@ -17,7 +17,6 @@ pub mod chip {
     use super::*;
     use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output, PinDriver};
     use esp_idf_hal::{peripheral::PeripheralRef, peripherals::Peripherals};
-    use shared_bus::{BusManager, NullMutex};
 
     pub type GpioSda = PeripheralRef<'static, Gpio21>;
     pub type GpioScl = PeripheralRef<'static, Gpio22>;

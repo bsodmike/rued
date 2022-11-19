@@ -4,23 +4,19 @@
 use ::core::time::Duration;
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
-use esp_idf_hal::i2c::I2cError;
 use esp_idf_sys::{c_types, timer_group_t, timer_idx_t};
 use log::{debug, info, warn};
 use once_cell::sync::Lazy;
-use shared_bus::{I2cProxy, NullMutex};
-use std::{env, error::Error as StdError, fmt, ptr, sync::Mutex};
+use std::{env, fmt, ptr, sync::Mutex};
 
-use crate::error::BoxError;
 use crate::sensors::rtc;
-use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output, PinDriver};
+use embedded_hal::i2c::I2c;
+use esp_idf_hal::timer::{Timer, TimerConfig, TimerDriver, TIMER00};
 use esp_idf_hal::{
     i2c::{config::Config as I2cConfig, I2cDriver, I2C0},
     units::Hertz,
 };
 use esp_idf_hal::{peripheral::PeripheralRef, peripherals::Peripherals};
-// use esp_idf_hal::timer;
-use embedded_hal::i2c::I2c;
 use esp_idf_svc::{
     log::EspLogger,
     sntp::{self, EspSntp, OperatingMode, SntpConf, SyncMode, SyncStatus},
@@ -298,60 +294,6 @@ pub struct TimerInfo {
     auto_reload: bool,
 }
 
-#[derive(Debug)]
-pub struct CustomError(Option<BoxError>);
-
-impl CustomError {
-    /// Create a new `Error` from a boxable error.
-    pub fn new() -> Self {
-        Self(None)
-    }
-
-    pub fn set_error(&mut self, error: impl Into<BoxError>) {
-        self.0 = Some(error.into());
-    }
-
-    /// Convert an `Error` back into the underlying boxed trait object.
-    pub fn into_inner(self) -> BoxError {
-        self.0.expect("Unwrapping option for CustomError")
-    }
-}
-
-impl fmt::Display for CustomError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0
-            .as_ref()
-            .expect("Unwrapping option for CustomError")
-            .fmt(f)
-    }
-}
-
-impl StdError for CustomError {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        Some(
-            &*self
-                .0
-                .as_deref()
-                .expect("Unwrapping option for CustomError"),
-        )
-    }
-}
-
-impl From<anyhow::Error> for CustomError {
-    fn from(error: anyhow::Error) -> Self {
-        let mut e = Self::new();
-        e.set_error(error);
-
-        e
-    }
-}
-
-impl From<CustomError> for crate::error::BlanketError {
-    fn from(error: CustomError) -> Self {
-        Self::new(error)
-    }
-}
-
 fn main() -> Result<()> {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
     // or else some patches to the runtime implemented by esp-idf-sys might not link properly.
@@ -442,7 +384,6 @@ fn main() -> Result<()> {
     info!("Reading RTC Sensor");
 
     // setup RTC sensor
-    let rtc_err = CustomError::new();
     let mut rtc =
         sensors::rtc::rv8803::RV8803::new(i2c_driver, sensors::rtc::rv8803::DeviceAddr::B011_0010)?;
 
