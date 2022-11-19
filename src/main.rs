@@ -20,11 +20,11 @@ use crate::{
 
 use embedded_hal::i2c::I2c;
 use esp_idf_hal::timer::{Timer, TimerConfig, TimerDriver, TIMER00};
+use esp_idf_hal::{delay::FreeRtos, peripheral::PeripheralRef, peripherals::Peripherals};
 use esp_idf_hal::{
     i2c::{config::Config as I2cConfig, I2cDriver, I2C0},
     units::Hertz,
 };
-use esp_idf_hal::{peripheral::PeripheralRef, peripherals::Peripherals};
 use esp_idf_svc::{
     log::EspLogger,
     sntp::{self, EspSntp, OperatingMode, SntpConf, SyncMode, SyncStatus},
@@ -59,8 +59,8 @@ mod models;
 mod sensors;
 mod wifi;
 
-const SSID: &str = env!("SSID");
-const PASSWORD: &str = env!("WIFI_PASS");
+const WIFI_SSID: &str = env!("WIFI_SSID");
+const WIFI_PSK: &str = env!("WIFI_PSK");
 
 // This `static mut` holds the queue handle we are going to get from `xQueueGenericCreate`.
 // This is unsafe, but we are careful not to enable our GPIO interrupt handler until after this value has been initialised, and then never modify it again
@@ -159,15 +159,15 @@ fn main() -> Result<()> {
     let mut dns = String::default();
 
     #[cfg(feature = "wifi")]
-    let wifi = wifi::connect(active_peripherals.modem)?;
-    let netif = wifi.sta_netif();
-    let ip_info = netif.get_ip_info()?;
-    ip = ip_info.ip.to_string();
-    dns = if let Some(value) = ip_info.dns {
-        value.to_string()
-    } else {
-        format!("ERR: Unable to unwrap DNS value")
-    };
+    let wifi = wifi::connect(active_peripherals.modem, tx)?;
+    // let netif = wifi.sta_netif();
+    // let ip_info = netif.get_ip_info()?;
+    // ip = ip_info.ip.to_string();
+    // dns = if let Some(value) = ip_info.dns {
+    //     value.to_string()
+    // } else {
+    //     format!("ERR: Unable to unwrap DNS value")
+    // };
 
     unsafe {
         esp_idf_sys::esp_task_wdt_reset();
@@ -356,6 +356,93 @@ fn main() -> Result<()> {
 
                 core::fallback_to_rtc_disable()
             }
+
+            // MPSC Handler for Wifi
+            match rx.try_recv() {
+                Ok(SysLoopMsg::WifiDisconnect) => {
+                    info!("mpsc loop: WifiDisconnect received");
+
+                    // httpd.clear();
+                }
+                Ok(SysLoopMsg::IpAddressAcquired) => {
+                    info!("mpsc loop: IpAddressAcquired received");
+
+                    // let server_config = Configuration::default();
+                    // let mut s = httpd.create(&server_config);
+
+                    // if let Err(err) = s.fn_handler("/", embedded_svc::http::Method::Get, move |req| {
+                    //     // url_handler::home_page_handler(req)
+                    //     todo!()
+                    // }) {
+                    //     info!(
+                    //         "mpsc loop: failed to register http handler /temperature: {:?} - restarting device",
+                    //         err
+                    //     );
+                    //     unsafe {
+                    //         esp_idf_sys::esp_restart();
+                    //     }
+                    // }
+
+                    // if let Err(err) = s.fn_handler(
+                    //     "/api/version",
+                    //     embedded_svc::http::Method::Get,
+                    //     move |req| {
+                    //         // url_handler::api_version_handler(req)
+                    //         todo!()
+                    //     },
+                    // ) {
+                    //     info!(
+                    //         "mpsc loop: failed to register http handler /api/version: {:?} - restarting device",
+                    //         err
+                    //     );
+                    //     unsafe {
+                    //         esp_idf_sys::esp_restart();
+                    //     }
+                    // }
+
+                    // if let Err(err) =
+                    //     s.fn_handler("/api/ota", embedded_svc::http::Method::Post, move |req| {
+                    //         // url_handler::ota_update_handler(req)
+                    //         todo!()
+                    //     })
+                    // {
+                    //     info!(
+                    //         "mpsc loop: failed to register http handler /api/ota: {:?} - restarting device",
+                    //         err
+                    //     );
+                    //     unsafe {
+                    //         esp_idf_sys::esp_restart();
+                    //     }
+                    // }
+
+                    // if let Err(err) = s.fn_handler(
+                    //     "/temperature",
+                    //     embedded_svc::http::Method::Get,
+                    //     move |req| {
+                    //         // url_handler::temperature_handler(req)
+                    //         todo!()
+                    //     },
+                    // ) {
+                    //     info!(
+                    //         "mpsc loop: failed to register http handler /temperature: {:?} - restarting device",
+                    //         err
+                    //     );
+                    //     unsafe {
+                    //         esp_idf_sys::esp_restart();
+                    //     }
+                    // }
+                }
+                Err(err) => {
+                    if err == mpsc::TryRecvError::Disconnected {
+                        info!("mpsc loop: error recv {:?} - restarting device", err);
+                        unsafe {
+                            esp_idf_sys::esp_restart();
+                        }
+                    } // the other error value is Empty which is okay and we ignore
+                }
+            }
+
+            FreeRtos::delay_ms(100);
         }
     }
 }
@@ -547,5 +634,5 @@ where
         esp_idf_sys::esp_task_wdt_reset();
     } // Reset WDT
 
-    std::thread::sleep(Duration::from_millis(500));
+    FreeRtos::delay_ms(100);
 }

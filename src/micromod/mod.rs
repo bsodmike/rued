@@ -24,7 +24,7 @@ pub mod chip {
     pub type GpioScl = PeripheralRef<'static, Gpio22>;
     pub type OnboardLed = PeripheralRef<'static, Gpio14>;
     pub type GpioD1 = PeripheralRef<'static, Gpio27>;
-    pub type Modem = PeripheralRef<'static, HalModem>;
+    pub type Modem = HalModem;
 
     pub fn setup_peripherals() -> Result<(GpioSda, GpioScl, I2C0, OnboardLed, GpioD1, Modem)> {
         let peripherals = Peripherals::take().unwrap();
@@ -39,7 +39,7 @@ pub mod chip {
         // D1 - GPIO pin 27, pad 18 on the MicroMod
         let gpio_d1 = PeripheralRef::new(peripherals.pins.gpio27);
 
-        let modem: PeripheralRef<HalModem> = PeripheralRef::new(peripherals.modem);
+        let modem = peripherals.modem;
 
         Ok((sda, scl, i2c0, led_onboard, gpio_d1, modem))
     }
