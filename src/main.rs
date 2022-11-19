@@ -7,12 +7,17 @@ use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, T
 use esp_idf_sys::{c_types, timer_group_t, timer_idx_t};
 use log::{debug, info, warn};
 use once_cell::sync::Lazy;
-use std::{env, fmt, ptr, sync::Mutex};
+use std::{
+    env, fmt, ptr,
+    sync::{mpsc, Mutex},
+};
 
 use crate::{
     models::{RTClock, SystemTimeBuffer},
     sensors::rtc::rv8803::RV8803,
+    wifi::SysLoopMsg,
 };
+
 use embedded_hal::i2c::I2c;
 use esp_idf_hal::timer::{Timer, TimerConfig, TimerDriver, TIMER00};
 use esp_idf_hal::{
@@ -123,13 +128,28 @@ pub struct TimerInfo {
     auto_reload: bool,
 }
 
+static LOGGER: EspLogger = EspLogger;
+
 fn main() -> Result<()> {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
     // or else some patches to the runtime implemented by esp-idf-sys might not link properly.
     esp_idf_sys::link_patches();
-    EspLogger::initialize_default();
+    log::set_logger(&LOGGER).map(|()| LOGGER.initialize())?;
+    LOGGER.set_target_level("", log::LevelFilter::Debug);
 
     info!("Hello, Rust from an ESP32!");
+
+    //  configure peripherals
+    let (mut active_peripherals, i2c_driver) = micromod::chip::configure()?;
+
+    let (tx, rx) = mpsc::channel::<SysLoopMsg>();
+
+    // let mut rtc = Rtc::new(peripherals.RTC_CNTL);
+    // // Enable watchdog
+    // rtc.rwdt.enable();
+    // // Feed (reset) the watchdog
+    // rtc.rwdt.feed();
+
     unsafe {
         esp_idf_sys::esp_task_wdt_reset();
     } // Reset WDT
@@ -137,37 +157,17 @@ fn main() -> Result<()> {
     // wifi
     let mut ip = String::default();
     let mut dns = String::default();
+
     #[cfg(feature = "wifi")]
-    {
-        let wifi = wifi::connect();
-        ip = match &wifi {
-            Err(e) => {
-                println!("Wifi error: {:?}", e);
-                format!("ERR: {:?}", e)
-            }
-            Ok(s) => s.1.ip.to_string(),
-        };
-
-        unsafe {
-            esp_idf_sys::esp_task_wdt_reset();
-        } // Reset WDT
-
-        dns = match &wifi {
-            Err(e) => {
-                // println!("Wifi error: {:?}", e);
-                format!("ERR: {:?}", e)
-            }
-            Ok(s) => {
-                if let Some(value) = s.1.dns {
-                    value.to_string()
-                } else {
-                    format!("ERR: Unable to unwrap DNS value")
-                }
-            }
-        };
-
-        let _wifi_client = wifi?.0;
-    }
+    let wifi = wifi::connect(active_peripherals.modem)?;
+    let netif = wifi.sta_netif();
+    let ip_info = netif.get_ip_info()?;
+    ip = ip_info.ip.to_string();
+    dns = if let Some(value) = ip_info.dns {
+        value.to_string()
+    } else {
+        format!("ERR: Unable to unwrap DNS value")
+    };
 
     unsafe {
         esp_idf_sys::esp_task_wdt_reset();
@@ -187,11 +187,7 @@ fn main() -> Result<()> {
         }
     }
 
-    //  configure peripherals
-    // let peripherals = Peripherals::take().unwrap();
-
     // Create two proxies. Now, each sensor can have their own instance of a proxy i2c, which resolves the ownership problem.
-    let (mut active_peripherals, i2c_driver) = micromod::chip::configure()?;
 
     // let mut led_onboard = active_peripherals.led_onboard();
 

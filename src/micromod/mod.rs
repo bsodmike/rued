@@ -8,7 +8,7 @@ use esp_idf_hal::{peripheral::PeripheralRef, peripherals::Peripherals};
 use std::ops::DerefMut;
 use std::sync::{Arc, RwLock};
 
-use self::chip::{GpioD1, GpioScl, GpioSda, OnboardLed};
+use self::chip::{GpioD1, GpioScl, GpioSda, Modem, OnboardLed};
 
 #[cfg(esp32)]
 pub mod chip {
@@ -16,14 +16,17 @@ pub mod chip {
 
     use super::*;
     use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output, PinDriver};
-    use esp_idf_hal::{peripheral::PeripheralRef, peripherals::Peripherals};
+    use esp_idf_hal::{
+        modem::Modem as HalModem, peripheral::PeripheralRef, peripherals::Peripherals,
+    };
 
     pub type GpioSda = PeripheralRef<'static, Gpio21>;
     pub type GpioScl = PeripheralRef<'static, Gpio22>;
     pub type OnboardLed = PeripheralRef<'static, Gpio14>;
     pub type GpioD1 = PeripheralRef<'static, Gpio27>;
+    pub type Modem = PeripheralRef<'static, HalModem>;
 
-    pub fn setup_peripherals() -> Result<(GpioSda, GpioScl, I2C0, OnboardLed, GpioD1)> {
+    pub fn setup_peripherals() -> Result<(GpioSda, GpioScl, I2C0, OnboardLed, GpioD1, Modem)> {
         let peripherals = Peripherals::take().unwrap();
 
         let mut i2c0 = peripherals.i2c0;
@@ -36,7 +39,9 @@ pub mod chip {
         // D1 - GPIO pin 27, pad 18 on the MicroMod
         let gpio_d1 = PeripheralRef::new(peripherals.pins.gpio27);
 
-        Ok((sda, scl, i2c0, led_onboard, gpio_d1))
+        let modem: PeripheralRef<HalModem> = PeripheralRef::new(peripherals.modem);
+
+        Ok((sda, scl, i2c0, led_onboard, gpio_d1, modem))
     }
 
     pub fn configure() -> Result<(ActiveGpio, I2cDriver<'static>)> {
@@ -45,7 +50,7 @@ pub mod chip {
 
         let board: MicroModBoard<Chip, BoardSKU> = MicroModBoard::new(chip, sku).unwrap();
 
-        let (led_onboard, gpio_d1, sda, scl, i2c0) = board.fetch_peripherals()?;
+        let (led_onboard, gpio_d1, sda, scl, i2c0, modem) = board.fetch_peripherals()?;
 
         let i2c_driver = MicroModBoard::<Chip, BoardSKU>::configure(i2c0, scl, sda).unwrap();
 
@@ -57,6 +62,7 @@ pub mod chip {
             ActiveGpio {
                 led_onboard,
                 gpio_d1,
+                modem,
             },
             i2c_driver,
         ))
@@ -88,12 +94,13 @@ pub trait Board<CHIP, SKU> {
 
     fn gpio_scl(&self) -> Result<&GpioScl>;
 
-    fn fetch_peripherals(self) -> Result<(OnboardLed, GpioD1, GpioSda, GpioScl, I2C0)>;
+    fn fetch_peripherals(self) -> Result<(OnboardLed, GpioD1, GpioSda, GpioScl, I2C0, Modem)>;
 }
 
 pub struct ActiveGpio {
     led_onboard: OnboardLed,
     gpio_d1: GpioD1,
+    pub modem: Modem,
 }
 
 impl ActiveGpio {
@@ -111,6 +118,7 @@ pub struct MicroModBoard<CHIP, SKU> {
     i2c0: I2C0,
     led_onboard: OnboardLed,
     gpio_d1: GpioD1,
+    modem: Modem,
 }
 
 impl<CHIP, SKU> Board<CHIP, SKU> for MicroModBoard<CHIP, SKU>
@@ -145,20 +153,22 @@ where
         Ok(&self.led_onboard)
     }
 
-    fn fetch_peripherals(self) -> Result<(OnboardLed, GpioD1, GpioSda, GpioScl, I2C0)> {
+    fn fetch_peripherals(self) -> Result<(OnboardLed, GpioD1, GpioSda, GpioScl, I2C0, Modem)> {
         Ok((
             self.led_onboard,
             self.gpio_d1,
             self.sda,
             self.scl,
             self.i2c0,
+            self.modem,
         ))
     }
 }
 
 impl<CHIP, SKU> MicroModBoard<CHIP, SKU> {
     pub fn new(chip: CHIP, sku: SKU) -> Result<Self> {
-        let (sda, scl, i2c0, led_onboard, gpio_d1) = super::micromod::chip::setup_peripherals()?;
+        let (sda, scl, i2c0, led_onboard, gpio_d1, modem) =
+            super::micromod::chip::setup_peripherals()?;
 
         Ok(Self {
             chip,
@@ -168,6 +178,7 @@ impl<CHIP, SKU> MicroModBoard<CHIP, SKU> {
             i2c0,
             led_onboard,
             gpio_d1,
+            modem,
         })
     }
 }

@@ -14,7 +14,7 @@ opt-level = "z"
 
 [features]
 pio = ["esp-idf-sys/pio"]
-default = []
+default = ["wifi"]
 # default = ["wifi", "sntp"]
 httpd_server_enabled = ["wifi", "sntp", "httpd_server"]
 
@@ -31,7 +31,7 @@ embedded-svc = { git = "https://github.com/esp-rs/embedded-svc", features = ["ex
 
 anyhow = "1"
 log = "0.4.17"
-ssd1306 = "0.7.0" # pulls in older version of embedded-hal
+# ssd1306 = "0.7.0" # pulls in older version of embedded-hal
 embedded-graphics = "0.7"
 display-interface = "0.4.1"
 serde = "1.0.147"
