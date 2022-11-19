@@ -5,17 +5,17 @@ use ::core::time::Duration;
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
 use esp_idf_sys::{c_types, timer_group_t, timer_idx_t};
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use std::{
     env, fmt, ptr,
     sync::{mpsc, Mutex},
+    thread::sleep,
 };
 
 use crate::{
     models::{RTClock, SystemTimeBuffer},
     sensors::rtc::rv8803::RV8803,
-    wifi::SysLoopMsg,
 };
 
 use embedded_hal::i2c::I2c;
@@ -46,6 +46,19 @@ use esp_idf_sys::{
     xQueueReceive, QueueHandle_t, TIMER_BASE_CLK,
 };
 
+use embedded_svc::wifi::{self, AuthMethod, ClientConfiguration};
+use esp_idf_hal::modem::Modem;
+use esp_idf_svc::{
+    eventloop::EspSystemEventLoop,
+    netif::IpEvent,
+    nvs::EspDefaultNvsPartition,
+    wifi::{EspWifi, WifiEvent, WifiWait},
+};
+use esp_idf_sys as _;
+use esp_idf_sys::{esp_wifi_set_ps, wifi_ps_type_t_WIFI_PS_NONE};
+
+use std::sync::{mpsc::Sender, Arc};
+
 extern crate rust_esp32_blinky as blinky;
 use blinky::micromod;
 
@@ -57,7 +70,7 @@ mod http_client;
 mod http_server;
 mod models;
 mod sensors;
-mod wifi;
+// mod wifi;
 
 const WIFI_SSID: &str = env!("WIFI_SSID");
 const WIFI_PSK: &str = env!("WIFI_PSK");
@@ -128,14 +141,20 @@ pub struct TimerInfo {
     auto_reload: bool,
 }
 
+pub enum SysLoopMsg {
+    WifiDisconnect,
+    IpAddressAcquired,
+}
+
 static LOGGER: EspLogger = EspLogger;
 
 fn main() -> Result<()> {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
     // or else some patches to the runtime implemented by esp-idf-sys might not link properly.
     esp_idf_sys::link_patches();
-    log::set_logger(&LOGGER).map(|()| LOGGER.initialize())?;
-    LOGGER.set_target_level("", log::LevelFilter::Debug);
+    // log::set_logger(&LOGGER).map(|()| LOGGER.initialize())?;
+    // LOGGER.set_target_level("", log::LevelFilter::Debug);
+    log::set_logger(&LOGGER).map(|()| log::set_max_level(log::LevelFilter::Info))?;
 
     info!("Hello, Rust from an ESP32!");
 
@@ -159,7 +178,100 @@ fn main() -> Result<()> {
     let mut dns = String::default();
 
     #[cfg(feature = "wifi")]
-    let wifi = wifi::connect(active_peripherals.modem, tx)?;
+    // let wifi = wifi::connect(active_peripherals.modem, tx)?;
+
+    info!("WIFI: Wifi name {}", crate::WIFI_SSID);
+    let mut auth_method = AuthMethod::WPA2WPA3Personal; // Todo: add this setting - router dependent
+    if crate::WIFI_SSID.is_empty() {
+        anyhow::bail!("missing WiFi name")
+    }
+    if crate::WIFI_PSK.is_empty() {
+        anyhow::bail!("Wifi password is empty")
+    }
+
+    let mut sysloop = EspSystemEventLoop::take()?;
+    let nvs_default_partition = EspDefaultNvsPartition::take()?;
+
+    let mut wifi = EspWifi::new::<Modem>(
+        active_peripherals.modem,
+        sysloop.clone(),
+        Some(nvs_default_partition),
+    )?;
+
+    wifi.set_configuration(&wifi::Configuration::Client(ClientConfiguration {
+        ssid: crate::WIFI_SSID.into(),
+        password: crate::WIFI_PSK.into(),
+        // auth_method,
+        ..Default::default()
+    }))?;
+
+    let wait = WifiWait::new(&sysloop)?;
+
+    unsafe {
+        esp_idf_sys::esp_task_wdt_reset();
+    } // Reset WDT
+    if let Err(err) = wifi.start() {
+        error!("ERROR: Wifi start failure {:?}", err.to_string());
+        unsafe {
+            esp_idf_sys::esp_restart();
+        }
+    }
+
+    // disable power save
+    esp!(unsafe { esp_wifi_set_ps(wifi_ps_type_t_WIFI_PS_NONE) })?;
+
+    wait.wait(|| {
+        debug!("WIFI: Waiting for start...");
+
+        match wifi.is_started() {
+            Ok(value) => value,
+            Err(err) => {
+                println!("...still starting!");
+                false
+            }
+        }
+    });
+    info!("Wifi started");
+
+    sleep(Duration::from_millis(2000));
+
+    if let Err(err) = wifi.connect() {
+        error!("ERROR: Wifi connect failure {:?}", err.to_string());
+        unsafe {
+            esp_idf_sys::esp_restart();
+        }
+    }
+
+    let tx1 = tx.clone();
+    let _wifi_event_sub = sysloop.subscribe(move |event: &WifiEvent| match event {
+        WifiEvent::StaConnected => {
+            info!("******* Received STA Connected Event");
+        }
+        WifiEvent::StaDisconnected => {
+            info!("******* Received STA Disconnected event");
+            tx.send(SysLoopMsg::WifiDisconnect)
+                .expect("wifi event channel closed");
+
+            sleep(Duration::from_millis(10));
+
+            if let Err(err) = wifi.connect() {
+                info!("Error calling wifi.connect in wifi reconnect {:?}", err);
+            }
+        }
+        _ => info!("Received other Wifi event"),
+    })?;
+
+    let _ip_event_sub = sysloop.subscribe(move |event: &IpEvent| match event {
+        IpEvent::DhcpIpAssigned(_assignment) => {
+            info!("************ Received IPEvent address assigned");
+            tx1.send(SysLoopMsg::IpAddressAcquired)
+                .expect("IP event channel closed");
+        }
+        _ => info!("Received other IPEvent"),
+    })?;
+
+    // SPACE
+
     // let netif = wifi.sta_netif();
     // let ip_info = netif.get_ip_info()?;
     // ip = ip_info.ip.to_string();
@@ -244,57 +356,57 @@ fn main() -> Result<()> {
         }
         get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
 
-        // Queue configurations
-        const QUEUE_TYPE_BASE: u8 = 0;
-        const ITEM_SIZE: u32 = 0; // we're not posting any actual data, just notifying
-        const QUEUE_SIZE: u32 = 1;
+        // // Queue configurations
+        // const QUEUE_TYPE_BASE: u8 = 0;
+        // const ITEM_SIZE: u32 = 0; // we're not posting any actual data, just notifying
+        // const QUEUE_SIZE: u32 = 1;
 
-        const TIMER_SCALE: u32 = TIMER_BASE_CLK / TIMER_DIVIDER;
-        let timer_conf = timer_config_t {
-            alarm_en: timer_alarm_t_TIMER_ALARM_EN,
-            counter_en: timer_start_t_TIMER_START,
-            intr_type: timer_intr_mode_t_TIMER_INTR_LEVEL,
-            counter_dir: timer_count_dir_t_TIMER_COUNT_UP,
-            auto_reload: timer_autoreload_t_TIMER_AUTORELOAD_EN,
-            divider: TIMER_DIVIDER,
-        };
+        // const TIMER_SCALE: u32 = TIMER_BASE_CLK / TIMER_DIVIDER;
+        // let timer_conf = timer_config_t {
+        //     alarm_en: timer_alarm_t_TIMER_ALARM_EN,
+        //     counter_en: timer_start_t_TIMER_START,
+        //     intr_type: timer_intr_mode_t_TIMER_INTR_LEVEL,
+        //     counter_dir: timer_count_dir_t_TIMER_COUNT_UP,
+        //     auto_reload: timer_autoreload_t_TIMER_AUTORELOAD_EN,
+        //     divider: TIMER_DIVIDER,
+        // };
 
-        // Instantiates the event queue
-        EVENT_QUEUE = Some(xQueueGenericCreate(QUEUE_SIZE, ITEM_SIZE, QUEUE_TYPE_BASE));
+        // // Instantiates the event queue
+        // EVENT_QUEUE = Some(xQueueGenericCreate(QUEUE_SIZE, ITEM_SIZE, QUEUE_TYPE_BASE));
 
-        timer_set_counter_value(timer_group_t_TIMER_GROUP_0, timer_idx_t_TIMER_0, 0);
+        // timer_set_counter_value(timer_group_t_TIMER_GROUP_0, timer_idx_t_TIMER_0, 0);
 
-        timer_init(
-            timer_group_t_TIMER_GROUP_0,
-            timer_idx_t_TIMER_0,
-            &timer_conf,
-        );
-
-        let timer_interval_sec: u32 = 5;
-        timer_set_alarm_value(
-            timer_group_t_TIMER_GROUP_0,
-            timer_idx_t_TIMER_0,
-            (timer_interval_sec * TIMER_SCALE) as u64,
-        );
-        timer_enable_intr(timer_group_t_TIMER_GROUP_0, timer_idx_t_TIMER_0);
-
-        // let callback: Box<dyn FnMut() + 'static> = Box::new(|| unsafe { timer0_interrupt });
-
-        let mut timer_info = &TimerInfo {
-            timer_group: timer_group_t_TIMER_GROUP_0,
-            timer_idx: timer_idx_t_TIMER_0,
-            alarm_interval: timer_interval_sec,
-            auto_reload: true,
-        };
-
-        // let h: TimerInterruptHandler = timer0_interrupt;
-        // timer_isr_callback_add(
+        // timer_init(
         //     timer_group_t_TIMER_GROUP_0,
         //     timer_idx_t_TIMER_0,
-        //     Some(h),
-        //     t_info_ptr,
-        //     todo!(),
+        //     &timer_conf,
         // );
+
+        // let timer_interval_sec: u32 = 5;
+        // timer_set_alarm_value(
+        //     timer_group_t_TIMER_GROUP_0,
+        //     timer_idx_t_TIMER_0,
+        //     (timer_interval_sec * TIMER_SCALE) as u64,
+        // );
+        // timer_enable_intr(timer_group_t_TIMER_GROUP_0, timer_idx_t_TIMER_0);
+
+        // // let callback: Box<dyn FnMut() + 'static> = Box::new(|| unsafe { timer0_interrupt });
+
+        // let mut timer_info = &TimerInfo {
+        //     timer_group: timer_group_t_TIMER_GROUP_0,
+        //     timer_idx: timer_idx_t_TIMER_0,
+        //     alarm_interval: timer_interval_sec,
+        //     auto_reload: true,
+        // };
+
+        // // let h: TimerInterruptHandler = timer0_interrupt;
+        // // timer_isr_callback_add(
+        // //     timer_group_t_TIMER_GROUP_0,
+        // //     timer_idx_t_TIMER_0,
+        // //     Some(h),
+        // //     t_info_ptr,
+        // //     todo!(),
+        // // );
 
         loop {
             // FIXME
@@ -434,15 +546,15 @@ fn main() -> Result<()> {
                 }
                 Err(err) => {
                     if err == mpsc::TryRecvError::Disconnected {
-                        info!("mpsc loop: error recv {:?} - restarting device", err);
-                        unsafe {
-                            esp_idf_sys::esp_restart();
-                        }
-                    } // the other error value is Empty which is okay and we ignore
+                        warn!("mpsc loop: error recv {:?} - Disconnected", err);
+                        // unsafe {
+                        //     esp_idf_sys::esp_restart();
+                        // }
+                    }
                 }
             }
 
-            FreeRtos::delay_ms(100);
+            FreeRtos::delay_ms(200);
         }
     }
 }
