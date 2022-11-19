@@ -11,7 +11,7 @@ use std::{env, fmt, ptr, sync::Mutex};
 
 use crate::{
     models::{RTClock, SystemTimeBuffer},
-    sensors::rtc,
+    sensors::rtc::rv8803::RV8803,
 };
 use embedded_hal::i2c::I2c;
 use esp_idf_hal::timer::{Timer, TimerConfig, TimerDriver, TIMER00};
@@ -367,7 +367,7 @@ fn main() -> Result<()> {
 type I2cDriverType<'a> = I2cDriver<'a>;
 
 unsafe fn get_system_time_with_fallback(
-    rtc: &mut crate::sensors::rtc::rv8803::RV8803,
+    rtc: &mut RV8803,
     rtc_clock: &mut RTClock,
 ) -> Result<SystemTimeBuffer> {
     let system_time = get_system_time()?;
@@ -396,7 +396,7 @@ unsafe fn get_system_time_with_fallback(
 
 unsafe fn update_local_from_rtc(
     system_time: &SystemTimeBuffer,
-    rtc: &mut crate::sensors::rtc::rv8803::RV8803,
+    rtc: &mut RV8803,
     rtc_clock: &mut RTClock,
 ) -> Result<bool> {
     // This should be from the RTC clock
@@ -426,10 +426,7 @@ unsafe fn update_local_from_rtc(
     Ok(true)
 }
 
-fn update_rtc_from_local(
-    rtc: &mut crate::sensors::rtc::rv8803::RV8803,
-    latest_system_time: &SystemTimeBuffer,
-) -> Result<bool> {
+fn update_rtc_from_local(rtc: &mut RV8803, latest_system_time: &SystemTimeBuffer) -> Result<bool> {
     let weekday = latest_system_time.weekday()?;
 
     let resp = rtc.set_time(

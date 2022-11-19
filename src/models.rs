@@ -1,4 +1,4 @@
-use crate::sensors::rtc;
+use crate::sensors::rtc::rv8803::{Weekday, RV8803, TIME_ARRAY_LENGTH};
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike};
 use log::{debug, info, warn};
@@ -14,11 +14,8 @@ impl RTClock {
         Self { datetime: None }
     }
 
-    pub fn update_time(
-        &mut self,
-        rtc: &mut crate::sensors::rtc::rv8803::RV8803,
-    ) -> Result<RTCReading> {
-        let mut time = [0_u8; rtc::rv8803::TIME_ARRAY_LENGTH];
+    pub fn update_time(&mut self, rtc: &mut RV8803) -> Result<RTCReading> {
+        let mut time = [0_u8; TIME_ARRAY_LENGTH];
 
         // Fetch time from RTC.
         let update = rtc.update_time(&mut time)?;
@@ -98,7 +95,7 @@ pub struct RTCReading {
 
 impl RTCReading {
     pub fn to_s(&self) -> Result<String> {
-        let weekday: crate::rtc::rv8803::Weekday = self.weekday.into();
+        let weekday: Weekday = self.weekday.into();
 
         Ok(format!(
             "{} {}-{:0>2}-{:0>2} {:0>2}:{:0>2}:{:0>2} {}",
@@ -148,8 +145,8 @@ impl SystemTimeBuffer {
         Ok(self.datetime.to_rfc3339())
     }
 
-    pub fn weekday(&self) -> Result<rtc::rv8803::Weekday> {
-        let rtc_weekday: rtc::rv8803::Weekday = self.datetime.weekday().into();
+    pub fn weekday(&self) -> Result<Weekday> {
+        let rtc_weekday: Weekday = self.datetime.weekday().into();
 
         Ok(rtc_weekday)
     }
