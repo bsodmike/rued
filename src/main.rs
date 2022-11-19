@@ -9,7 +9,10 @@ use log::{debug, info, warn};
 use once_cell::sync::Lazy;
 use std::{env, fmt, ptr, sync::Mutex};
 
-use crate::sensors::rtc;
+use crate::{
+    models::{RTClock, SystemTimeBuffer},
+    sensors::rtc,
+};
 use embedded_hal::i2c::I2c;
 use esp_idf_hal::timer::{Timer, TimerConfig, TimerDriver, TIMER00};
 use esp_idf_hal::{
@@ -47,6 +50,7 @@ mod error;
 mod http;
 mod http_client;
 mod http_server;
+mod models;
 mod sensors;
 mod wifi;
 
@@ -66,182 +70,7 @@ unsafe extern "C" fn timer0_interrupt(arg1: *mut c_void) -> bool {
     true
 }
 
-struct UnsafeCallback(*mut Box<dyn FnMut() + 'static>);
-
-impl UnsafeCallback {
-    #[allow(clippy::type_complexity)]
-    pub fn from(boxed: &mut Box<Box<dyn FnMut() + 'static>>) -> Self {
-        Self(boxed.as_mut())
-    }
-
-    pub unsafe fn from_ptr(ptr: *mut c_types::c_void) -> Self {
-        Self(ptr as *mut _)
-    }
-
-    pub fn as_ptr(&self) -> *mut c_types::c_void {
-        self.0 as *mut _
-    }
-
-    pub unsafe fn call(&mut self) {
-        let reference = self.0.as_mut().unwrap();
-
-        (reference)();
-    }
-}
-
 // REST OF THE STUFF
-
-#[derive(Debug)]
-pub struct RTClock {
-    datetime: Option<DateTime<Utc>>,
-}
-
-impl RTClock {
-    fn new() -> Self {
-        Self { datetime: None }
-    }
-
-    fn update_time(&mut self, rtc: &mut crate::sensors::rtc::rv8803::RV8803) -> Result<RTCReading> {
-        let mut time = [0_u8; rtc::rv8803::TIME_ARRAY_LENGTH];
-
-        // Fetch time from RTC.
-        let update = rtc.update_time(&mut time)?;
-        if !update {
-            warn!("RTC: Failed reading latest time");
-            println!("{:?}", time);
-        }
-
-        let reading = RTCReading {
-            hours: time[3],
-            minutes: time[2],
-            seconds: time[1],
-            hundreths: time[0],
-            weekday: time[4],
-            date: time[5],
-            month: time[6],
-            year: format!("20{}", time[7])
-                .to_string()
-                .parse::<u32>()
-                .unwrap_or_default(),
-        };
-
-        let naivedatetime_utc = NaiveDate::from_ymd_opt(
-            reading.year as i32,
-            reading.month as u32,
-            reading.date as u32,
-        )
-        .unwrap()
-        .and_hms_opt(
-            reading.hours as u32,
-            reading.minutes as u32,
-            reading.seconds as u32,
-        )
-        .unwrap();
-        let datetime_utc = DateTime::<Utc>::from_utc(naivedatetime_utc, UTC_OFFSET_CHRONO);
-        self.datetime = Some(datetime_utc);
-
-        Ok(reading)
-    }
-
-    fn to_timestamp(&self) -> Result<i64> {
-        let datetime = if let Some(dt) = self.datetime {
-            dt
-        } else {
-            return Err(Error::msg(
-                "Unable to unwrap datetime, when attempting to return UNIX timestamp",
-            ));
-        };
-
-        Ok(datetime.timestamp())
-    }
-
-    fn datetime(&self) -> Result<DateTime<Utc>> {
-        let datetime = if let Some(dt) = self.datetime {
-            dt
-        } else {
-            return Err(Error::msg(
-                "Unable to unwrap datetime, when attempting to return UNIX timestamp",
-            ));
-        };
-
-        Ok(datetime)
-    }
-}
-
-#[derive(Debug)]
-pub struct RTCReading {
-    hours: u8,
-    minutes: u8,
-    seconds: u8,
-    hundreths: u8,
-    weekday: u8,
-    date: u8,
-    month: u8,
-    year: u32,
-}
-
-impl RTCReading {
-    fn to_s(&self) -> Result<String> {
-        let weekday: crate::rtc::rv8803::Weekday = self.weekday.into();
-
-        Ok(format!(
-            "{} {}-{:0>2}-{:0>2} {:0>2}:{:0>2}:{:0>2} {}",
-            weekday,
-            self.year,
-            self.month,
-            self.date,
-            self.hours,
-            self.minutes,
-            self.seconds,
-            UTC_OFFSET_CHRONO
-        ))
-    }
-}
-
-#[derive(Debug)]
-pub struct SystemTimeBuffer {
-    date: u8,
-    month: u8,
-    year: u16,
-    hours: u8,
-    minutes: u8,
-    seconds: u8,
-    datetime: DateTime<Utc>,
-}
-
-impl SystemTimeBuffer {
-    fn to_s(&self) -> Result<String> {
-        Ok(format!(
-            "{} {}-{:0>2}-{:0>2} {:0>2}:{:0>2}:{:0>2} {}",
-            self.weekday()?,
-            self.year,
-            self.month,
-            self.date,
-            self.hours,
-            self.minutes,
-            self.seconds,
-            UTC_OFFSET_CHRONO
-        ))
-    }
-
-    fn to_timestamp(&self) -> Result<i64> {
-        Ok(self.datetime.timestamp())
-    }
-
-    fn to_rfc3339(&self) -> Result<String> {
-        Ok(self.datetime.to_rfc3339())
-    }
-
-    fn weekday(&self) -> Result<rtc::rv8803::Weekday> {
-        let rtc_weekday: rtc::rv8803::Weekday = self.datetime.weekday().into();
-
-        Ok(rtc_weekday)
-    }
-
-    fn datetime(&self) -> Result<DateTime<Utc>> {
-        Ok(self.datetime)
-    }
-}
 
 const CURRENT_YEAR: u16 = 2022;
 const UTC_OFFSET_CHRONO: Utc = Utc;
