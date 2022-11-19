@@ -8,6 +8,7 @@ pub mod rv8803 {
     use esp_idf_hal::i2c::I2cDriver;
     use esp_idf_sys::EspError;
     use log::{debug, info};
+    use shared_bus::{I2cProxy, NullMutex};
     use std::{
         fmt::{self, Display},
         marker::PhantomPinned,
@@ -17,6 +18,7 @@ pub mod rv8803 {
     pub const TIME_ARRAY_LENGTH: usize = 8;
     const RV8803_ENABLE: bool = true;
     const RV8803_DISABLE: bool = false;
+    type I2cProxyWithDriver<'a> = I2cProxy<'a, NullMutex<I2cDriver<'static>>>;
 
     /// RV-8803 device driver.
     /// Datasheet: <https://cdn.sparkfun.com/assets/1/2/4/2/3/RV-8803-C7_App-Manual.pdf>
@@ -24,7 +26,7 @@ pub mod rv8803 {
 
     pub struct RV8803<'a> {
         /// The concrete I²C device implementation.
-        i2c: I2cDriver<'a>,
+        i2c: I2cProxyWithDriver<'a>,
 
         /// Device address
         address: DeviceAddr,
@@ -56,7 +58,7 @@ pub mod rv8803 {
     // I2C: i2c::I2c,
     {
         /// Create a new instance of the RV8803.
-        pub fn new(i2c: I2cDriver<'a>, address: DeviceAddr) -> Result<RV8803> {
+        pub fn new(i2c: I2cProxyWithDriver<'a>, address: DeviceAddr) -> Result<RV8803> {
             let rv8803 = RV8803 { i2c, address };
 
             Ok(rv8803)

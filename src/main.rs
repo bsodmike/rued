@@ -4,12 +4,14 @@
 use ::core::time::Duration;
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
-use esp_idf_sys::{c_types, timer_group_t, timer_idx_t};
 use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use std::{
     env, fmt, ptr,
-    sync::{mpsc, Mutex},
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        Arc, Mutex,
+    },
     thread::sleep,
 };
 
@@ -22,6 +24,7 @@ use embedded_hal::i2c::I2c;
 use esp_idf_hal::timer::{Timer, TimerConfig, TimerDriver, TIMER00};
 use esp_idf_hal::{delay::FreeRtos, peripheral::PeripheralRef, peripherals::Peripherals};
 use esp_idf_hal::{
+    gpio::PinDriver,
     i2c::{config::Config as I2cConfig, I2cDriver, I2C0},
     units::Hertz,
 };
@@ -30,23 +33,15 @@ use esp_idf_svc::{
     sntp::{self, EspSntp, OperatingMode, SntpConf, SyncMode, SyncStatus},
 };
 
+use esp_idf_sys as _;
 #[allow(unused_imports)]
 use esp_idf_sys::{
-    self as _, settimeofday, sntp_init, sntp_set_sync_interval, sntp_set_time_sync_notification_cb,
-    sntp_stop, time_t, timeval, timezone,
+    self as _, esp, esp_wifi_connect, esp_wifi_set_ps, settimeofday, sntp_init,
+    sntp_set_sync_interval, sntp_set_time_sync_notification_cb, sntp_stop, time_t, timeval,
+    timezone, wifi_ps_type_t_WIFI_PS_NONE,
 }; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
-const TIMER_DIVIDER: u32 = 16;
-use esp_idf_sys::{
-    c_types::c_void, esp, timer_alarm_t_TIMER_ALARM_EN, timer_autoreload_t_TIMER_AUTORELOAD_EN,
-    timer_config_t, timer_count_dir_t_TIMER_COUNT_UP, timer_enable_intr,
-    timer_group_t_TIMER_GROUP_0, timer_idx_t_TIMER_0, timer_init,
-    timer_intr_mode_t_TIMER_INTR_LEVEL, timer_isr_callback_add, timer_isr_t, timer_set_alarm_value,
-    timer_set_counter_value, timer_start_t_TIMER_START, xQueueGenericCreate, xQueueGiveFromISR,
-    xQueueReceive, QueueHandle_t, TIMER_BASE_CLK,
-};
-
-use embedded_svc::wifi::{self, AuthMethod, ClientConfiguration};
+use embedded_svc::wifi::{self, AuthMethod, ClientConfiguration, Wifi};
 use esp_idf_hal::modem::Modem;
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
@@ -54,10 +49,6 @@ use esp_idf_svc::{
     nvs::EspDefaultNvsPartition,
     wifi::{EspWifi, WifiEvent, WifiWait},
 };
-use esp_idf_sys as _;
-use esp_idf_sys::{esp_wifi_set_ps, wifi_ps_type_t_WIFI_PS_NONE};
-
-use std::sync::{mpsc::Sender, Arc};
 
 extern crate rust_esp32_blinky as blinky;
 use blinky::micromod;
@@ -70,25 +61,9 @@ mod http_client;
 mod http_server;
 mod models;
 mod sensors;
-// mod wifi;
 
 const WIFI_SSID: &str = env!("WIFI_SSID");
 const WIFI_PSK: &str = env!("WIFI_PSK");
-
-// This `static mut` holds the queue handle we are going to get from `xQueueGenericCreate`.
-// This is unsafe, but we are careful not to enable our GPIO interrupt handler until after this value has been initialised, and then never modify it again
-static mut EVENT_QUEUE: Option<QueueHandle_t> = None;
-
-type TimerInterruptHandler = unsafe extern "C" fn(arg1: *mut c_void) -> bool;
-
-#[link_section = ".iram0.text"]
-unsafe extern "C" fn timer0_interrupt(arg1: *mut c_void) -> bool {
-    xQueueGiveFromISR(EVENT_QUEUE.unwrap(), std::ptr::null_mut());
-
-    true
-}
-
-// REST OF THE STUFF
 
 const CURRENT_YEAR: u16 = 2022;
 const UTC_OFFSET_CHRONO: Utc = Utc;
@@ -134,13 +109,6 @@ pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut time
     }
 }
 
-pub struct TimerInfo {
-    timer_group: timer_group_t,
-    timer_idx: timer_idx_t,
-    alarm_interval: u32,
-    auto_reload: bool,
-}
-
 pub enum SysLoopMsg {
     WifiDisconnect,
     IpAddressAcquired,
@@ -148,40 +116,47 @@ pub enum SysLoopMsg {
 
 static LOGGER: EspLogger = EspLogger;
 
+fn wifi_connect() -> Result<()> {
+    info!("Connect requested");
+
+    esp!(unsafe { esp_wifi_connect() })?;
+
+    info!("Connecting");
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
-    // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
-    // or else some patches to the runtime implemented by esp-idf-sys might not link properly.
     esp_idf_sys::link_patches();
     // log::set_logger(&LOGGER).map(|()| LOGGER.initialize())?;
     // LOGGER.set_target_level("", log::LevelFilter::Debug);
-    log::set_logger(&LOGGER).map(|()| log::set_max_level(log::LevelFilter::Info))?;
+    log::set_logger(&LOGGER).map(|()| {
+        LOGGER.initialize();
+        log::set_max_level(log::LevelFilter::Debug)
+    })?;
 
     info!("Hello, Rust from an ESP32!");
+    warn!("Hello, Rust from an ESP32!");
+    debug!("Hello, Rust from an ESP32!");
 
     //  configure peripherals
-    let (mut active_peripherals, i2c_driver) = micromod::chip::configure()?;
+    let (active_gpio, i2c_bus) = micromod::chip::configure()?;
 
+    let mut led_onboard = PinDriver::output(active_gpio.led_onboard)?;
+    led_onboard.set_low()?;
+
+    let i2c_proxy1 = i2c_bus.acquire_i2c();
+    let i2c_proxy2 = i2c_bus.acquire_i2c();
+
+    // wifi mpsc
     let (tx, rx) = mpsc::channel::<SysLoopMsg>();
-
-    // let mut rtc = Rtc::new(peripherals.RTC_CNTL);
-    // // Enable watchdog
-    // rtc.rwdt.enable();
-    // // Feed (reset) the watchdog
-    // rtc.rwdt.feed();
-
-    unsafe {
-        esp_idf_sys::esp_task_wdt_reset();
-    } // Reset WDT
 
     // wifi
     let mut ip = String::default();
     let mut dns = String::default();
 
-    #[cfg(feature = "wifi")]
-    // let wifi = wifi::connect(active_peripherals.modem, tx)?;
-
     info!("WIFI: Wifi name {}", crate::WIFI_SSID);
-    let mut auth_method = AuthMethod::WPA2WPA3Personal; // Todo: add this setting - router dependent
+    let auth_method = AuthMethod::WPA2WPA3Personal; // Todo: add this setting - router dependent
     if crate::WIFI_SSID.is_empty() {
         anyhow::bail!("missing WiFi name")
     }
@@ -189,11 +164,11 @@ fn main() -> Result<()> {
         anyhow::bail!("Wifi password is empty")
     }
 
-    let mut sysloop = EspSystemEventLoop::take()?;
+    let sysloop = EspSystemEventLoop::take()?;
     let nvs_default_partition = EspDefaultNvsPartition::take()?;
 
     let mut wifi = EspWifi::new::<Modem>(
-        active_peripherals.modem,
+        active_gpio.modem,
         sysloop.clone(),
         Some(nvs_default_partition),
     )?;
@@ -201,15 +176,12 @@ fn main() -> Result<()> {
     wifi.set_configuration(&wifi::Configuration::Client(ClientConfiguration {
         ssid: crate::WIFI_SSID.into(),
         password: crate::WIFI_PSK.into(),
-        // auth_method,
+        auth_method,
         ..Default::default()
     }))?;
 
     let wait = WifiWait::new(&sysloop)?;
 
-    unsafe {
-        esp_idf_sys::esp_task_wdt_reset();
-    } // Reset WDT
     if let Err(err) = wifi.start() {
         error!("ERROR: Wifi start failure {:?}", err.to_string());
         unsafe {
@@ -254,7 +226,8 @@ fn main() -> Result<()> {
 
             sleep(Duration::from_millis(10));
 
-            if let Err(err) = wifi.connect() {
+            // NOTE: this is a hack
+            if let Err(err) = wifi_connect() {
                 info!("Error calling wifi.connect in wifi reconnect {:?}", err);
             }
         }
@@ -271,19 +244,6 @@ fn main() -> Result<()> {
     })?;
 
     // SPACE
-
-    // let netif = wifi.sta_netif();
-    // let ip_info = netif.get_ip_info()?;
-    // ip = ip_info.ip.to_string();
-    // dns = if let Some(value) = ip_info.dns {
-    //     value.to_string()
-    // } else {
-    //     format!("ERR: Unable to unwrap DNS value")
-    // };
-
-    unsafe {
-        esp_idf_sys::esp_task_wdt_reset();
-    } // Reset WDT
 
     // setup http server
     #[cfg(feature = "httpd_server")]
@@ -318,18 +278,9 @@ fn main() -> Result<()> {
     // let mut proxy_1 = bus.acquire_i2c();
     // let proxy_2 = bus.acquire_i2c();
 
-    info!("Reading RTC Sensor");
-
     // setup RTC sensor
     let mut rtc =
-        sensors::rtc::rv8803::RV8803::new(i2c_driver, sensors::rtc::rv8803::DeviceAddr::B011_0010)?;
-
-    //  setup display
-    // #[cfg(not(feature = "wifi"))]
-    // {
-    //     ip = "WIFI_DISABLED".to_string();
-    //     dns = "WIFI_DISABLED".to_string();
-    // }
+        sensors::rtc::rv8803::RV8803::new(i2c_proxy1, sensors::rtc::rv8803::DeviceAddr::B011_0010)?;
 
     // if let Err(e) = display::display_test(i2c_driver, &ip, &dns) {
     //     println!("Display error: {:?}", e)
@@ -338,22 +289,15 @@ fn main() -> Result<()> {
     // }
 
     // heart-beat sequence
-    // for i in 0..3 {
-    //     println!("Toggling LED now: {}", i);
-    //     toggle_led::<anyhow::Error, Gpio14<Output>>(&mut led_onboard);
-    // }
-
-    unsafe {
-        esp_idf_sys::esp_task_wdt_reset();
-    } // Reset WDT
+    for i in 0..3 {
+        println!("Toggling LED now: {}", i);
+        led_onboard.toggle()?;
+    }
 
     unsafe {
         let mut rtc_clock = RTClock::new();
 
-        #[cfg(feature = "sntp")]
-        {
-            let sntp = sntp_setup()?;
-        }
+        let sntp = sntp_setup()?;
         get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
 
         // // Queue configurations
@@ -412,23 +356,14 @@ fn main() -> Result<()> {
             // FIXME
             // toggle_led::<anyhow::Error, micromod::chip::OnboardLed>(&mut led_onboard);
 
-            let mut sync_status = "";
-            #[cfg(feature = "sntp")]
-            {
-                let sync_status = match sntp.get_sync_status() {
-                    SyncStatus::Reset => "SNTP_SYNC_STATUS_RESET",
-                    SyncStatus::Completed => "SNTP_SYNC_STATUS_COMPLETED",
-                    SyncStatus::InProgress => "SNTP_SYNC_STATUS_IN_PROGRESS",
-                };
-                debug!("sntp_get_sync_status: {}", sync_status);
-            }
-            #[cfg(not(feature = "sntp"))]
-            {
-                sync_status = "SNTP_DISABLED";
-            }
+            let sync_status = match sntp.get_sync_status() {
+                SyncStatus::Reset => "SNTP_SYNC_STATUS_RESET",
+                SyncStatus::Completed => "SNTP_SYNC_STATUS_COMPLETED",
+                SyncStatus::InProgress => "SNTP_SYNC_STATUS_IN_PROGRESS",
+            };
+            debug!("sntp_get_sync_status: {}", sync_status);
 
             std::thread::sleep(Duration::from_millis(500));
-            esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
 
             let rtc_reading = &rtc_clock.update_time(&mut rtc)?;
             let latest_system_time = get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
@@ -453,8 +388,6 @@ fn main() -> Result<()> {
                 update_rtc_from_local(&mut rtc, &latest_system_time)?;
                 info!("[OK]: Updated RTC Clock from Local time");
 
-                esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
-
                 core::update_rtc_disable();
             }
 
@@ -463,8 +396,6 @@ fn main() -> Result<()> {
             if core::get_fallback_to_rtc_flag() {
                 update_local_from_rtc(&latest_system_time, &mut rtc, &mut rtc_clock)?;
                 info!("[OK]: Updated System Clock from RTC time");
-
-                esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
 
                 core::fallback_to_rtc_disable()
             }
@@ -478,6 +409,23 @@ fn main() -> Result<()> {
                 }
                 Ok(SysLoopMsg::IpAddressAcquired) => {
                     info!("mpsc loop: IpAddressAcquired received");
+
+                    let netif = wifi.sta_netif();
+                    let ip_info = netif.get_ip_info()?;
+                    let ip = ip_info.ip.to_string();
+                    let dns = if let Some(value) = ip_info.dns {
+                        value.to_string()
+                    } else {
+                        format!("ERR: Unable to unwrap DNS value")
+                    };
+                    info!(
+                        r#"
+
+                    ->   Wifi Connected: IP: {} / DNS: {}
+
+                                    "#,
+                        ip, dns
+                    );
 
                     // let server_config = Configuration::default();
                     // let mut s = httpd.create(&server_config);
@@ -642,7 +590,6 @@ fn update_rtc_from_local(rtc: &mut RV8803, latest_system_time: &SystemTimeBuffer
     Ok(resp)
 }
 
-#[cfg(feature = "sntp")]
 /// Configure SNTP
 /// - <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/system_time.html#sntp-time-synchronization>
 /// - <https://wokwi.com/projects/342312626601067091>
@@ -672,8 +619,6 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
     // https://github.com/esp-rs/esp-idf-svc/blob/v0.42.5/src/sntp.rs#L155-L158
     sntp_stop();
 
-    esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
-
     // redefine and restart the callback.
     sntp_set_time_sync_notification_cb(Some(sntp_set_time_sync_notification_cb_custom));
 
@@ -689,8 +634,6 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
     let mut i: u32 = 0;
     let mut success = true;
     while sntp.get_sync_status() != SyncStatus::Completed {
-        esp_idf_sys::esp_task_wdt_reset(); // Reset WDT
-
         i += 1;
 
         if i >= SNTP_RETRY_COUNT {
@@ -741,10 +684,6 @@ where
     E: std::fmt::Debug,
 {
     pin.toggle().unwrap();
-
-    unsafe {
-        esp_idf_sys::esp_task_wdt_reset();
-    } // Reset WDT
 
     FreeRtos::delay_ms(100);
 }
