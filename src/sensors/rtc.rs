@@ -22,16 +22,12 @@ pub mod rv8803 {
     /// Datasheet: <https://cdn.sparkfun.com/assets/1/2/4/2/3/RV-8803-C7_App-Manual.pdf>
     ///
 
-    pub struct RV8803<'a, I2C, E> {
+    pub struct RV8803<'a> {
         /// The concrete I²C device implementation.
         i2c: I2cDriver<'a>,
 
         /// Device address
         address: DeviceAddr,
-
-        phantom: PhantomData<I2C>,
-
-        phantom_e: PhantomData<E>,
     }
 
     /// see Table 3.3.2
@@ -53,25 +49,15 @@ pub mod rv8803 {
         year: u16,
     }
 
-    impl<'a, I2C, E> RV8803<'a, I2C, E>
-    where
-        E: std::convert::From<anyhow::Error>,
-        BlanketError: From<E>,
-        I2C: i2c::I2c,
+    impl<'a> RV8803<'a>
+    // where
+    //     E: std::convert::From<anyhow::Error>,
+    //     BlanketError: From<E>,
+    // I2C: i2c::I2c,
     {
         /// Create a new instance of the RV8803.
-        pub fn new(
-            i2c: I2cDriver<'a>,
-            address: DeviceAddr,
-            _i2c: I2C,
-            _e: E,
-        ) -> Result<RV8803<I2cDriver<'a>, E>, BlanketError> {
-            let rv8803 = RV8803 {
-                i2c,
-                address,
-                phantom: PhantomData,
-                phantom_e: PhantomData,
-            };
+        pub fn new(i2c: I2cDriver<'a>, address: DeviceAddr) -> Result<RV8803> {
+            let rv8803 = RV8803 { i2c, address };
 
             Ok(rv8803)
         }
@@ -85,7 +71,7 @@ pub mod rv8803 {
             date: u8,
             month: u8,
             year: u16,
-        ) -> Result<bool, E> {
+        ) -> Result<bool> {
             self.write_register(Register::Seconds, dec_to_bcd(sec))?;
             self.write_register(Register::Minutes, dec_to_bcd(min))?;
             self.write_register(Register::Hours, dec_to_bcd(hour))?;

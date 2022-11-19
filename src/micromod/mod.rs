@@ -6,11 +6,14 @@ use esp_idf_hal::i2c::{self as HalI2c, I2cDriver, I2C0};
 use esp_idf_hal::prelude::Peripherals;
 use esp_idf_hal::units::FromValueType;
 use std::ops::DerefMut;
+use std::sync::{Arc, RwLock};
 
 use self::chip::{GpioD1, GpioScl, GpioSda, OnboardLed};
 
 #[cfg(esp32)]
 pub mod chip {
+    use std::sync::{Arc, Mutex, RwLock};
+
     use super::*;
     use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output, PinDriver};
     use esp_idf_hal::prelude::Peripherals;
@@ -22,9 +25,9 @@ pub mod chip {
     pub type GpioD1 = PinDriver<'static, Gpio27, Output>;
 
     pub fn setup_peripherals(
-        peripherals: Peripherals,
+        peripherals: Arc<RwLock<Peripherals>>,
     ) -> Result<(GpioSda, GpioScl, I2C0, OnboardLed, GpioD1)> {
-        // let peripherals = Peripherals::take().unwrap();
+        let peripherals = Peripherals::take().unwrap();
         let i2c0 = peripherals.i2c0;
 
         let sda = PinDriver::input_output(peripherals.pins.gpio21)?;
@@ -39,7 +42,9 @@ pub mod chip {
         Ok((sda, scl, i2c0, led_onboard, gpio_d1))
     }
 
-    pub fn configure(peripherals: Peripherals) -> Result<(ActiveGpio, BusManager<NullMutex<()>>)> {
+    pub fn configure(
+        peripherals: Arc<RwLock<Peripherals>>,
+    ) -> Result<(ActiveGpio, BusManager<NullMutex<()>>)> {
         let chip = Chip::ESP32;
         let sku = BoardSKU::WRL16781;
 
@@ -161,7 +166,9 @@ where
 }
 
 impl<CHIP, SKU> MicroModBoard<CHIP, SKU> {
-    pub fn new(chip: CHIP, sku: SKU, peripherals: Peripherals) -> Result<Self> {
+    pub fn new(chip: CHIP, sku: SKU, peripherals: Arc<RwLock<Peripherals>>) -> Result<Self> {
+        // let mut peripherals = &*peripherals.read().unwrap();
+
         let (sda, scl, i2c0, led_onboard, gpio_d1) =
             super::micromod::chip::setup_peripherals(peripherals)?;
 
@@ -189,9 +196,9 @@ mod test {
 
         //  configure peripherals
         let peripherals = Peripherals::take().unwrap();
+        let periph = Arc::new(RwLock::new(peripherals));
 
-        let board: MicroModBoard<Chip, BoardSKU> =
-            MicroModBoard::new(chip, sku, peripherals).unwrap();
+        let board: MicroModBoard<Chip, BoardSKU> = MicroModBoard::new(chip, sku, periph).unwrap();
 
         let chip = board.chip;
         let value: String = match chip {
