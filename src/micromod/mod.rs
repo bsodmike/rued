@@ -2,9 +2,9 @@ use anyhow::Result;
 use esp_idf_hal::gpio::{
     AnyIOPin, Input, InputOutput, InputPin, Output, OutputPin, Pin, PinDriver,
 };
-use esp_idf_hal::i2c::{self as HalI2c, I2cDriver, I2C0};
-use esp_idf_hal::prelude::Peripherals;
-use esp_idf_hal::units::FromValueType;
+use esp_idf_hal::i2c::{self as HalI2c, I2cConfig, I2cDriver, I2C0};
+use esp_idf_hal::units::{FromValueType, Hertz};
+use esp_idf_hal::{peripheral::PeripheralRef, peripherals::Peripherals};
 use std::ops::DerefMut;
 use std::sync::{Arc, RwLock};
 
@@ -16,40 +16,35 @@ pub mod chip {
 
     use super::*;
     use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output, PinDriver};
-    use esp_idf_hal::prelude::Peripherals;
+    use esp_idf_hal::{peripheral::PeripheralRef, peripherals::Peripherals};
     use shared_bus::{BusManager, NullMutex};
 
-    pub type GpioSda = PinDriver<'static, Gpio21, InputOutput>;
-    pub type GpioScl = PinDriver<'static, Gpio22, Output>;
-    pub type OnboardLed = PinDriver<'static, Gpio14, Output>;
-    pub type GpioD1 = PinDriver<'static, Gpio27, Output>;
+    pub type GpioSda = PeripheralRef<'static, Gpio21>;
+    pub type GpioScl = PeripheralRef<'static, Gpio22>;
+    pub type OnboardLed = PeripheralRef<'static, Gpio14>;
+    pub type GpioD1 = PeripheralRef<'static, Gpio27>;
 
-    pub fn setup_peripherals(
-        peripherals: Arc<RwLock<Peripherals>>,
-    ) -> Result<(GpioSda, GpioScl, I2C0, OnboardLed, GpioD1)> {
+    pub fn setup_peripherals() -> Result<(GpioSda, GpioScl, I2C0, OnboardLed, GpioD1)> {
         let peripherals = Peripherals::take().unwrap();
-        let i2c0 = peripherals.i2c0;
 
-        let sda = PinDriver::input_output(peripherals.pins.gpio21)?;
-        let scl = PinDriver::output(peripherals.pins.gpio22)?;
+        let mut i2c0 = peripherals.i2c0;
+        let sda = PeripheralRef::new(peripherals.pins.gpio21);
+        let scl = PeripheralRef::new(peripherals.pins.gpio22);
 
         // D0 - GPIO pin 14, pad 10 on the MicroMod
-        let gpio_d0 = PinDriver::output(peripherals.pins.gpio14)?;
+        let gpio_d0 = PeripheralRef::new(peripherals.pins.gpio14);
         let mut led_onboard = gpio_d0;
         // D1 - GPIO pin 27, pad 18 on the MicroMod
-        let gpio_d1 = PinDriver::output(peripherals.pins.gpio27)?;
+        let gpio_d1 = PeripheralRef::new(peripherals.pins.gpio27);
 
         Ok((sda, scl, i2c0, led_onboard, gpio_d1))
     }
 
-    pub fn configure(
-        peripherals: Arc<RwLock<Peripherals>>,
-    ) -> Result<(ActiveGpio, BusManager<NullMutex<()>>)> {
+    pub fn configure() -> Result<(ActiveGpio, I2cDriver<'static>)> {
         let chip = Chip::ESP32;
         let sku = BoardSKU::WRL16781;
 
-        let board: MicroModBoard<Chip, BoardSKU> =
-            MicroModBoard::new(chip, sku, peripherals).unwrap();
+        let board: MicroModBoard<Chip, BoardSKU> = MicroModBoard::new(chip, sku).unwrap();
 
         let (led_onboard, gpio_d1, sda, scl, i2c0) = board.fetch_peripherals()?;
 
@@ -59,15 +54,12 @@ pub mod chip {
             esp_idf_sys::esp_task_wdt_reset();
         } // Reset WDT
 
-        // Instantiate the bus manager, pass the i2c bus.
-        let bus = shared_bus::BusManagerSimple::new(i2c_driver);
-
         Ok((
             ActiveGpio {
                 led_onboard,
                 gpio_d1,
             },
-            bus,
+            i2c_driver,
         ))
     }
 }
@@ -85,11 +77,11 @@ pub trait Board<CHIP, SKU> {
     type Processor;
     type BoardSKU;
 
-    fn configure<T, U>(
-        i2c0: HalI2c::I2C0,
-        scl: T,
-        sda: U,
-    ) -> Result<(), crate::error::BlanketError>;
+    fn configure(
+        i2c0: I2C0,
+        scl: GpioScl,
+        sda: GpioSda,
+    ) -> Result<I2cDriver<'static>, crate::error::BlanketError>;
 
     fn led_onboard(&self) -> Result<&OnboardLed>;
 
@@ -129,17 +121,17 @@ where
     type BoardSKU = BoardSKU;
     type Processor = Chip;
 
-    fn configure<T, U>(
-        i2c0: HalI2c::I2C0,
-        scl: T,
-        sda: U,
-    ) -> Result<(), crate::error::BlanketError> {
-        let mut config = &HalI2c::config::Config::new();
-        config.baudrate(400.kHz().into());
+    fn configure(
+        i2c0: I2C0,
+        scl: GpioScl,
+        sda: GpioSda,
+    ) -> Result<I2cDriver<'static>, crate::error::BlanketError> {
+        let mut config = I2cConfig::new();
+        config.baudrate(Hertz::from(400 as u32));
 
-        // let i2c = I2cDriver::new(i2c0, sda, scl, config)?;
+        let mut i2c_driver = I2cDriver::new(i2c0, sda, scl, &config)?;
 
-        Ok(())
+        Ok(i2c_driver)
     }
 
     fn gpio_sda(&self) -> Result<&GpioSda> {
@@ -166,11 +158,8 @@ where
 }
 
 impl<CHIP, SKU> MicroModBoard<CHIP, SKU> {
-    pub fn new(chip: CHIP, sku: SKU, peripherals: Arc<RwLock<Peripherals>>) -> Result<Self> {
-        // let mut peripherals = &*peripherals.read().unwrap();
-
-        let (sda, scl, i2c0, led_onboard, gpio_d1) =
-            super::micromod::chip::setup_peripherals(peripherals)?;
+    pub fn new(chip: CHIP, sku: SKU) -> Result<Self> {
+        let (sda, scl, i2c0, led_onboard, gpio_d1) = super::micromod::chip::setup_peripherals()?;
 
         Ok(Self {
             chip,
@@ -194,11 +183,7 @@ mod test {
         let chip = Chip::ESP32;
         let sku = BoardSKU::WRL16781;
 
-        //  configure peripherals
-        let peripherals = Peripherals::take().unwrap();
-        let periph = Arc::new(RwLock::new(peripherals));
-
-        let board: MicroModBoard<Chip, BoardSKU> = MicroModBoard::new(chip, sku, periph).unwrap();
+        let board: MicroModBoard<Chip, BoardSKU> = MicroModBoard::new(chip, sku).unwrap();
 
         let chip = board.chip;
         let value: String = match chip {

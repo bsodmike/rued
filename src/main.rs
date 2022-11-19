@@ -417,20 +417,21 @@ fn main() -> Result<()> {
     }
 
     //  configure peripherals
-    let peripherals = Peripherals::take().unwrap();
+    // let peripherals = Peripherals::take().unwrap();
 
     // Create two proxies. Now, each sensor can have their own instance of a proxy i2c, which resolves the ownership problem.
-    // let (mut active_peripherals, bus) = micromod::chip::configure(peripherals)?;
+    let (mut active_peripherals, i2c_driver) = micromod::chip::configure()?;
 
     // let mut led_onboard = active_peripherals.led_onboard();
 
-    let mut i2c0 = peripherals.i2c0;
-    let sda = PeripheralRef::new(peripherals.pins.gpio21);
-    let scl = PeripheralRef::new(peripherals.pins.gpio22);
+    // Working example
+    // let mut i2c0 = peripherals.i2c0;
+    // let sda = PeripheralRef::new(peripherals.pins.gpio21);
+    // let scl = PeripheralRef::new(peripherals.pins.gpio22);
 
-    let mut config = I2cConfig::new();
-    config.baudrate(Hertz::from(400 as u32));
-    let mut i2c_driver = I2cDriver::new(i2c0, sda, scl, &config)?;
+    // let mut config = I2cConfig::new();
+    // config.baudrate(Hertz::from(400 as u32));
+    // let mut i2c_driver = I2cDriver::new(i2c0, sda, scl, &config)?;
 
     // let bus = shared_bus::BusManagerSimple::new(i2c_driver);
 
