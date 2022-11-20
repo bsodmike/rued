@@ -1,7 +1,7 @@
 #![feature(const_btree_new)]
 #![allow(dead_code, unused_variables)]
 
-use ::core::time::Duration;
+// use ::core::time::Duration;
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
 use log::{debug, error, info, warn};
@@ -12,21 +12,26 @@ use std::{
         mpsc::{self, Receiver, Sender},
         Arc, Mutex,
     },
-    thread::sleep,
+    thread::sleep as other_sleep,
+    time::Duration as StdDuration,
 };
 
 use crate::{
+    errors::*,
     models::{RTClock, SystemTimeBuffer},
     sensors::rtc::rv8803::RV8803,
 };
 
 use embedded_hal::i2c::I2c;
-use esp_idf_hal::timer::{Timer, TimerConfig, TimerDriver, TIMER00};
 use esp_idf_hal::{delay::FreeRtos, peripheral::PeripheralRef, peripherals::Peripherals};
 use esp_idf_hal::{
     gpio::PinDriver,
     i2c::{config::Config as I2cConfig, I2cDriver, I2C0},
     units::Hertz,
+};
+use esp_idf_hal::{
+    task::executor::FreeRtosMonitor,
+    timer::{Timer, TimerConfig, TimerDriver, TIMER00},
 };
 use esp_idf_svc::{
     log::EspLogger,
@@ -36,31 +41,55 @@ use esp_idf_svc::{
 use esp_idf_sys as _;
 #[allow(unused_imports)]
 use esp_idf_sys::{
-    self as _, esp, esp_wifi_connect, esp_wifi_set_ps, settimeofday, sntp_get_sync_status,
-    sntp_init, sntp_set_sync_interval, sntp_set_time_sync_notification_cb, sntp_stop, time_t,
-    timeval, timezone, wifi_ps_type_t_WIFI_PS_NONE,
+    self as _, esp_wifi_connect, esp_wifi_set_ps, settimeofday, sntp_get_sync_status, sntp_init,
+    sntp_set_sync_interval, sntp_set_time_sync_notification_cb, sntp_stop, time_t, timeval,
+    timezone, wifi_ps_type_t_WIFI_PS_NONE,
 }; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
 use embedded_svc::wifi::{self, AuthMethod, ClientConfiguration, Wifi};
 use esp_idf_hal::modem::Modem;
 use esp_idf_svc::{
-    eventloop::EspSystemEventLoop,
     netif::IpEvent,
-    nvs::EspDefaultNvsPartition,
     wifi::{EspWifi, WifiEvent, WifiWait},
 };
+
+#[cfg(feature = "nvs")]
+use embassy_sync::blocking_mutex::Mutex;
+use embassy_time::Duration;
+
+#[cfg(feature = "nvs")]
+use embedded_svc::storage::Storage;
+
+use esp_idf_hal::adc::*;
+use esp_idf_hal::gpio::*;
+use esp_idf_hal::reset::WakeupReason;
+use esp_idf_hal::task::executor::EspExecutor;
+use esp_idf_hal::task::thread::ThreadSpawnConfiguration;
+
+use esp_idf_svc::eventloop::EspSystemEventLoop;
+use esp_idf_svc::nvs::EspDefaultNvsPartition;
+
+use esp_idf_sys::esp;
+
+// use ruwm::button;
+// use ruwm::spawn;
+// use ruwm::wm::WaterMeterState;
 
 extern crate rust_esp32_blinky as blinky;
 use blinky::micromod;
 
+use crate::core::internal::spawn;
+
 mod core;
 mod display;
-mod error;
+mod errors;
 mod http;
 mod http_client;
 mod http_server;
 mod models;
+mod peripherals;
 mod sensors;
+mod services;
 
 const WIFI_SSID: &str = env!("WIFI_SSID");
 const WIFI_PSK: &str = env!("WIFI_PSK");
@@ -127,7 +156,166 @@ fn wifi_connect() -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
+const SLEEP_TIME: Duration = Duration::from_secs(2);
+const MQTT_MAX_TOPIC_LEN: usize = 64;
+
+// Make sure that the firmware will contain
+// up-to-date build time and package info coming from the binary crate
+esp_idf_sys::esp_app_desc!();
+
+fn main() -> Result<(), InitError> {
+    esp_idf_hal::task::critical_section::link();
+    esp_idf_svc::timer::embassy_time::queue::link();
+
+    let wakeup_reason = WakeupReason::get();
+
+    init()?;
+
+    log::info!("Wakeup reason: {:?}", wakeup_reason);
+
+    run(wakeup_reason)?;
+    log::info!("Running...");
+
+    sleep()?;
+
+    unreachable!()
+}
+
+fn init() -> Result<(), InitError> {
+    esp_idf_sys::link_patches();
+
+    // Bind the log crate to the ESP Logging facilities
+    esp_idf_svc::log::EspLogger::initialize_default();
+
+    esp!(unsafe {
+        #[allow(clippy::needless_update)]
+        esp_idf_sys::esp_vfs_eventfd_register(&esp_idf_sys::esp_vfs_eventfd_config_t {
+            max_fds: 5,
+            ..Default::default()
+        })
+    })?;
+
+    Ok(())
+}
+
+fn sleep() -> Result<(), InitError> {
+    unsafe {
+        #[cfg(feature = "ulp")]
+        esp!(esp_idf_sys::esp_sleep_enable_ulp_wakeup())?;
+
+        esp!(esp_idf_sys::esp_sleep_enable_timer_wakeup(
+            SLEEP_TIME.as_micros() as u64
+        ))?;
+
+        log::info!("Going to sleep");
+
+        esp_idf_sys::esp_deep_sleep_start();
+    }
+
+    Ok(())
+}
+
+fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
+    let peripherals = peripherals::SystemPeripherals::take();
+
+    // ESP-IDF basics
+
+    let nvs_default_partition = EspDefaultNvsPartition::take()?;
+    let sysloop = EspSystemEventLoop::take()?;
+
+    // Wifi
+
+    let (wifi, wifi_notif) = services::wifi(
+        peripherals.modem,
+        sysloop.clone(),
+        Some(nvs_default_partition.clone()),
+    )?;
+
+    // Httpd
+
+    let (_httpd, ws_acceptor) = services::httpd()?;
+
+    // Mqtt
+
+    let (mqtt_topic_prefix, mqtt_client, mqtt_conn) = services::mqtt()?;
+
+    // High-prio tasks
+
+    // let mut high_prio_executor = EspExecutor::<16, _>::new();
+    // let mut high_prio_tasks = heapless::Vec::<_, 16>::new();
+
+    // FIXME: todo
+
+    // Mid-prio tasks
+
+    log::info!("Starting mid-prio executor");
+
+    ThreadSpawnConfiguration {
+        name: Some(b"async-exec-mid\0"),
+        ..Default::default()
+    }
+    .set()
+    .unwrap();
+
+    let display_peripherals = peripherals.display;
+
+    let mid_prio_execution = services::schedule::<8, _>(50000, move || {
+        let mut executor = EspExecutor::new();
+        let mut tasks = heapless::Vec::new();
+
+        spawn::wifi(&mut executor, &mut tasks, wifi, wifi_notif)?;
+
+        // spawn::mqtt_receive(&mut executor, &mut tasks, mqtt_conn)?;
+
+        Ok((executor, tasks))
+    });
+
+    // Low-prio tasks
+
+    log::info!("Starting low-prio executor");
+
+    ThreadSpawnConfiguration {
+        name: Some(b"async-exec-low\0"),
+        ..Default::default()
+    }
+    .set()
+    .unwrap();
+
+    let low_prio_execution = services::schedule::<4, _>(50000, move || {
+        let mut executor = EspExecutor::new();
+        let mut tasks = heapless::Vec::new();
+
+        // spawn::mqtt_send::<MQTT_MAX_TOPIC_LEN, 4, _>(
+        //     &mut executor,
+        //     &mut tasks,
+        //     mqtt_topic_prefix,
+        //     mqtt_client,
+        // )?;
+
+        // spawn::ws(&mut executor, &mut tasks, ws_acceptor)?;
+
+        Ok((executor, tasks))
+    });
+
+    // Start main execution
+
+    log::info!("Starting high-prio executor");
+
+    // spawn::run(&mut high_prio_executor, high_prio_tasks);
+
+    log::info!("Execution finished, waiting for 2s to workaround a STD/ESP-IDF pthread (?) bug");
+
+    std::thread::sleep(crate::StdDuration::from_millis(2000));
+
+    mid_prio_execution.join().unwrap();
+    low_prio_execution.join().unwrap();
+
+    log::info!("Finished execution");
+
+    Ok(())
+}
+
+fn main2() -> Result<()> {
     esp_idf_sys::link_patches();
     // log::set_logger(&LOGGER).map(|()| LOGGER.initialize())?;
     // LOGGER.set_target_level("", log::LevelFilter::Debug);
@@ -206,7 +394,7 @@ fn main() -> Result<()> {
     });
     info!("Wifi started");
 
-    sleep(Duration::from_millis(2000));
+    other_sleep(StdDuration::from_millis(2000));
 
     if let Err(err) = wifi.connect() {
         error!("ERROR: Wifi connect failure {:?}", err.to_string());
@@ -225,7 +413,7 @@ fn main() -> Result<()> {
             tx.send(SysLoopMsg::WifiDisconnect)
                 .expect("wifi event channel closed");
 
-            sleep(Duration::from_millis(10));
+            other_sleep(StdDuration::from_millis(10));
 
             // NOTE: this is a hack
             if let Err(err) = wifi_connect() {
@@ -310,7 +498,7 @@ fn main() -> Result<()> {
 
         loop {
             info!("loop start...");
-            std::thread::sleep(Duration::from_millis(500));
+            std::thread::sleep(StdDuration::from_millis(500));
 
             let rtc_reading = &rtc_clock.update_time(&mut rtc)?;
             let latest_system_time = get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;

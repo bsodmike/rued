@@ -92,7 +92,7 @@ pub trait Board<CHIP, SKU> {
         i2c0: I2C0,
         scl: GpioScl,
         sda: GpioSda,
-    ) -> Result<I2cBus, crate::error::BlanketError>;
+    ) -> Result<I2cBus, crate::errors::BlanketError>;
 
     fn led_onboard(&self) -> Result<&OnboardLed>;
 
@@ -141,7 +141,7 @@ where
         i2c0: I2C0,
         scl: GpioScl,
         sda: GpioSda,
-    ) -> Result<I2cBus, crate::error::BlanketError> {
+    ) -> Result<I2cBus, crate::errors::BlanketError> {
         let mut config = I2cConfig::new();
         config.baudrate(Hertz::from(400 as u32));
 

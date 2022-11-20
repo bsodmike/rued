@@ -1,9 +1,38 @@
 use std::error::Error as StdError;
 use std::fmt;
 
+use edge_executor::SpawnError;
 use esp_idf_hal::i2c::I2cError;
+use esp_idf_svc::errors::EspIOError;
+use esp_idf_sys::EspError;
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+#[derive(Debug)]
+pub enum InitError {
+    EspError(EspError),
+    SpawnError(SpawnError),
+}
+
+impl From<EspError> for InitError {
+    fn from(e: EspError) -> Self {
+        Self::EspError(e)
+    }
+}
+
+impl From<EspIOError> for InitError {
+    fn from(e: EspIOError) -> Self {
+        Self::EspError(e.0)
+    }
+}
+
+impl From<SpawnError> for InitError {
+    fn from(e: SpawnError) -> Self {
+        Self::SpawnError(e)
+    }
+}
+
+// OTHERS
 
 #[derive(Debug)]
 pub struct BlanketError {

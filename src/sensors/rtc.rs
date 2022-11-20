@@ -1,7 +1,7 @@
 pub mod rv8803 {
     #![deny(unsafe_code)]
 
-    use crate::error::BlanketError;
+    use crate::errors::BlanketError;
     use anyhow::Result;
     use core::marker::PhantomData;
     use embedded_hal_0_2::prelude::*;
@@ -97,7 +97,10 @@ pub mod rv8803 {
             Ok(true)
         }
 
-        pub fn update_time(&mut self, dest: &mut [u8]) -> Result<bool, crate::error::BlanketError> {
+        pub fn update_time(
+            &mut self,
+            dest: &mut [u8],
+        ) -> Result<bool, crate::errors::BlanketError> {
             if (self.read_multiple_registers(
                 Register::Hundredths.address(),
                 dest,

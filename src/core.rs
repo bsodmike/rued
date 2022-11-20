@@ -1,6 +1,8 @@
 use crate::{DISABLE_HTTPD, DISABLE_SNTP, FALLBACK_TO_RTC, UPDATE_RTC};
 use log::{info, warn};
 
+pub mod internal;
+
 pub fn update_rtc_enable() {
     let lock = UPDATE_RTC.try_lock();
     if let Ok(mut mutex) = lock {
