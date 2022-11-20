@@ -4,7 +4,7 @@ pub mod rv8803 {
     use crate::error::BlanketError;
     use anyhow::Result;
     use core::marker::PhantomData;
-    use embedded_hal::i2c;
+    use embedded_hal_0_2::prelude::*;
     use esp_idf_hal::i2c::I2cDriver;
     use esp_idf_sys::EspError;
     use log::{debug, info};
@@ -175,8 +175,7 @@ pub mod rv8803 {
             dest: &mut [u8],
             len: usize,
         ) -> Result<bool> {
-            self.i2c
-                .write_read(self.address as u8, &[addr], dest, DEFAULT_TIMEOUT)?;
+            self.i2c.write_read(self.address as u8, &[addr], dest)?;
 
             Ok(true)
         }
@@ -203,38 +202,30 @@ pub mod rv8803 {
 
         fn write_register(&mut self, register: Register, value: u8) -> Result<()> {
             let byte = value as u8;
-            self.i2c.write(
-                self.address as u8,
-                &[register.address(), byte],
-                DEFAULT_TIMEOUT,
-            )?;
+            self.i2c
+                .write(self.address as u8, &[register.address(), byte])?;
 
             Ok(())
         }
 
         fn write_register_by_addr(&mut self, reg_addr: u8, value: u8) -> Result<()> {
             let byte = value as u8;
-            self.i2c
-                .write(self.address as u8, &[reg_addr, byte], DEFAULT_TIMEOUT)?;
+            self.i2c.write(self.address as u8, &[reg_addr, byte])?;
 
             Ok(())
         }
 
         fn read_register(&mut self, register: Register) -> Result<u8> {
             let mut data = [0];
-            self.i2c.write_read(
-                self.address as u8,
-                &[register.address()],
-                &mut data,
-                DEFAULT_TIMEOUT,
-            )?;
+            self.i2c
+                .write_read(self.address as u8, &[register.address()], &mut data)?;
             Ok(u8::from_le_bytes(data))
         }
 
         fn read_register_by_addr(&mut self, reg_addr: u8) -> Result<u8> {
             let mut data = [0];
             self.i2c
-                .write_read(self.address as u8, &[reg_addr], &mut data, DEFAULT_TIMEOUT)?;
+                .write_read(self.address as u8, &[reg_addr], &mut data)?;
             Ok(u8::from_le_bytes(data))
         }
     }

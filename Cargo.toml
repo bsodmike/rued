@@ -20,8 +20,9 @@ default = []
 esp-idf-sys = { version = "0.31.11", features = ["binstart"] }
 esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal" }
 esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc", features = ["experimental", "std"] }
-embedded-hal = { git = "https://github.com/rust-embedded/embedded-hal" }
 embedded-svc = { git = "https://github.com/esp-rs/embedded-svc", features = ["experimental", "std"] }
+embedded-hal = { git = "https://github.com/rust-embedded/embedded-hal" }
+embedded-hal-0-2 = { package = "embedded-hal", version = "0.2.7", features = ["unproven"] }
 
 anyhow = "1"
 log = "0.4.17"
