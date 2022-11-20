@@ -176,7 +176,7 @@ fn main() -> Result<()> {
     wifi.set_configuration(&wifi::Configuration::Client(ClientConfiguration {
         ssid: crate::WIFI_SSID.into(),
         password: crate::WIFI_PSK.into(),
-        auth_method,
+        // auth_method,
         ..Default::default()
     }))?;
 
@@ -271,13 +271,12 @@ fn main() -> Result<()> {
     // heart-beat sequence
     for i in 0..3 {
         println!("Toggling LED now: {}", i);
-        led_onboard.toggle()?;
+        toggle_led(&mut led_onboard);
     }
 
     unsafe {
         let mut rtc_clock = RTClock::new();
 
-        let sntp = sntp_setup()?;
         get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
 
         // // Queue configurations
@@ -334,35 +333,33 @@ fn main() -> Result<()> {
 
         loop {
             // FIXME
-            // toggle_led::<anyhow::Error, micromod::chip::OnboardLed>(&mut led_onboard);
-
-            let sync_status = match sntp.get_sync_status() {
-                SyncStatus::Reset => "SNTP_SYNC_STATUS_RESET",
-                SyncStatus::Completed => "SNTP_SYNC_STATUS_COMPLETED",
-                SyncStatus::InProgress => "SNTP_SYNC_STATUS_IN_PROGRESS",
-            };
-            debug!("sntp_get_sync_status: {}", sync_status);
+            // let sync_status = match sntp.get_sync_status() {
+            //     SyncStatus::Reset => "SNTP_SYNC_STATUS_RESET",
+            //     SyncStatus::Completed => "SNTP_SYNC_STATUS_COMPLETED",
+            //     SyncStatus::InProgress => "SNTP_SYNC_STATUS_IN_PROGRESS",
+            // };
+            // debug!("sntp_get_sync_status: {}", sync_status);
 
             std::thread::sleep(Duration::from_millis(500));
 
             let rtc_reading = &rtc_clock.update_time(&mut rtc)?;
             let latest_system_time = get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
 
-            info!(
-                r#"
-                Local time: {}
-            Universal time: 
-                  RTC time: {}
-                 Time zone: 
- System clock synchronized: 
-               NTP service: 
-           RTC in local TZ: 
-                NTP status: {}
-                "#,
-                latest_system_time.to_s()?,
-                rtc_reading.to_s()?,
-                sync_status
-            );
+            //             info!(
+            //                 r#"
+            //                 Local time: {}
+            //             Universal time:
+            //                   RTC time: {}
+            //                  Time zone:
+            //  System clock synchronized:
+            //                NTP service:
+            //            RTC in local TZ:
+            //                 NTP status: {}
+            //                 "#,
+            //                 latest_system_time.to_s()?,
+            //                 rtc_reading.to_s()?,
+            //                 sync_status
+            //             );
 
             if core::get_update_rtc_flag() {
                 update_rtc_from_local(&mut rtc, &latest_system_time)?;
@@ -406,6 +403,12 @@ fn main() -> Result<()> {
                                     "#,
                         ip, dns
                     );
+
+                    unsafe {
+                        if let Err(error) = sntp_setup() {
+                            error!("Error: Unable to setup SNTP: {}", error);
+                        }
+                    };
 
                     // let server_config = Configuration::default();
                     // let mut s = httpd.create(&server_config);
@@ -590,7 +593,6 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
 
     servers[..copy_len].copy_from_slice(&server_array[..copy_len]);
     sntp_conf.servers = servers;
-    info!("SNTP Servers: {:?}", servers);
 
     sntp_set_sync_interval(15 * 1000);
     let sntp = sntp::EspSntp::new(&sntp_conf)?;
@@ -603,7 +605,7 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
     sntp_set_time_sync_notification_cb(Some(sntp_set_time_sync_notification_cb_custom));
 
     if !core::get_disable_sntp_flag() {
-        info!("SNTP: Enabled");
+        info!("SNTP: Enabled / Server(s): {:?}", servers);
         sntp_init();
     } else {
         warn!("SNTP: Disabled");
@@ -658,12 +660,11 @@ unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
     Ok(buf)
 }
 
-fn toggle_led<E, T>(pin: &mut T)
+fn toggle_led<T>(driver: &mut T)
 where
     T: embedded_hal::digital::ToggleableOutputPin,
-    E: std::fmt::Debug,
 {
-    pin.toggle().unwrap();
+    driver.toggle().unwrap();
 
     FreeRtos::delay_ms(100);
 }
