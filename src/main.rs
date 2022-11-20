@@ -259,28 +259,8 @@ fn main() -> Result<()> {
         }
     }
 
-    // Create two proxies. Now, each sensor can have their own instance of a proxy i2c, which resolves the ownership problem.
-
-    // let mut led_onboard = active_peripherals.led_onboard();
-
-    // Working example
-    // let mut i2c0 = peripherals.i2c0;
-    // let sda = PeripheralRef::new(peripherals.pins.gpio21);
-    // let scl = PeripheralRef::new(peripherals.pins.gpio22);
-
-    // let mut config = I2cConfig::new();
-    // config.baudrate(Hertz::from(400 as u32));
-    // let mut i2c_driver = I2cDriver::new(i2c0, sda, scl, &config)?;
-
-    // let bus = shared_bus::BusManagerSimple::new(i2c_driver);
-
-    // // FIXME
-    // let mut proxy_1 = bus.acquire_i2c();
-    // let proxy_2 = bus.acquire_i2c();
-
     // setup RTC sensor
-    let mut rtc =
-        sensors::rtc::rv8803::RV8803::new(i2c_proxy1, sensors::rtc::rv8803::DeviceAddr::B011_0010)?;
+    let mut rtc = RV8803::new(i2c_proxy1)?;
 
     // if let Err(e) = display::display_test(i2c_driver, &ip, &dns) {
     //     println!("Display error: {:?}", e)

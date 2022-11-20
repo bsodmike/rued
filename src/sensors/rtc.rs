@@ -58,8 +58,11 @@ pub mod rv8803 {
     // I2C: i2c::I2c,
     {
         /// Create a new instance of the RV8803.
-        pub fn new(i2c: I2cProxyWithDriver<'a>, address: DeviceAddr) -> Result<RV8803> {
-            let rv8803 = RV8803 { i2c, address };
+        pub fn new(i2c: I2cProxyWithDriver<'a>) -> Result<RV8803> {
+            let rv8803 = RV8803 {
+                i2c,
+                address: DeviceAddr::B011_0010,
+            };
 
             Ok(rv8803)
         }
