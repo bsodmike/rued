@@ -88,8 +88,9 @@ pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut time
     let dt = DateTime::<Utc>::from_utc(naive_dt, Utc);
 
     info!(
-        "SNTP Sync Callback fired. Timestamp: {}",
-        dt.timestamp().to_string()
+        "SNTP Sync Callback fired. Timestamp: {} / Year: {}",
+        dt.timestamp().to_string(),
+        dt.year().to_string()
     );
 
     if dt.year() < CURRENT_YEAR.into() {
@@ -98,7 +99,7 @@ pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut time
 
         info!("SNTP Sync Callback: Falling back to RTC for sync.");
     } else {
-        // Update RTC
+        info!("RTC update flag: enabled");
         core::update_rtc_enable();
 
         debug!(
@@ -331,15 +332,36 @@ fn main() -> Result<()> {
         // //     todo!(),
         // // );
 
-        loop {
-            // FIXME
-            // let sync_status = match sntp.get_sync_status() {
-            //     SyncStatus::Reset => "SNTP_SYNC_STATUS_RESET",
-            //     SyncStatus::Completed => "SNTP_SYNC_STATUS_COMPLETED",
-            //     SyncStatus::InProgress => "SNTP_SYNC_STATUS_IN_PROGRESS",
-            // };
-            // debug!("sntp_get_sync_status: {}", sync_status);
+        // Setup SNTP
+        let server_array: [&str; 4] = [
+            "time.aws.com",
+            "1.sg.pool.ntp.org",
+            "0.pool.ntp.org",
+            "3.pool.ntp.org",
+        ];
 
+        let mut sntp_conf = SntpConf::default();
+        sntp_conf.operating_mode = OperatingMode::Poll;
+        sntp_conf.sync_mode = SyncMode::Immediate;
+
+        let mut servers: [&str; 1 as usize] = Default::default();
+        let copy_len = ::core::cmp::min(servers.len(), server_array.len());
+
+        servers[..copy_len].copy_from_slice(&server_array[..copy_len]);
+        sntp_conf.servers = servers;
+
+        sntp_set_sync_interval(60 * 1000);
+        let sntp = sntp::EspSntp::new(&sntp_conf)?;
+
+        // stop the sntp instance to redefine the callback
+        // https://github.com/esp-rs/esp-idf-svc/blob/v0.42.5/src/sntp.rs#L155-L158
+        // sntp_stop();
+
+        // redefine and restart the callback.
+        sntp_set_time_sync_notification_cb(Some(sntp_set_time_sync_notification_cb_custom));
+
+        loop {
+            info!("loop start...");
             std::thread::sleep(Duration::from_millis(500));
 
             let rtc_reading = &rtc_clock.update_time(&mut rtc)?;
@@ -361,11 +383,15 @@ fn main() -> Result<()> {
             //                 sync_status
             //             );
 
-            if core::get_update_rtc_flag() {
+            let update_rtc_flag = core::get_update_rtc_flag();
+            info!("update_rtc_flag: {}", update_rtc_flag);
+            if update_rtc_flag {
                 update_rtc_from_local(&mut rtc, &latest_system_time)?;
                 info!("[OK]: Updated RTC Clock from Local time");
 
                 core::update_rtc_disable();
+            } else {
+                info!("RTC update flag: false");
             }
 
             // This only occurs if SNTP update resolves in a valid update, but the updated
@@ -387,6 +413,7 @@ fn main() -> Result<()> {
                 Ok(SysLoopMsg::IpAddressAcquired) => {
                     info!("mpsc loop: IpAddressAcquired received");
 
+                    // Get ip address details
                     let netif = wifi.sta_netif();
                     let ip_info = netif.get_ip_info()?;
                     let ip = ip_info.ip.to_string();
@@ -404,44 +431,35 @@ fn main() -> Result<()> {
                         ip, dns
                     );
 
-                    // FIXME
-                    // This needs to be handled as an event based service.
-                    unsafe {
-                        let server = match sntp_setup() {
-                            Ok(value) => {
-                                let (_, s) = value;
+                    // Get SNTP status
+                    info!("SNTP: Enabled / Server: {:?}", servers);
+                    // sntp_init();
+                    let sync_status = SyncStatus::from(unsafe { sntp_get_sync_status() });
 
-                                String::from(s[0])
-                            }
-                            Err(error) => {
-                                error!("Error: Unable to setup SNTP: {}", error);
+                    info!("SNTP initialized, waiting for status!");
 
-                                String::default()
-                            }
-                        };
+                    let mut i: u32 = 0;
+                    let mut success = true;
+                    while sync_status != SyncStatus::Completed {
+                        i += 1;
 
-                        info!("SNTP: Enabled / Server: {:?}", server);
-                        sntp_init();
-                        let sync_status = SyncStatus::from(unsafe { sntp_get_sync_status() });
-
-                        info!("SNTP initialized, waiting for status!");
-
-                        let mut i: u32 = 0;
-                        let mut success = true;
-                        while sync_status != SyncStatus::Completed {
-                            i += 1;
-
-                            if i >= SNTP_RETRY_COUNT {
-                                warn!("SNTP attempted connection {} times. Now quitting.", i);
-                                success = false;
-                                break;
-                            }
+                        if i >= SNTP_RETRY_COUNT {
+                            warn!("SNTP attempted connection {} times. Now quitting.", i);
+                            success = false;
+                            break;
                         }
+                    }
 
-                        if success {
-                            info!("SNTP status received! / Re-try count: {}", i);
-                        }
+                    if success {
+                        info!("SNTP status received! / Re-try count: {}", i);
+                    }
+
+                    let sync_status = match sntp.get_sync_status() {
+                        SyncStatus::Reset => "SNTP_SYNC_STATUS_RESET",
+                        SyncStatus::Completed => "SNTP_SYNC_STATUS_COMPLETED",
+                        SyncStatus::InProgress => "SNTP_SYNC_STATUS_IN_PROGRESS",
                     };
+                    debug!("sntp_get_sync_status: {}", sync_status);
 
                     // let server_config = Configuration::default();
                     // let mut s = httpd.create(&server_config);
@@ -609,36 +627,10 @@ fn update_rtc_from_local(rtc: &mut RV8803, latest_system_time: &SystemTimeBuffer
 /// Configure SNTP
 /// - <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/system_time.html#sntp-time-synchronization>
 /// - <https://wokwi.com/projects/342312626601067091>
-unsafe fn sntp_setup<'a>() -> Result<(EspSntp, [&'a str; 1])> {
-    let server_array: [&str; 4] = [
-        "0.sg.pool.ntp.org",
-        "1.sg.pool.ntp.org",
-        "0.pool.ntp.org",
-        "3.pool.ntp.org",
-    ];
+// unsafe fn sntp_setup<'a>() -> Result<(EspSntp, [&'a str; 1])> {
 
-    let mut sntp_conf = SntpConf::default();
-    sntp_conf.operating_mode = OperatingMode::Poll;
-    sntp_conf.sync_mode = SyncMode::Immediate;
-
-    let mut servers: [&str; 1 as usize] = Default::default();
-    let copy_len = ::core::cmp::min(servers.len(), server_array.len());
-
-    servers[..copy_len].copy_from_slice(&server_array[..copy_len]);
-    sntp_conf.servers = servers;
-
-    sntp_set_sync_interval(15 * 1000);
-    let sntp = sntp::EspSntp::new(&sntp_conf)?;
-
-    // stop the sntp instance to redefine the callback
-    // https://github.com/esp-rs/esp-idf-svc/blob/v0.42.5/src/sntp.rs#L155-L158
-    sntp_stop();
-
-    // redefine and restart the callback.
-    sntp_set_time_sync_notification_cb(Some(sntp_set_time_sync_notification_cb_custom));
-
-    Ok((sntp, servers))
-}
+//     Ok((sntp, servers))
+// }
 
 unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
     let timer: *mut time_t = ptr::null_mut();

@@ -1,10 +1,15 @@
 use crate::{DISABLE_HTTPD, DISABLE_SNTP, FALLBACK_TO_RTC, UPDATE_RTC};
+use log::{info, warn};
 
 pub fn update_rtc_enable() {
-    let mut flag = UPDATE_RTC
-        .lock()
-        .expect("Could not lock UPDATE_RTC mutex, when attempting to enable flag");
-    *flag = true;
+    let lock = UPDATE_RTC.try_lock();
+    if let Ok(mut mutex) = lock {
+        *mutex = true;
+
+        info!("UPDATE_RTC now set to {}", *mutex);
+    } else {
+        warn!("try_lock failed: UPDATE_RTC mutex, when attempting to enable flag value");
+    }
 }
 
 pub fn update_rtc_disable() {
@@ -15,14 +20,20 @@ pub fn update_rtc_disable() {
 }
 
 pub fn get_update_rtc_flag() -> bool {
-    let flag = UPDATE_RTC
-        .lock()
-        .expect("Could not lock UPDATE_RTC mutex, when attempting to read flag value");
+    let mut resp = false;
 
-    let value = *flag;
-    std::mem::drop(flag);
+    let lock = UPDATE_RTC.try_lock();
+    if let Ok(mut mutex) = lock {
+        let value = *mutex;
+        resp = value.clone();
 
-    value
+        std::mem::drop(mutex);
+    } else {
+        println!("try_lock failed: UPDATE_RTC mutex, when attempting to read flag value");
+    }
+
+    info!("get_update_rtc_flag: {}", resp);
+    resp
 }
 
 pub fn fallback_to_rtc_enable() {
