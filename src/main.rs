@@ -280,58 +280,6 @@ fn main() -> Result<()> {
 
         get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
 
-        // // Queue configurations
-        // const QUEUE_TYPE_BASE: u8 = 0;
-        // const ITEM_SIZE: u32 = 0; // we're not posting any actual data, just notifying
-        // const QUEUE_SIZE: u32 = 1;
-
-        // const TIMER_SCALE: u32 = TIMER_BASE_CLK / TIMER_DIVIDER;
-        // let timer_conf = timer_config_t {
-        //     alarm_en: timer_alarm_t_TIMER_ALARM_EN,
-        //     counter_en: timer_start_t_TIMER_START,
-        //     intr_type: timer_intr_mode_t_TIMER_INTR_LEVEL,
-        //     counter_dir: timer_count_dir_t_TIMER_COUNT_UP,
-        //     auto_reload: timer_autoreload_t_TIMER_AUTORELOAD_EN,
-        //     divider: TIMER_DIVIDER,
-        // };
-
-        // // Instantiates the event queue
-        // EVENT_QUEUE = Some(xQueueGenericCreate(QUEUE_SIZE, ITEM_SIZE, QUEUE_TYPE_BASE));
-
-        // timer_set_counter_value(timer_group_t_TIMER_GROUP_0, timer_idx_t_TIMER_0, 0);
-
-        // timer_init(
-        //     timer_group_t_TIMER_GROUP_0,
-        //     timer_idx_t_TIMER_0,
-        //     &timer_conf,
-        // );
-
-        // let timer_interval_sec: u32 = 5;
-        // timer_set_alarm_value(
-        //     timer_group_t_TIMER_GROUP_0,
-        //     timer_idx_t_TIMER_0,
-        //     (timer_interval_sec * TIMER_SCALE) as u64,
-        // );
-        // timer_enable_intr(timer_group_t_TIMER_GROUP_0, timer_idx_t_TIMER_0);
-
-        // // let callback: Box<dyn FnMut() + 'static> = Box::new(|| unsafe { timer0_interrupt });
-
-        // let mut timer_info = &TimerInfo {
-        //     timer_group: timer_group_t_TIMER_GROUP_0,
-        //     timer_idx: timer_idx_t_TIMER_0,
-        //     alarm_interval: timer_interval_sec,
-        //     auto_reload: true,
-        // };
-
-        // // let h: TimerInterruptHandler = timer0_interrupt;
-        // // timer_isr_callback_add(
-        // //     timer_group_t_TIMER_GROUP_0,
-        // //     timer_idx_t_TIMER_0,
-        // //     Some(h),
-        // //     t_info_ptr,
-        // //     todo!(),
-        // // );
-
         // Setup SNTP
         let server_array: [&str; 4] = [
             "time.aws.com",
@@ -350,7 +298,7 @@ fn main() -> Result<()> {
         servers[..copy_len].copy_from_slice(&server_array[..copy_len]);
         sntp_conf.servers = servers;
 
-        sntp_set_sync_interval(60 * 1000);
+        sntp_set_sync_interval(30 * 1000);
         let sntp = sntp::EspSntp::new(&sntp_conf)?;
 
         // stop the sntp instance to redefine the callback
