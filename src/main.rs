@@ -36,9 +36,9 @@ use esp_idf_svc::{
 use esp_idf_sys as _;
 #[allow(unused_imports)]
 use esp_idf_sys::{
-    self as _, esp, esp_wifi_connect, esp_wifi_set_ps, settimeofday, sntp_init,
-    sntp_set_sync_interval, sntp_set_time_sync_notification_cb, sntp_stop, time_t, timeval,
-    timezone, wifi_ps_type_t_WIFI_PS_NONE,
+    self as _, esp, esp_wifi_connect, esp_wifi_set_ps, settimeofday, sntp_get_sync_status,
+    sntp_init, sntp_set_sync_interval, sntp_set_time_sync_notification_cb, sntp_stop, time_t,
+    timeval, timezone, wifi_ps_type_t_WIFI_PS_NONE,
 }; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
 use embedded_svc::wifi::{self, AuthMethod, ClientConfiguration, Wifi};
@@ -404,9 +404,42 @@ fn main() -> Result<()> {
                         ip, dns
                     );
 
+                    // FIXME
+                    // This needs to be handled as an event based service.
                     unsafe {
-                        if let Err(error) = sntp_setup() {
-                            error!("Error: Unable to setup SNTP: {}", error);
+                        let server = match sntp_setup() {
+                            Ok(value) => {
+                                let (_, s) = value;
+
+                                String::from(s[0])
+                            }
+                            Err(error) => {
+                                error!("Error: Unable to setup SNTP: {}", error);
+
+                                String::default()
+                            }
+                        };
+
+                        info!("SNTP: Enabled / Server: {:?}", server);
+                        sntp_init();
+                        let sync_status = SyncStatus::from(unsafe { sntp_get_sync_status() });
+
+                        info!("SNTP initialized, waiting for status!");
+
+                        let mut i: u32 = 0;
+                        let mut success = true;
+                        while sync_status != SyncStatus::Completed {
+                            i += 1;
+
+                            if i >= SNTP_RETRY_COUNT {
+                                warn!("SNTP attempted connection {} times. Now quitting.", i);
+                                success = false;
+                                break;
+                            }
+                        }
+
+                        if success {
+                            info!("SNTP status received! / Re-try count: {}", i);
                         }
                     };
 
@@ -576,7 +609,7 @@ fn update_rtc_from_local(rtc: &mut RV8803, latest_system_time: &SystemTimeBuffer
 /// Configure SNTP
 /// - <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/system_time.html#sntp-time-synchronization>
 /// - <https://wokwi.com/projects/342312626601067091>
-unsafe fn sntp_setup() -> Result<EspSntp> {
+unsafe fn sntp_setup<'a>() -> Result<(EspSntp, [&'a str; 1])> {
     let server_array: [&str; 4] = [
         "0.sg.pool.ntp.org",
         "1.sg.pool.ntp.org",
@@ -604,32 +637,7 @@ unsafe fn sntp_setup() -> Result<EspSntp> {
     // redefine and restart the callback.
     sntp_set_time_sync_notification_cb(Some(sntp_set_time_sync_notification_cb_custom));
 
-    if !core::get_disable_sntp_flag() {
-        info!("SNTP: Enabled / Server(s): {:?}", servers);
-        sntp_init();
-    } else {
-        warn!("SNTP: Disabled");
-    }
-
-    info!("SNTP initialized, waiting for status!");
-
-    let mut i: u32 = 0;
-    let mut success = true;
-    while sntp.get_sync_status() != SyncStatus::Completed {
-        i += 1;
-
-        if i >= SNTP_RETRY_COUNT {
-            warn!("SNTP attempted connection {} times. Now quitting.", i);
-            success = false;
-            break;
-        }
-    }
-
-    if success {
-        info!("SNTP status received! / Re-try count: {}", i);
-    }
-
-    Ok(sntp)
+    Ok((sntp, servers))
 }
 
 unsafe fn get_system_time() -> Result<SystemTimeBuffer> {

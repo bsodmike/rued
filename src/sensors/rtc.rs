@@ -7,7 +7,7 @@ pub mod rv8803 {
     use embedded_hal_0_2::prelude::*;
     use esp_idf_hal::i2c::I2cDriver;
     use esp_idf_sys::EspError;
-    use log::{debug, info};
+    use log::{debug, info, warn};
     use shared_bus::{I2cProxy, NullMutex};
     use std::{
         fmt::{self, Display},
@@ -104,7 +104,7 @@ pub mod rv8803 {
                 TIME_ARRAY_LENGTH,
             )?) == false
             {
-                info!("update_time: attempt read - fail 1");
+                warn!("update_time: attempt read - fail 1");
                 return Ok(false); // Something went wrong
             }
 
@@ -120,7 +120,7 @@ pub mod rv8803 {
                     TIME_ARRAY_LENGTH,
                 )?) == false
                 {
-                    info!("update_time: attempt read - fail 2");
+                    warn!("update_time: attempt read - fail 2");
                     return Ok(false); // Something went wrong
                 };
 
