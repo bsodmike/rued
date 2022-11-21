@@ -1,11 +1,15 @@
 #![feature(const_btree_new)]
 #![allow(dead_code, unused_variables)]
+#![feature(type_alias_impl_trait)]
+
+extern crate alloc;
 
 // use ::core::time::Duration;
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
 use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
+use peripherals::{ButtonsPeripherals, PulseCounterPeripherals};
 use std::{
     env, fmt, ptr,
     sync::{
@@ -18,7 +22,10 @@ use std::{
 
 use embedded_hal::i2c::I2c;
 use esp_idf_hal::{
-    delay::FreeRtos, peripheral::Peripheral, peripheral::PeripheralRef, peripherals::Peripherals,
+    delay::FreeRtos,
+    peripheral::Peripheral,
+    peripheral::{self, PeripheralRef},
+    peripherals::Peripherals,
 };
 use esp_idf_hal::{
     gpio::PinDriver,
@@ -71,7 +78,7 @@ use esp_idf_sys::esp;
 // use ruwm::spawn;
 // use ruwm::wm::WaterMeterState;
 
-extern crate rust_esp32_blinky as blinky;
+extern crate rued_esp32 as blinky;
 use blinky::micromod;
 
 use crate::{
@@ -91,9 +98,6 @@ mod models;
 mod peripherals;
 mod sensors;
 mod services;
-
-const WIFI_SSID: &str = env!("WIFI_SSID");
-const WIFI_PSK: &str = env!("WIFI_PSK");
 
 const CURRENT_YEAR: u16 = 2022;
 const UTC_OFFSET_CHRONO: Utc = Utc;
@@ -162,7 +166,7 @@ const MQTT_MAX_TOPIC_LEN: usize = 64;
 
 // Make sure that the firmware will contain
 // up-to-date build time and package info coming from the binary crate
-esp_idf_sys::esp_app_desc!();
+// esp_idf_sys::esp_app_desc!();
 
 fn main() -> Result<(), InitError> {
     esp_idf_hal::task::critical_section::link();
@@ -219,18 +223,30 @@ fn sleep() -> Result<(), InitError> {
 fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     let peripherals = peripherals::SystemPeripherals::take();
 
+    // Deep sleep wakeup init
+
+    mark_wakeup_pins(&peripherals.pulse_counter, &peripherals.buttons)?;
+
     // ESP-IDF basics
 
     let nvs_default_partition = EspDefaultNvsPartition::take()?;
     let sysloop = EspSystemEventLoop::take()?;
 
+    // Pulse counter
+
+    #[cfg(feature = "ulp")]
+    let (pulse_counter, pulse_wakeup) = services::pulse(peripherals.pulse_counter, wakeup_reason)?;
+
+    #[cfg(not(feature = "ulp"))]
+    let (pulse_counter, pulse_wakeup) = services::pulse(peripherals.pulse_counter)?;
+
     // Wifi
 
-    let (wifi, wifi_notif) = services::wifi(
-        peripherals.modem,
-        sysloop.clone(),
-        Some(nvs_default_partition.clone()),
-    )?;
+    // let (wifi, wifi_notif) = services::wifi(
+    //     peripherals.modem,
+    //     sysloop.clone(),
+    //     Some(nvs_default_partition.clone()),
+    // )?;
 
     // Httpd
 
@@ -244,60 +260,71 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     let mut high_prio_executor = EspExecutor::<16, _>::new();
     let mut high_prio_tasks = heapless::Vec::<_, 16>::new();
-    spawn::high_prio(
+
+    spawn::high_prio_test(
         &mut high_prio_executor,
         &mut high_prio_tasks,
-        AdcDriver::new(peripherals.battery.adc, &AdcConfig::new().calibration(true))?,
-        AdcChannelDriver::<_, Atten0dB<_>>::new(peripherals.battery.voltage)?,
-        PinDriver::input(peripherals.battery.power)?,
-        false,
         services::button(
             peripherals.buttons.button1,
             &core::internal::button::BUTTON1_PIN_EDGE,
         )?,
-        services::button(
-            peripherals.buttons.button2,
-            &core::internal::button::BUTTON2_PIN_EDGE,
-        )?,
-        services::button(
-            peripherals.buttons.button3,
-            &core::internal::button::BUTTON3_PIN_EDGE,
-        )?,
+        // (wifi, wifi_notif),
     )?;
+
+    // spawn::high_prio(
+    //     &mut high_prio_executor,
+    //     &mut high_prio_tasks,
+    //     AdcDriver::new(peripherals.battery.adc, &AdcConfig::new().calibration(true))?,
+    //     AdcChannelDriver::<_, Atten0dB<_>>::new(peripherals.battery.voltage)?,
+    //     PinDriver::input(peripherals.battery.power)?,
+    //     false,
+    //     services::button(
+    //         peripherals.buttons.button1,
+    //         &core::internal::button::BUTTON1_PIN_EDGE,
+    //     )?,
+    //     services::button(
+    //         peripherals.buttons.button2,
+    //         &core::internal::button::BUTTON2_PIN_EDGE,
+    //     )?,
+    //     services::button(
+    //         peripherals.buttons.button3,
+    //         &core::internal::button::BUTTON3_PIN_EDGE,
+    //     )?,
+    // )?;
 
     // Mid-prio tasks
 
-    log::info!("Starting mid-prio executor");
+    // log::info!("Starting mid-prio executor");
 
-    ThreadSpawnConfiguration {
-        name: Some(b"async-exec-mid\0"),
-        ..Default::default()
-    }
-    .set()
-    .unwrap();
+    // ThreadSpawnConfiguration {
+    //     name: Some(b"async-exec-mid\0"),
+    //     ..Default::default()
+    // }
+    // .set()
+    // .unwrap();
 
-    let display_peripherals = peripherals.display;
+    // // let display_peripherals = peripherals.display;
 
-    let mid_prio_execution = services::schedule::<8, _>(50000, move || {
-        let mut executor = EspExecutor::new();
-        let mut tasks = heapless::Vec::new();
+    // let mid_prio_execution = services::schedule::<8, _>(50000, move || {
+    //     let mut executor = EspExecutor::new();
+    //     let mut tasks = heapless::Vec::new();
 
-        // spawn::mid_prio(
-        //     &mut executor,
-        //     &mut tasks,
-        //     services::display(display_peripherals).unwrap(),
-        //     move |_new_state| {
-        //         #[cfg(feature = "nvs")]
-        //         flash_wm_state(storage, _new_state);
-        //     },
-        // )?;
+    //     // spawn::mid_prio(
+    //     //     &mut executor,
+    //     //     &mut tasks,
+    //     //     services::display(display_peripherals).unwrap(),
+    //     //     move |_new_state| {
+    //     //         #[cfg(feature = "nvs")]
+    //     //         flash_wm_state(storage, _new_state);
+    //     //     },
+    //     // )?;
 
-        spawn::wifi(&mut executor, &mut tasks, wifi, wifi_notif)?;
+    //     spawn::wifi(&mut executor, &mut tasks, wifi, wifi_notif)?;
 
-        // spawn::mqtt_receive(&mut executor, &mut tasks, mqtt_conn)?;
+    //     // spawn::mqtt_receive(&mut executor, &mut tasks, mqtt_conn)?;
 
-        Ok((executor, tasks))
-    });
+    //     Ok((executor, tasks))
+    // });
 
     // Low-prio tasks
 
@@ -333,12 +360,46 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     log::info!("Execution finished, waiting for 2s to workaround a STD/ESP-IDF pthread (?) bug");
 
-    std::thread::sleep(crate::StdDuration::from_millis(3000));
+    std::thread::sleep(crate::StdDuration::from_millis(2000));
 
-    mid_prio_execution.join().unwrap();
+    // mid_prio_execution.join().unwrap();
     // low_prio_execution.join().unwrap();
 
     log::info!("Finished execution");
+
+    Ok(())
+}
+
+fn mark_wakeup_pins(
+    pulse_counter_peripherals: &PulseCounterPeripherals<impl RTCPin + InputPin>,
+    buttons_peripherals: &ButtonsPeripherals<
+        impl RTCPin + InputPin,
+        impl RTCPin + InputPin,
+        impl RTCPin + InputPin,
+    >,
+) -> Result<(), InitError> {
+    unsafe {
+        let mut mask = (1 << buttons_peripherals.button1.pin())
+            | (1 << buttons_peripherals.button2.pin())
+            | (1 << buttons_peripherals.button3.pin());
+
+        #[cfg(not(feature = "ulp"))]
+        {
+            mask |= 1 << pulse_counter_peripherals.pulse.pin();
+        }
+
+        #[cfg(any(esp32, esp32s2, esp32s3))]
+        esp!(esp_idf_sys::esp_sleep_enable_ext1_wakeup(
+            mask,
+            esp_idf_sys::esp_sleep_ext1_wakeup_mode_t_ESP_EXT1_WAKEUP_ALL_LOW,
+        ))?;
+
+        #[cfg(not(any(esp32, esp32s2, esp32s3)))]
+        esp!(esp_idf_sys::esp_deep_sleep_enable_gpio_wakeup(
+            mask,
+            esp_idf_sys::esp_deepsleep_gpio_wake_up_mode_t_ESP_GPIO_WAKEUP_GPIO_LOW,
+        ))?;
+    }
 
     Ok(())
 }
@@ -372,14 +433,14 @@ fn main2() -> Result<()> {
     let mut ip = String::default();
     let mut dns = String::default();
 
-    info!("WIFI: Wifi name {}", crate::WIFI_SSID);
-    let auth_method = AuthMethod::WPA2WPA3Personal; // Todo: add this setting - router dependent
-    if crate::WIFI_SSID.is_empty() {
-        anyhow::bail!("missing WiFi name")
-    }
-    if crate::WIFI_PSK.is_empty() {
-        anyhow::bail!("Wifi password is empty")
-    }
+    // info!("WIFI: Wifi name {}", crate::WIFI_SSID);
+    // let auth_method = AuthMethod::WPA2WPA3Personal; // Todo: add this setting - router dependent
+    // if crate::WIFI_SSID.is_empty() {
+    //     anyhow::bail!("missing WiFi name")
+    // }
+    // if crate::WIFI_PSK.is_empty() {
+    //     anyhow::bail!("Wifi password is empty")
+    // }
 
     let sysloop = EspSystemEventLoop::take()?;
     let nvs_default_partition = EspDefaultNvsPartition::take()?;
@@ -390,12 +451,12 @@ fn main2() -> Result<()> {
         Some(nvs_default_partition),
     )?;
 
-    wifi.set_configuration(&wifi::Configuration::Client(ClientConfiguration {
-        ssid: crate::WIFI_SSID.into(),
-        password: crate::WIFI_PSK.into(),
-        // auth_method,
-        ..Default::default()
-    }))?;
+    // wifi.set_configuration(&wifi::Configuration::Client(ClientConfiguration {
+    //     ssid: crate::WIFI_SSID.into(),
+    //     password: crate::WIFI_PSK.into(),
+    //     // auth_method,
+    //     ..Default::default()
+    // }))?;
 
     let wait = WifiWait::new(&sysloop)?;
 
@@ -486,10 +547,10 @@ fn main2() -> Result<()> {
     // }
 
     // heart-beat sequence
-    for i in 0..3 {
-        println!("Toggling LED now: {}", i);
-        toggle_led(&mut led_onboard);
-    }
+    // for i in 0..3 {
+    //     println!("Toggling LED now: {}", i);
+    //     toggle_led(&mut led_onboard);
+    // }
 
     unsafe {
         let mut rtc_clock = RTClock::new();
@@ -824,9 +885,9 @@ unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
     Ok(buf)
 }
 
-fn toggle_led<T>(driver: &mut T)
+fn toggle_led<P>(driver: &mut P)
 where
-    T: embedded_hal::digital::ToggleableOutputPin,
+    P: esp_idf_hal::gpio::Pin + embedded_hal::digital::ToggleableOutputPin,
 {
     driver.toggle().unwrap();
 

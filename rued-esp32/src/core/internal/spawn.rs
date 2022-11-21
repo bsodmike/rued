@@ -6,7 +6,7 @@ use embedded_hal_0_2::digital::v2::{InputPin, OutputPin};
 use embedded_svc::mqtt::client::asynch::{Client, Connection, Publish};
 use embedded_svc::wifi::Wifi as WifiTrait;
 use embedded_svc::ws::asynch::server::Acceptor;
-use esp_idf_svc::wifi::EspWifi;
+use esp_idf_svc::wifi::{EspWifi, WifiEvent};
 
 use edge_executor::*;
 
@@ -15,6 +15,25 @@ use channel_bridge::asynch::*;
 use crate::core::internal::mqtt::MqttCommand;
 
 use super::{battery, mqtt, wifi};
+
+pub fn high_prio_test<'a, const C: usize, M>(
+    executor: &mut Executor<'a, C, M, Local>,
+    tasks: &mut heapless::Vec<Task<()>, C>,
+    button1_pin: impl InputPin<Error = impl Debug + 'a> + 'a,
+    // wifi: (EspWifi<'a>, impl Receiver<Data = WifiEvent> + 'a),
+) -> Result<(), SpawnError>
+where
+    M: Monitor + Default,
+{
+    executor.spawn_local_collect(
+        super::button::button1_process(button1_pin, super::button::PressedLevel::Low),
+        tasks,
+    )?;
+    // FIXME - need to get wifi running.
+    // executor.spawn_local_collect(super::wifi::process(wifi.0, wifi.1), tasks)?;
+
+    Ok(())
+}
 
 pub fn high_prio<'a, ADC, BP, const C: usize, M>(
     executor: &mut Executor<'a, C, M, Local>,
@@ -132,7 +151,11 @@ pub fn run<const C: usize, M>(
 ) where
     M: Monitor + Wait + Default,
 {
-    executor.run_tasks(move || !super::quit::QUIT.triggered(), tasks);
+    // let condition = move || !super::quit::QUIT.triggered();
+    // FIXME: Simulate a button press
+    let condition = move || false;
+
+    executor.run_tasks(condition, tasks);
 }
 
 pub fn start<const C: usize, M, F>(

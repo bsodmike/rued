@@ -41,29 +41,30 @@ pub async fn process<'a, D>(
             Either::First(_) => {
                 STATE.update(Some(wifi.is_connected().unwrap()));
 
-                // Get ip address details
-                //         if let Ok(connected) = wifi.is_connected() {
-                //             if connected {
-                //                 let netif = wifi.sta_netif();
-                //                 if let Ok(ip_info) = netif.get_ip_info() {
-                //                     let ip = ip_info.ip.to_string();
-                //                     let dns = if let Some(value) = ip_info.dns {
-                //                         value.to_string()
-                //                     } else {
-                //                         format!("ERR: Unable to unwrap DNS value")
-                //                     };
-                //                     log::info!(
-                //                         r#"
+                let netif = wifi.sta_netif();
+                if let Ok(up) = netif.is_up() {
+                    if up {
+                        log::info!("Wifi: netif is up");
 
-                // ->   Wifi Connected: IP: {} / DNS: {}
+                        //                         if let Ok(ip_info) = netif.get_ip_info() {
+                        //                             let ip = ip_info.ip.to_string();
+                        //                             let dns = if let Some(value) = ip_info.dns {
+                        //                                 value.to_string()
+                        //                             } else {
+                        //                                 format!("ERR: Unable to unwrap DNS value")
+                        //                             };
+                        //                             log::info!(
+                        //                                 r#"
 
-                // "#,
-                //                         ip,
-                //                         dns
-                //                     );
-                //                 };
-                //             }
-                //         }
+                        //     ->   Wifi Connected: IP: {} / DNS: {}
+
+                        // "#,
+                        //                                 ip,
+                        //                                 dns
+                        //                             );
+                        //                         };
+                    }
+                }
             }
             Either::Second(command) => match command {
                 WifiCommand::SetConfiguration(conf) => wifi.set_configuration(&conf).unwrap(),

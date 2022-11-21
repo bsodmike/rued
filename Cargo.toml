@@ -1,68 +1,45 @@
-[package]
-name = "rust-esp32-blinky"
-version = "0.1.0"
-authors = ["Michael de Silva <michael@mwdesilva.com>"]
-edition = "2021"
+[workspace]
 resolver = "2"
 
-[profile.release]
-opt-level = "s"
+members = [
+    "rued-esp32",
+]
 
-[profile.dev]
-debug = true # Symbols are nice and they don't increase the size on Flash
-opt-level = "z"
-
-[features]
-pio = ["esp-idf-sys/pio"]
-default = ["ssd1351"]
-
-[dependencies]
-anyhow = "1"
-heapless = { version = "0.7.16", default-features = false }
-log = "0.4.17"
-futures = {version = "0.3", features = ["async-await"] }
-serde = { version = "1", default-features = false }
-postcard = "0.7"
-critical-section = "1.1"
-esp-idf-sys = { version = "0.31.11", features = ["binstart"] }
-esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc", features = ["nightly", "experimental", "embassy-time-isr-queue"] }
-embedded-svc = { git = "https://github.com/esp-rs/embedded-svc", features = ["experimental", "std"] }
-embedded-hal = { git = "https://github.com/rust-embedded/embedded-hal" }
-embedded-hal-0-2 = { package = "embedded-hal", version = "0.2.7", features = ["unproven"] }
-esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal", features = ["edge-executor", "embassy-sync", "critical-section"] }
-embassy-futures = { version = "0.1" }
-embassy-sync = { version = "0.1", features = ["std"] }
-embassy-time = { version = "0.1" }
-static_cell = { version = "1" }
-edge-frame = { version = "0.4", default-features = false, features = ["assets-serve"], git = "https://github.com/ivmarkov/edge-frame" }
-edge-executor = { version = "0.3" }
-channel-bridge = { version = "0.1", git = "https://github.com/ivmarkov/channel-bridge", default-features = false, features = ["notification", "nightly", "embedded-svc"] }
-ruwm = { git = "https://github.com/ivmarkov/ruwm" } 
-
-# time = { version = "0.3.17", features = ["macros"] }
-chrono = { version = "0.4.23", default-features = false, features = ["clock", "std", "wasmbind"] } 
-# ssd1306 = "0.7.0" # pulls in older version of embedded-hal
-embedded-graphics = "0.7"
-display-interface = "0.4.1"
-serde_json = "1.0.87"
-cstr_core = "0.2.6"
-uncased = { version = "0.9.7" }
-shared-bus = "0.2.4" 
-once_cell = "1.16.0"
-
-ssd1351 = { version = "0.4", optional = true }
-
-[build-dependencies]
-embuild = "0.30"
-anyhow = "1"
+# exclude = ["ruwm-web", "ruwm-sim"]
 
 [patch.crates-io]
-embedded-hal = { git = "https://github.com/rust-embedded/embedded-hal" }
+#socket2 = { git = "https://github.com/esp-rs-compat/socket2" }
+#polling = { git = "https://github.com/esp-rs-compat/polling" }
+#embedded-svc = { path = "../embedded-svc" }
+#esp-idf-sys = { path = "../esp-idf-sys" }
+#esp-idf-hal = { path = "../esp-idf-hal" }
+#esp-idf-svc = { path = "../esp-idf-svc" }
+#edge-frame = { path = "../edge-frame/edge-frame" }
+#edge-executor = { path = "../edge-executor" }
 embedded-svc = { git = "https://github.com/esp-rs/embedded-svc" }
 esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal" }
 esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc" }
 edge-frame = { git = "https://github.com/ivmarkov/edge-frame" }
 embedded-io = { git = "https://github.com/ivmarkov/embedded-io" }
-shared-bus = { git = "https://github.com/taks/shared-bus", branch = "embedded-hal-1.0.0-alpha.9" }
 
+#[patch.'https://github.com/esp-rs/embedded-svc']
+#embedded-svc = { path = "../embedded-svc" }
 
+#[patch.'https://github.com/esp-rs/esp-idf-hal']
+#esp-idf-hal = { path = "../esp-idf-hal" }
+
+#[patch.'https://github.com/esp-rs/esp-idf-svc']
+#esp-idf-svc = { path = "../esp-idf-svc" }
+
+#[patch.'https://github.com/ivmarkov/edge-frame']
+#edge-frame = { path = "../edge-frame/edge-frame" }
+
+#[patch.'https://github.com/ivmarkov/embassy']
+#embassy-time = { path = "../embassy/embassy-time" }
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true
+opt-level = "z"

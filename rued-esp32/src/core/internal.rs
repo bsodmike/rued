@@ -4,6 +4,7 @@ pub mod dto;
 pub mod error;
 pub mod keepalive;
 pub mod mqtt;
+pub mod pulse_counter;
 pub mod quit;
 pub mod spawn;
 pub mod state;

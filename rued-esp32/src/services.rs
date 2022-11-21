@@ -42,15 +42,17 @@ use edge_frame::assets;
 use edge_executor::*;
 
 use crate::core::internal::mqtt::{MessageParser, MqttCommand};
+use crate::core::internal::pulse_counter::PulseCounter;
+use crate::core::internal::pulse_counter::PulseWakeup;
 
 // use ruwm::button::PressedLevel;
-use ruwm::pulse_counter::PulseCounter;
-use ruwm::pulse_counter::PulseWakeup;
-use ruwm::screen::{Color, Flushable, OwnedDrawTargetExt};
-use ruwm::valve::{self, ValveState};
-use ruwm::wm::WaterMeterState;
-use ruwm::wm_stats::WaterMeterStatsState;
-use ruwm::ws;
+// use ruwm::pulse_counter::PulseCounter;
+// use ruwm::pulse_counter::PulseWakeup;
+// use ruwm::screen::{Color, Flushable, OwnedDrawTargetExt};
+// use ruwm::valve::{self, ValveState};
+// use ruwm::wm::WaterMeterState;
+// use ruwm::wm_stats::WaterMeterStatsState;
+// use ruwm::ws;
 
 use channel_bridge::{asynch::pubsub, asynch::*, notification::Notification};
 
@@ -62,25 +64,25 @@ const PASS: &str = env!("WIFI_PSK");
 
 // const ASSETS: assets::serve::Assets = edge_frame::assets!("RUWM_WEB");
 
-#[derive(Default)]
-pub struct RtcMemory {
-    pub valve: Option<ValveState>,
-    pub wm: WaterMeterState,
-    pub wm_stats: WaterMeterStatsState,
-}
+// #[derive(Default)]
+// pub struct RtcMemory {
+//     pub valve: Option<ValveState>,
+//     pub wm: WaterMeterState,
+//     pub wm_stats: WaterMeterStatsState,
+// }
 
-impl RtcMemory {
-    pub const fn new() -> Self {
-        Self {
-            valve: None,
-            wm: WaterMeterState::new(),
-            wm_stats: WaterMeterStatsState::new(),
-        }
-    }
-}
+// impl RtcMemory {
+//     pub const fn new() -> Self {
+//         Self {
+//             valve: None,
+//             wm: WaterMeterState::new(),
+//             wm_stats: WaterMeterStatsState::new(),
+//         }
+//     }
+// }
 
-#[cfg_attr(feature = "rtc-mem", link_section = ".rtc.data.rtc_memory")]
-pub static mut RTC_MEMORY: RtcMemory = RtcMemory::new();
+// #[cfg_attr(feature = "rtc-mem", link_section = ".rtc.data.rtc_memory")]
+// pub static mut RTC_MEMORY: RtcMemory = RtcMemory::new();
 
 pub fn valve_pins(
     peripherals: ValvePeripherals,
@@ -102,7 +104,7 @@ pub fn valve_pins(
     close.set_pull(Pull::Floating)?;
 
     if wakeup_reason == WakeupReason::ULP {
-        valve::emergency_close(&mut power, &mut open, &mut close, &mut FreeRtos);
+        // valve::emergency_close(&mut power, &mut open, &mut close, &mut FreeRtos);
     }
 
     Ok((power, open, close))
@@ -164,20 +166,21 @@ pub fn storage(
 }
 
 #[cfg(not(feature = "ulp"))]
-// pub fn pulse(
-//     peripherals: PulseCounterPeripherals<impl RTCPin + InputPin + OutputPin>,
-// ) -> Result<(impl PulseCounter, impl PulseWakeup), InitError> {
-//     static PULSE_SIGNAL: Notification = Notification::new();
+pub fn pulse(
+    peripherals: PulseCounterPeripherals<impl RTCPin + InputPin + OutputPin>,
+) -> Result<(impl PulseCounter, impl PulseWakeup), InitError> {
+    static PULSE_SIGNAL: Notification = Notification::new();
 
-//     let pulse_counter = ruwm::pulse_counter::CpuPulseCounter::new(
-//         subscribe_pin(peripherals.pulse, || PULSE_SIGNAL.notify())?,
-//         crate::core::internal::button::PressedLevel::Low,
-//         &PULSE_SIGNAL,
-//         Some(Duration::from_millis(50)),
-//     );
+    let pulse_counter = crate::core::internal::pulse_counter::CpuPulseCounter::new(
+        subscribe_pin(peripherals.pulse, || PULSE_SIGNAL.notify())?,
+        crate::core::internal::button::PressedLevel::Low,
+        &PULSE_SIGNAL,
+        Some(Duration::from_millis(50)),
+    );
 
-//     Ok((pulse_counter, ()))
-// }
+    Ok((pulse_counter, ()))
+}
+
 #[cfg(feature = "ulp")]
 pub fn pulse(
     peripherals: PulseCounterPeripherals<impl RTCPin + InputPin + OutputPin>,
@@ -201,84 +204,84 @@ pub fn button<'d, P: InputPin + OutputPin>(
     subscribe_pin(pin, move || notification.notify())
 }
 
-pub fn display(
-    peripherals: DisplaySpiPeripherals<impl Peripheral<P = impl SpiAnyPins + 'static> + 'static>,
-) -> Result<impl Flushable<Color = Color, Error = impl Debug + 'static> + 'static, InitError> {
-    if let Some(backlight) = peripherals.control.backlight {
-        let mut backlight = PinDriver::output(backlight)?;
+// pub fn display(
+//     peripherals: DisplaySpiPeripherals<impl Peripheral<P = impl SpiAnyPins + 'static> + 'static>,
+// ) -> Result<impl Flushable<Color = Color, Error = impl Debug + 'static> + 'static, InitError> {
+//     if let Some(backlight) = peripherals.control.backlight {
+//         let mut backlight = PinDriver::output(backlight)?;
 
-        backlight.set_drive_strength(DriveStrength::I40mA)?;
-        backlight.set_high()?;
+//         backlight.set_drive_strength(DriveStrength::I40mA)?;
+//         backlight.set_high()?;
 
-        mem::forget(backlight); // TODO: For now
-    }
+//         mem::forget(backlight); // TODO: For now
+//     }
 
-    let baudrate = 26.MHz().into();
-    //let baudrate = 40.MHz().into();
+//     let baudrate = 26.MHz().into();
+//     //let baudrate = 40.MHz().into();
 
-    let spi = SpiDeviceDriver::new_single(
-        peripherals.spi,
-        peripherals.sclk,
-        peripherals.sdo,
-        Option::<Gpio21>::None,
-        Dma::Disabled,
-        peripherals.cs,
-        &SpiConfig::new().baudrate(baudrate),
-    )?;
+//     let spi = SpiDeviceDriver::new_single(
+//         peripherals.spi,
+//         peripherals.sclk,
+//         peripherals.sdo,
+//         Option::<Gpio21>::None,
+//         Dma::Disabled,
+//         peripherals.cs,
+//         &SpiConfig::new().baudrate(baudrate),
+//     )?;
 
-    let dc = PinDriver::output(peripherals.control.dc)?;
+//     let dc = PinDriver::output(peripherals.control.dc)?;
 
-    #[cfg(any(feature = "ili9342", feature = "st7789"))]
-    let display = {
-        let rst = PinDriver::output(peripherals.control.rst)?;
+//     #[cfg(any(feature = "ili9342", feature = "st7789"))]
+//     let display = {
+//         let rst = PinDriver::output(peripherals.control.rst)?;
 
-        #[cfg(feature = "ili9342")]
-        let builder = mipidsi::Builder::ili9342c_rgb565(
-            display_interface_spi::SPIInterfaceNoCS::new(spi, dc),
-        );
+//         #[cfg(feature = "ili9342")]
+//         let builder = mipidsi::Builder::ili9342c_rgb565(
+//             display_interface_spi::SPIInterfaceNoCS::new(spi, dc),
+//         );
 
-        #[cfg(feature = "st7789")]
-        let builder =
-            mipidsi::Builder::st7789(display_interface_spi::SPIInterfaceNoCS::new(spi, dc));
+//         #[cfg(feature = "st7789")]
+//         let builder =
+//             mipidsi::Builder::st7789(display_interface_spi::SPIInterfaceNoCS::new(spi, dc));
 
-        builder.init(&mut delay::Ets, Some(rst)).unwrap()
-    };
+//         builder.init(&mut delay::Ets, Some(rst)).unwrap()
+//     };
 
-    #[cfg(feature = "ssd1351")]
-    let display = {
-        use ssd1351::mode::displaymode::DisplayModeTrait;
+//     #[cfg(feature = "ssd1351")]
+//     let display = {
+//         use ssd1351::mode::displaymode::DisplayModeTrait;
 
-        let mut display =
-            ssd1351::mode::graphics::GraphicsMode::new(ssd1351::display::Display::new(
-                ssd1351::interface::spi::SpiInterface::new(spi, dc),
-                ssd1351::properties::DisplaySize::Display128x128,
-                ssd1351::properties::DisplayRotation::Rotate0,
-            ));
+//         let mut display =
+//             ssd1351::mode::graphics::GraphicsMode::new(ssd1351::display::Display::new(
+//                 ssd1351::interface::spi::SpiInterface::new(spi, dc),
+//                 ssd1351::properties::DisplaySize::Display128x128,
+//                 ssd1351::properties::DisplayRotation::Rotate0,
+//             ));
 
-        display
-            .reset(
-                &mut PinDriver::output(peripherals.control.rst)?,
-                &mut delay::Ets,
-            )
-            .unwrap();
+//         display
+//             .reset(
+//                 &mut PinDriver::output(peripherals.control.rst)?,
+//                 &mut delay::Ets,
+//             )
+//             .unwrap();
 
-        display
-    };
+//         display
+//     };
 
-    #[cfg(feature = "ttgo")]
-    let mut display = {
-        let rect = embedded_graphics::primitives::Rectangle::new(
-            embedded_graphics::prelude::Point::new(52, 40),
-            embedded_graphics::prelude::Size::new(135, 240),
-        );
+//     #[cfg(feature = "ttgo")]
+//     let mut display = {
+//         let rect = embedded_graphics::primitives::Rectangle::new(
+//             embedded_graphics::prelude::Point::new(52, 40),
+//             embedded_graphics::prelude::Size::new(135, 240),
+//         );
 
-        display.owned_cropped(display, &rect)
-    };
+//         display.owned_cropped(display, &rect)
+//     };
 
-    let display = display.owned_color_converted().owned_noop_flushing();
+//     let display = display.owned_color_converted().owned_noop_flushing();
 
-    Ok(display)
-}
+//     Ok(display)
+// }
 
 pub fn wifi<'d>(
     modem: impl Peripheral<P = impl WifiModemPeripheral + 'd> + 'd,
@@ -319,39 +322,39 @@ pub fn wifi<'d>(
     ))
 }
 
-pub fn httpd() -> Result<(EspHttpServer, impl Acceptor), InitError> {
-    let (ws_processor, ws_acceptor) =
-        EspHttpWsProcessor::<{ ws::WS_MAX_CONNECTIONS }, { ws::WS_MAX_FRAME_LEN }>::new(());
+// pub fn httpd() -> Result<(EspHttpServer, impl Acceptor), InitError> {
+//     let (ws_processor, ws_acceptor) =
+//         EspHttpWsProcessor::<{ ws::WS_MAX_CONNECTIONS }, { ws::WS_MAX_FRAME_LEN }>::new(());
 
-    let ws_processor = Mutex::<EspRawMutex, _>::new(RefCell::new(ws_processor));
+//     let ws_processor = Mutex::<EspRawMutex, _>::new(RefCell::new(ws_processor));
 
-    let mut httpd = EspHttpServer::new(&Default::default()).unwrap();
+//     let mut httpd = EspHttpServer::new(&Default::default()).unwrap();
 
-    // FIXME
+//     // FIXME
 
-    // let mut assets = ASSETS
-    //     .iter()
-    //     .filter(|asset| !asset.0.is_empty())
-    //     .collect::<heapless::Vec<_, { assets::MAX_ASSETS }>>();
+//     // let mut assets = ASSETS
+//     //     .iter()
+//     //     .filter(|asset| !asset.0.is_empty())
+//     //     .collect::<heapless::Vec<_, { assets::MAX_ASSETS }>>();
 
-    // assets.sort_by_key(|asset| AssetMetadata::derive(asset.0).uri);
+//     // assets.sort_by_key(|asset| AssetMetadata::derive(asset.0).uri);
 
-    // for asset in assets.iter().rev() {
-    //     let asset = **asset;
+//     // for asset in assets.iter().rev() {
+//     //     let asset = **asset;
 
-    //     let metadata = AssetMetadata::derive(asset.0);
+//     //     let metadata = AssetMetadata::derive(asset.0);
 
-    //     httpd.fn_handler(metadata.uri, Method::Get, move |req| {
-    //         assets::serve::serve(req, asset)
-    //     })?;
-    // }
+//     //     httpd.fn_handler(metadata.uri, Method::Get, move |req| {
+//     //         assets::serve::serve(req, asset)
+//     //     })?;
+//     // }
 
-    // httpd.ws_handler("/ws", move |connection| {
-    //     ws_processor.lock(|ws_processor| ws_processor.borrow_mut().process(connection))
-    // })?;
+//     // httpd.ws_handler("/ws", move |connection| {
+//     //     ws_processor.lock(|ws_processor| ws_processor.borrow_mut().process(connection))
+//     // })?;
 
-    Ok((httpd, ws_acceptor))
-}
+//     Ok((httpd, ws_acceptor))
+// }
 
 pub fn mqtt() -> Result<
     (
