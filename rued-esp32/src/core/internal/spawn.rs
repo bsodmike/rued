@@ -151,10 +151,10 @@ pub fn run<const C: usize, M>(
 ) where
     M: Monitor + Wait + Default,
 {
-    // let condition = move || !super::quit::QUIT.triggered();
     // FIXME: Simulate a button press
-    let condition = move || false;
+    // let condition = move || false;
 
+    let condition = move || !super::quit::QUIT.triggered();
     executor.run_tasks(condition, tasks);
 }
 
