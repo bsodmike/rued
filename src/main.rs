@@ -237,7 +237,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Mqtt
 
-    let (mqtt_topic_prefix, mqtt_client, mqtt_conn) = services::mqtt()?;
+    // let (mqtt_topic_prefix, mqtt_client, mqtt_conn) = services::mqtt()?;
 
     // High-prio tasks
 
@@ -263,6 +263,16 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         let mut executor = EspExecutor::new();
         let mut tasks = heapless::Vec::new();
 
+        // spawn::mid_prio(
+        //     &mut executor,
+        //     &mut tasks,
+        //     services::display(display_peripherals).unwrap(),
+        //     move |_new_state| {
+        //         #[cfg(feature = "nvs")]
+        //         flash_wm_state(storage, _new_state);
+        //     },
+        // )?;
+
         spawn::wifi(&mut executor, &mut tasks, wifi, wifi_notif)?;
 
         // spawn::mqtt_receive(&mut executor, &mut tasks, mqtt_conn)?;
@@ -272,43 +282,42 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Low-prio tasks
 
-    log::info!("Starting low-prio executor");
+    // log::info!("Starting low-prio executor");
 
-    ThreadSpawnConfiguration {
-        name: Some(b"async-exec-low\0"),
-        ..Default::default()
-    }
-    .set()
-    .unwrap();
+    // ThreadSpawnConfiguration {
+    //     name: Some(b"async-exec-low\0"),
+    //     ..Default::default()
+    // }
+    // .set()
+    // .unwrap();
 
-    let low_prio_execution = services::schedule::<4, _>(50000, move || {
-        let mut executor = EspExecutor::new();
-        let mut tasks = heapless::Vec::new();
+    // let low_prio_execution = services::schedule::<4, _>(50000, move || {
+    //     let mut executor = EspExecutor::new();
+    //     let mut tasks = heapless::Vec::new();
 
-        // spawn::mqtt_send::<MQTT_MAX_TOPIC_LEN, 4, _>(
-        //     &mut executor,
-        //     &mut tasks,
-        //     mqtt_topic_prefix,
-        //     mqtt_client,
-        // )?;
+    //     // spawn::mqtt_send::<MQTT_MAX_TOPIC_LEN, 4, _>(
+    //     //     &mut executor,
+    //     //     &mut tasks,
+    //     //     mqtt_topic_prefix,
+    //     //     mqtt_client,
+    //     // )?;
 
-        // spawn::ws(&mut executor, &mut tasks, ws_acceptor)?;
+    //     // spawn::ws(&mut executor, &mut tasks, ws_acceptor)?;
 
-        Ok((executor, tasks))
-    });
+    //     Ok((executor, tasks))
+    // });
 
     // Start main execution
 
-    log::info!("Starting high-prio executor");
-
+    // log::info!("Starting high-prio executor");
     // spawn::run(&mut high_prio_executor, high_prio_tasks);
 
     log::info!("Execution finished, waiting for 2s to workaround a STD/ESP-IDF pthread (?) bug");
 
-    std::thread::sleep(crate::StdDuration::from_millis(2000));
+    std::thread::sleep(crate::StdDuration::from_millis(3000));
 
     mid_prio_execution.join().unwrap();
-    low_prio_execution.join().unwrap();
+    // low_prio_execution.join().unwrap();
 
     log::info!("Finished execution");
 
