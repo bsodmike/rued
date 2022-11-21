@@ -1,6 +1,6 @@
 [package]
 name = "rued-esp32"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Michael de Silva <michael@mwdesilva.com>"]
 edition = "2021"
 resolver = "2"

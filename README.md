@@ -1,8 +1,9 @@
-# rust-esp32-xtensa-blinky
+# rued
+[Ru]st [E]lectronic [D]atalogger - my explorations into an embedded, async, real-world project
 
-This is still largely a work in progress.
+This is heavily inspired by [ruwm](https://github.com/ivmarkov/ruwm) by [ivmarkov](https://github.com/ivmarkov).
 
-If you have questions, [find me on Discord](https://discord.gg/rust-lang-community) in the `#embedded` channel.
+If you have questions, [find me on Discord](https://discord.gg/rust-lang-community) in the `#embedded` channel or in `#esp-rs` on [Matrix](https://matrix.to/#/#esp-rs:matrix.org)
 
 ## Yet another IoT stack?
 
@@ -13,13 +14,16 @@ With any IoT 'stack', there are some rudimentary basics; this repo is an attempt
 | Done? | Feature | Notes |
 |-----|---|---|
 | [ ] | Wifi | *Currently unstable; needs a reboot on first flash. |
-| [X] | SNTP |  |
-| [X] | Httpd server | Handlers can be customised |
-| [X] | Httpd server: JSON responses | Also implemented for default ESP error, if the request `Content-Type` is also JSON. |
-| [X] | SNTP fallback to RTC |  |
-| [X] | I2C | Added on a per-sensor basis |
+| [ ] | SNTP |  |
+| [ ] | Httpd server | Handlers can be customised |
+| [ ] | Httpd server: JSON responses | Also implemented for default ESP error, if the request `Content-Type` is also JSON. |
+| [ ] | SNTP fallback to RTC |  |
+| [ ] | I2C | Added on a per-sensor basis |
 | [ ] | Display | Needs testing |
 | [ ] | RTOS | Working across multiple threads. |
+
+- [P]: pending.
+
 
 ## Quick setup
 
@@ -32,29 +36,5 @@ Conecting to Wifi can be flakey at times, I usually have to reboot it once after
 
 ## Features
 
-To enable the Httpd server, use the features provided such as `cargo build --features httpd_server_enabled --release`.
 
 ## Httpd Server
-
-### GET /test
-
-In this example, it is a quick demo on how to send query strings, custom headers and the request handler makes another HTTP request to `http://info.cern.ch` and returns the response as JSON.
-
-```
-curl --location --request GET 'http://<WIFI_IP>/test?bob=foo&baz=bar' \
---header 'Content-type: application/json'
-
-// Success:
-{
-    "body": "<html><head></head><body><header>\n<title>http://info.cern.ch</title>\n</header>\n\n<h1>http://info.cern.ch - home of the first website</h1>\n<p>From here you can:</p>\n<ul>\n<li><a href=\"http://info.cern.ch/hypertext/WWW/TheProject.html\">Browse the first website",
-    "code": 200,
-    "success": true
-}
-
-// Failure response
-{
-    "code": 500,
-    "error": "ESP_ERR_HTTP_CONNECT",
-    "success": false
-}
-```
