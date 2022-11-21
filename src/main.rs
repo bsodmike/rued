@@ -16,14 +16,10 @@ use std::{
     time::Duration as StdDuration,
 };
 
-use crate::{
-    errors::*,
-    models::{RTClock, SystemTimeBuffer},
-    sensors::rtc::rv8803::RV8803,
-};
-
 use embedded_hal::i2c::I2c;
-use esp_idf_hal::{delay::FreeRtos, peripheral::PeripheralRef, peripherals::Peripherals};
+use esp_idf_hal::{
+    delay::FreeRtos, peripheral::Peripheral, peripheral::PeripheralRef, peripherals::Peripherals,
+};
 use esp_idf_hal::{
     gpio::PinDriver,
     i2c::{config::Config as I2cConfig, I2cDriver, I2C0},
@@ -78,7 +74,12 @@ use esp_idf_sys::esp;
 extern crate rust_esp32_blinky as blinky;
 use blinky::micromod;
 
-use crate::core::internal::spawn;
+use crate::{
+    core::internal::spawn,
+    errors::*,
+    models::{RTClock, SystemTimeBuffer},
+    sensors::rtc::rv8803::RV8803,
+};
 
 mod core;
 mod display;
@@ -233,7 +234,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Httpd
 
-    let (_httpd, ws_acceptor) = services::httpd()?;
+    // let (_httpd, ws_acceptor) = services::httpd()?;
 
     // Mqtt
 
@@ -241,10 +242,28 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // High-prio tasks
 
-    // let mut high_prio_executor = EspExecutor::<16, _>::new();
-    // let mut high_prio_tasks = heapless::Vec::<_, 16>::new();
-
-    // FIXME: todo
+    let mut high_prio_executor = EspExecutor::<16, _>::new();
+    let mut high_prio_tasks = heapless::Vec::<_, 16>::new();
+    spawn::high_prio(
+        &mut high_prio_executor,
+        &mut high_prio_tasks,
+        AdcDriver::new(peripherals.battery.adc, &AdcConfig::new().calibration(true))?,
+        AdcChannelDriver::<_, Atten0dB<_>>::new(peripherals.battery.voltage)?,
+        PinDriver::input(peripherals.battery.power)?,
+        false,
+        services::button(
+            peripherals.buttons.button1,
+            &core::internal::button::BUTTON1_PIN_EDGE,
+        )?,
+        services::button(
+            peripherals.buttons.button2,
+            &core::internal::button::BUTTON2_PIN_EDGE,
+        )?,
+        services::button(
+            peripherals.buttons.button3,
+            &core::internal::button::BUTTON3_PIN_EDGE,
+        )?,
+    )?;
 
     // Mid-prio tasks
 
@@ -309,8 +328,8 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Start main execution
 
-    // log::info!("Starting high-prio executor");
-    // spawn::run(&mut high_prio_executor, high_prio_tasks);
+    log::info!("Starting high-prio executor");
+    spawn::run(&mut high_prio_executor, high_prio_tasks);
 
     log::info!("Execution finished, waiting for 2s to workaround a STD/ESP-IDF pthread (?) bug");
 
@@ -813,3 +832,5 @@ where
 
     FreeRtos::delay_ms(100);
 }
+
+fn take_gpio<'d>(some_gpio: impl Peripheral<P = impl OutputPin + InputPin> + 'd) {}

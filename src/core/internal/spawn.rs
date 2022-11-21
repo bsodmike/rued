@@ -16,70 +16,53 @@ use crate::core::internal::mqtt::MqttCommand;
 
 use super::{battery, mqtt, wifi};
 
-// pub fn high_prio<'a, ADC, BP, const C: usize, M>(
-//     executor: &mut Executor<'a, C, M, Local>,
-//     tasks: &mut heapless::Vec<Task<()>, C>,
-//     valve_power_pin: impl OutputPin<Error = impl Debug + 'a> + 'a,
-//     valve_open_pin: impl OutputPin<Error = impl Debug + 'a> + 'a,
-//     valve_close_pin: impl OutputPin<Error = impl Debug + 'a> + 'a,
-//     valve_persister: impl FnMut(Option<ValveState>) + 'a,
-//     pulse_counter: impl PulseCounter + 'a,
-//     pulse_wakeup: impl PulseWakeup + 'a,
-//     wm_persister: impl FnMut(WaterMeterState) + 'a,
-//     wm_stats_persister: impl FnMut(WaterMeterStatsState) + 'a,
-//     battery_voltage: impl adc::OneShot<ADC, u16, BP> + 'a,
-//     battery_pin: BP,
-//     power_pin: impl InputPin + 'a,
-//     roller: bool,
-//     button1_pin: impl InputPin<Error = impl Debug + 'a> + 'a,
-//     button2_pin: impl InputPin<Error = impl Debug + 'a> + 'a,
-//     button3_pin: impl InputPin<Error = impl Debug + 'a> + 'a,
-// ) -> Result<(), SpawnError>
-// where
-//     M: Monitor + Default,
-//     ADC: 'a,
-//     BP: adc::Channel<ADC> + 'a,
-// {
-//     executor
-//         .spawn_local_collect(valve::process(), tasks)?
-//         .spawn_local_collect(
-//             valve::spin(valve_power_pin, valve_open_pin, valve_close_pin),
-//             tasks,
-//         )?
-//         .spawn_local_collect(valve::persist(valve_persister), tasks)?
-//         .spawn_local_collect(wm::process(pulse_counter, pulse_wakeup), tasks)?
-//         .spawn_local_collect(wm::persist(wm_persister), tasks)?
-//         .spawn_local_collect(wm_stats::persist(wm_stats_persister), tasks)?
-//         .spawn_local_collect(
-//             battery::process(battery_voltage, battery_pin, power_pin),
-//             tasks,
-//         )?
-//         .spawn_local_collect(
-//             button::button3_process(button3_pin, PressedLevel::Low),
-//             tasks,
-//         )?
-//         .spawn_local_collect(emergency::process(), tasks)?
-//         .spawn_local_collect(keepalive::process(), tasks)?;
+pub fn high_prio<'a, ADC, BP, const C: usize, M>(
+    executor: &mut Executor<'a, C, M, Local>,
+    tasks: &mut heapless::Vec<Task<()>, C>,
+    battery_voltage: impl adc::OneShot<ADC, u16, BP> + 'a,
+    battery_pin: BP,
+    power_pin: impl InputPin + 'a,
+    roller: bool,
+    button1_pin: impl InputPin<Error = impl Debug + 'a> + 'a,
+    button2_pin: impl InputPin<Error = impl Debug + 'a> + 'a,
+    button3_pin: impl InputPin<Error = impl Debug + 'a> + 'a,
+) -> Result<(), SpawnError>
+where
+    M: Monitor + Default,
+    ADC: 'a,
+    BP: adc::Channel<ADC> + 'a,
+{
+    executor
+        .spawn_local_collect(
+            battery::process(battery_voltage, battery_pin, power_pin),
+            tasks,
+        )?
+        .spawn_local_collect(
+            super::button::button3_process(button3_pin, super::button::PressedLevel::Low),
+            tasks,
+        )?
+        // .spawn_local_collect(emergency::process(), tasks)?
+        .spawn_local_collect(super::keepalive::process(), tasks)?;
 
-//     if roller {
-//         executor.spawn_local_collect(
-//             button::button1_button2_roller_process(button1_pin, button2_pin),
-//             tasks,
-//         )?;
-//     } else {
-//         executor
-//             .spawn_local_collect(
-//                 button::button1_process(button1_pin, PressedLevel::Low),
-//                 tasks,
-//             )?
-//             .spawn_local_collect(
-//                 button::button2_process(button2_pin, PressedLevel::Low),
-//                 tasks,
-//             )?;
-//     }
+    if roller {
+        executor.spawn_local_collect(
+            super::button::button1_button2_roller_process(button1_pin, button2_pin),
+            tasks,
+        )?;
+    } else {
+        executor
+            .spawn_local_collect(
+                super::button::button1_process(button1_pin, super::button::PressedLevel::Low),
+                tasks,
+            )?
+            .spawn_local_collect(
+                super::button::button2_process(button2_pin, super::button::PressedLevel::Low),
+                tasks,
+            )?;
+    }
 
-//     Ok(())
-// }
+    Ok(())
+}
 
 // pub fn mid_prio<'a, const C: usize, M, D>(
 //     executor: &mut Executor<'a, C, M, Local>,

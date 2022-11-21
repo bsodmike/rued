@@ -1,6 +1,8 @@
 pub mod battery;
+pub mod button;
 pub mod dto;
 pub mod error;
+pub mod keepalive;
 pub mod mqtt;
 pub mod quit;
 pub mod spawn;

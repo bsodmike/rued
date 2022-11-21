@@ -43,7 +43,7 @@ use edge_executor::*;
 
 use crate::core::internal::mqtt::{MessageParser, MqttCommand};
 
-use ruwm::button::PressedLevel;
+// use ruwm::button::PressedLevel;
 use ruwm::pulse_counter::PulseCounter;
 use ruwm::pulse_counter::PulseWakeup;
 use ruwm::screen::{Color, Flushable, OwnedDrawTargetExt};
@@ -164,21 +164,20 @@ pub fn storage(
 }
 
 #[cfg(not(feature = "ulp"))]
-pub fn pulse(
-    peripherals: PulseCounterPeripherals<impl RTCPin + InputPin + OutputPin>,
-) -> Result<(impl PulseCounter, impl PulseWakeup), InitError> {
-    static PULSE_SIGNAL: Notification = Notification::new();
+// pub fn pulse(
+//     peripherals: PulseCounterPeripherals<impl RTCPin + InputPin + OutputPin>,
+// ) -> Result<(impl PulseCounter, impl PulseWakeup), InitError> {
+//     static PULSE_SIGNAL: Notification = Notification::new();
 
-    let pulse_counter = ruwm::pulse_counter::CpuPulseCounter::new(
-        subscribe_pin(peripherals.pulse, || PULSE_SIGNAL.notify())?,
-        PressedLevel::Low,
-        &PULSE_SIGNAL,
-        Some(Duration::from_millis(50)),
-    );
+//     let pulse_counter = ruwm::pulse_counter::CpuPulseCounter::new(
+//         subscribe_pin(peripherals.pulse, || PULSE_SIGNAL.notify())?,
+//         crate::core::internal::button::PressedLevel::Low,
+//         &PULSE_SIGNAL,
+//         Some(Duration::from_millis(50)),
+//     );
 
-    Ok((pulse_counter, ()))
-}
-
+//     Ok((pulse_counter, ()))
+// }
 #[cfg(feature = "ulp")]
 pub fn pulse(
     peripherals: PulseCounterPeripherals<impl RTCPin + InputPin + OutputPin>,
@@ -310,9 +309,9 @@ pub fn wifi<'d>(
 
     wifi.connect()?;
 
-    // if !PASS.is_empty() {
-    //     wait.wait(|| wifi.is_connected().unwrap());
-    // }
+    if !PASS.is_empty() {
+        wait.wait(|| wifi.is_connected().unwrap());
+    }
 
     Ok((
         wifi,
@@ -413,7 +412,7 @@ where
             //     "TODO"
             // );
 
-            ruwm::spawn::run(&mut executor, tasks);
+            super::spawn::run(&mut executor, tasks);
         })
         .unwrap()
 }
