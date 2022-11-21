@@ -5,9 +5,17 @@ members = [
     "rued-esp32",
 ]
 
-# exclude = ["ruwm-web", "ruwm-sim"]
+# exclude = []
 
 [patch.crates-io]
+embedded-hal = { git = "https://github.com/rust-embedded/embedded-hal" }
+# embedded-svc = { git = "https://github.com/esp-rs/embedded-svc" }
+# esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal" }
+# esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc" }
+# edge-frame = { git = "https://github.com/ivmarkov/edge-frame" }
+# embedded-io = { git = "https://github.com/ivmarkov/embedded-io" }
+shared-bus = { git = "https://github.com/taks/shared-bus", branch = "embedded-hal-1.0.0-alpha.9" }
+
 #socket2 = { git = "https://github.com/esp-rs-compat/socket2" }
 #polling = { git = "https://github.com/esp-rs-compat/polling" }
 #embedded-svc = { path = "../embedded-svc" }
@@ -16,11 +24,11 @@ members = [
 #esp-idf-svc = { path = "../esp-idf-svc" }
 #edge-frame = { path = "../edge-frame/edge-frame" }
 #edge-executor = { path = "../edge-executor" }
-embedded-svc = { git = "https://github.com/esp-rs/embedded-svc" }
-esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal" }
-esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc" }
-edge-frame = { git = "https://github.com/ivmarkov/edge-frame" }
-embedded-io = { git = "https://github.com/ivmarkov/embedded-io" }
+# embedded-svc = { git = "https://github.com/esp-rs/embedded-svc" }
+# esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal" }
+# esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc" }
+# edge-frame = { git = "https://github.com/ivmarkov/edge-frame" }
+# embedded-io = { git = "https://github.com/ivmarkov/embedded-io" }
 
 #[patch.'https://github.com/esp-rs/embedded-svc']
 #embedded-svc = { path = "../embedded-svc" }

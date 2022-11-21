@@ -24,12 +24,12 @@ futures = {version = "0.3", features = ["async-await"] }
 serde = { version = "1", default-features = false }
 postcard = "0.7"
 critical-section = "1.1"
-esp-idf-sys = { version = "0.31.11", features = ["binstart"] }
-esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc", features = ["nightly", "experimental", "embassy-time-isr-queue"] }
-embedded-svc = { git = "https://github.com/esp-rs/embedded-svc", features = ["experimental", "std"] }
 embedded-hal = { git = "https://github.com/rust-embedded/embedded-hal" }
 embedded-hal-0-2 = { package = "embedded-hal", version = "0.2.7", features = ["unproven"] }
-esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal", features = ["edge-executor", "embassy-sync", "critical-section"] }
+embedded-svc = { version = "0.23", features = ["nightly", "experimental"] }
+esp-idf-sys = { version = "0.31.11", features = ["binstart"] }
+esp-idf-svc = { version = "0.43.2", features = ["nightly", "experimental", "embassy-time-isr-queue"] }
+esp-idf-hal = { version = "0.39", features = ["edge-executor", "embassy-sync", "critical-section"] }
 embassy-futures = { version = "0.1" }
 embassy-sync = { version = "0.1", features = ["std"] }
 embassy-time = { version = "0.1" }
@@ -55,14 +55,3 @@ ssd1351 = { version = "0.4", optional = true }
 [build-dependencies]
 embuild = "0.30"
 anyhow = "1"
-
-[patch.crates-io]
-embedded-hal = { git = "https://github.com/rust-embedded/embedded-hal" }
-embedded-svc = { git = "https://github.com/esp-rs/embedded-svc" }
-esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal" }
-esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc" }
-edge-frame = { git = "https://github.com/ivmarkov/edge-frame" }
-embedded-io = { git = "https://github.com/ivmarkov/embedded-io" }
-shared-bus = { git = "https://github.com/taks/shared-bus", branch = "embedded-hal-1.0.0-alpha.9" }
-
-
