@@ -41,7 +41,11 @@ pub async fn process() {
 
         let now = Instant::now();
 
-        if battery::STATE.get().powered.unwrap_or(false) {
+        let mut is_battery_powered = battery::STATE.get().powered.unwrap_or(false);
+        // FIXME this is to simulate Deep-sleep
+        is_battery_powered = false;
+
+        if is_battery_powered {
             quit_time = None;
         } else if matches!(result, Either::First(_)) {
             quit_time = Some(now + TIMEOUT);

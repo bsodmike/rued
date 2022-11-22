@@ -25,10 +25,14 @@ pub fn high_prio_test<'a, const C: usize, M>(
 where
     M: Monitor + Default,
 {
-    executor.spawn_local_collect(
-        super::button::button1_process(button1_pin, super::button::PressedLevel::Low),
-        tasks,
-    )?;
+    executor
+        .spawn_local_collect(
+            super::button::button1_process(button1_pin, super::button::PressedLevel::Low),
+            tasks,
+        )?
+        .spawn_local_collect(super::inspector::process(), tasks)?
+        .spawn_local_collect(super::keepalive::process(), tasks)?;
+
     // FIXME - need to get wifi running.
     // executor.spawn_local_collect(super::wifi::process(wifi.0, wifi.1), tasks)?;
 
@@ -40,6 +44,7 @@ pub fn high_prio<'a, ADC, BP, const C: usize, M>(
     tasks: &mut heapless::Vec<Task<()>, C>,
     battery_voltage: impl adc::OneShot<ADC, u16, BP> + 'a,
     battery_pin: BP,
+    // used to indicate if powered by battery, only if this is enabled will Deep-sleep be enabled.
     power_pin: impl InputPin + 'a,
     roller: bool,
     button1_pin: impl InputPin<Error = impl Debug + 'a> + 'a,

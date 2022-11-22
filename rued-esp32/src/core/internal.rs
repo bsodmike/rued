@@ -2,6 +2,7 @@ pub mod battery;
 pub mod button;
 pub mod dto;
 pub mod error;
+pub mod inspector;
 pub mod keepalive;
 pub mod mqtt;
 pub mod pulse_counter;

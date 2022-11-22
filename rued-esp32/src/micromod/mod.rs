@@ -40,7 +40,7 @@ pub mod chip {
 
         // D0 - GPIO pin 14, pad 10 on the MicroMod
         let gpio_d0 = peripherals.pins.gpio14;
-        let led_onboard = peripherals.pins.gpio14;
+        let led_onboard = gpio_d0;
         // D1 - GPIO pin 27, pad 18 on the MicroMod
         let gpio_d1 = peripherals.pins.gpio27;
 

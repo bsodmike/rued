@@ -278,7 +278,7 @@ pub mod rv8803 {
 
     impl fmt::Display for Weekday {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "{}", self.to_s())
+            write!(f, "{}", self.to_str())
         }
     }
 
@@ -287,21 +287,21 @@ pub mod rv8803 {
             *self as u8
         }
 
-        pub fn to_s(&self) -> String {
+        pub fn to_str(&self) -> &'static str {
             match self {
-                Self::Sunday => "Sunday".to_string(),
-                Self::Monday => "Monday".to_string(),
-                Self::Tuesday => "Tuesday".to_string(),
-                Self::Wednesday => "Wednesday".to_string(),
-                Self::Thursday => "Thursday".to_string(),
-                Self::Friday => "Friday".to_string(),
-                Self::Saturday => "Saturday".to_string(),
+                Self::Sunday => "Sunday",
+                Self::Monday => "Monday",
+                Self::Tuesday => "Tuesday",
+                Self::Wednesday => "Wednesday",
+                Self::Thursday => "Thursday",
+                Self::Friday => "Friday",
+                Self::Saturday => "Saturday",
             }
         }
 
         // Returns the first 3-letters of the day of the week
         pub fn to_short(&self) -> Result<String> {
-            let day = self.to_s();
+            let day = self.to_str();
             let result: String = day.chars().take(3).collect();
 
             Ok(result)
