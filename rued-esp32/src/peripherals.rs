@@ -16,7 +16,7 @@ pub struct SystemPeripherals<P, ADC, V, B1, B2, B3, SPI, I2C> {
 }
 
 #[cfg(esp32)]
-impl SystemPeripherals<Gpio33, ADC1, Gpio36, Gpio2, Gpio4, Gpio32, SPI2, I2C0> {
+impl SystemPeripherals<Gpio33, ADC1, Gpio36, Gpio14, Gpio4, Gpio32, SPI2, I2C0> {
     pub fn take() -> Self {
         let peripherals = Peripherals::take().unwrap();
 
@@ -37,7 +37,7 @@ impl SystemPeripherals<Gpio33, ADC1, Gpio36, Gpio2, Gpio4, Gpio32, SPI2, I2C0> {
                 adc: peripherals.adc1,
             },
             buttons: ButtonsPeripherals {
-                button1: peripherals.pins.gpio2,
+                button1: peripherals.pins.gpio14,
                 button2: peripherals.pins.gpio4,
                 button3: peripherals.pins.gpio32,
             },
@@ -48,7 +48,7 @@ impl SystemPeripherals<Gpio33, ADC1, Gpio36, Gpio2, Gpio4, Gpio32, SPI2, I2C0> {
                     rst: peripherals.pins.gpio19.into(),
                 },
                 spi: peripherals.spi2,
-                sclk: peripherals.pins.gpio14.into(),
+                sclk: peripherals.pins.gpio2.into(),
                 sdo: peripherals.pins.gpio13.into(),
                 cs: Some(peripherals.pins.gpio5.into()),
             },

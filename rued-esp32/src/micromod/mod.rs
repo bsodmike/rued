@@ -8,14 +8,16 @@ use esp_idf_hal::{peripheral::PeripheralRef, peripherals::Peripherals};
 use std::ops::DerefMut;
 use std::sync::{Arc, RwLock};
 
-use self::chip::{GpioD1, GpioScl, GpioSda, I2cBus, Modem, OnboardLed};
+use self::chip::{GpioD0, GpioD1, GpioScl, GpioSda, I2cBus, Modem, OnboardLed};
 
 #[cfg(esp32)]
 pub mod chip {
     use std::sync::{Arc, Mutex, RwLock};
 
     use super::*;
-    use esp_idf_hal::gpio::{Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output, PinDriver};
+    use esp_idf_hal::gpio::{
+        Gpio10, Gpio14, Gpio21, Gpio22, Gpio27, InputOutput, Output, PinDriver,
+    };
     use esp_idf_hal::{
         modem::Modem as HalModem, peripheral::PeripheralRef, peripherals::Peripherals,
     };
@@ -24,6 +26,7 @@ pub mod chip {
     pub type GpioSda = Gpio21;
     pub type GpioScl = Gpio22;
     pub type OnboardLed = Gpio14;
+    pub type GpioD0 = Gpio10;
     pub type GpioD1 = Gpio27;
     pub type Modem = HalModem;
     pub type I2cBus = BusManager<NullMutex<I2cDriver<'static>>>;
@@ -37,7 +40,7 @@ pub mod chip {
 
         // D0 - GPIO pin 14, pad 10 on the MicroMod
         let gpio_d0 = peripherals.pins.gpio14;
-        let led_onboard = gpio_d0;
+        let led_onboard = peripherals.pins.gpio14;
         // D1 - GPIO pin 27, pad 18 on the MicroMod
         let gpio_d1 = peripherals.pins.gpio27;
 
