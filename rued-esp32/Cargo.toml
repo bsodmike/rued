@@ -18,7 +18,8 @@ default = ["ssd1351"]
 
 [dependencies]
 anyhow = "1"
-heapless = { version = "0.7.16", default-features = false }
+heapless = { version = "0.7" }
+enumset = "1"
 log = "0.4.17"
 futures = {version = "0.3", features = ["async-await"] }
 serde = { version = "1", default-features = false }

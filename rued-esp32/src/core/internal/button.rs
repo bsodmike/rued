@@ -20,7 +20,10 @@ pub static BUTTON1_PIN_EDGE: Notification = Notification::new();
 pub static BUTTON2_PIN_EDGE: Notification = Notification::new();
 pub static BUTTON3_PIN_EDGE: Notification = Notification::new();
 
-static BUTTON1_NOTIFY: &[&Notification] = &[&super::inspector::BUTTON1_PRESSED_NOTIF];
+static BUTTON1_NOTIFY: &[&Notification] = &[
+    &super::inspector::BUTTON1_PRESSED_NOTIF,
+    &super::keepalive::NOTIF,
+];
 // &[&crate::screen::BUTTON1_PRESSED_NOTIF];
 static BUTTON2_NOTIFY: &[&Notification] = &[];
 // &[&crate::screen::BUTTON2_PRESSED_NOTIF];
