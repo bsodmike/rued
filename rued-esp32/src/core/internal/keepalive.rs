@@ -35,8 +35,6 @@ pub async fn process() {
     let mut remaining_time_sent = None;
 
     loop {
-        log::info!("keepalive start");
-
         let result = select(
             NOTIF.wait(),
             Timer::after(Duration::from_secs(2)), /*Duration::from_millis(500)*/
@@ -72,20 +70,8 @@ pub async fn process() {
             STATE.update(remaining_time);
         }
 
-        if let Ok(val) = std::panic::catch_unwind(|| {
-            if let Some(value) = quit_time {
-                if let Some(is_deep_sleep) = quit_time.map(|quit_time| now >= quit_time) {
-                    if is_deep_sleep {
-                        quit::QUIT.notify();
-                    }
-                }
-            }
-        }) {
-            val
-        } else {
-            log::error!("Error handling panic")
+        if quit_time.map(|quit_time| now >= quit_time).unwrap_or(false) {
+            quit::QUIT.notify();
         }
-
-        log::info!("keepalive end");
     }
 }

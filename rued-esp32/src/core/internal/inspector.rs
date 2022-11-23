@@ -66,7 +66,5 @@ pub async fn process() {
 
         // NOTE: Trigger a notification if this state has changed.
         // FOO_NOTIF.notify();
-
-        log::info!("inspector end");
     }
 }

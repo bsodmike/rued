@@ -161,7 +161,7 @@ fn wifi_connect() -> Result<()> {
     Ok(())
 }
 
-const SLEEP_TIME: Duration = Duration::from_secs(2);
+const SLEEP_TIME: Duration = Duration::from_secs(5);
 const MQTT_MAX_TOPIC_LEN: usize = 64;
 
 // Make sure that the firmware will contain
@@ -387,6 +387,15 @@ fn mark_wakeup_pins(
         {
             mask |= 1 << pulse_counter_peripherals.pulse.pin();
         }
+
+        // FIXME for troubleshooting later on.
+        // mask = 0;
+        // log::info!(
+        //     "Wakeup pins mask: {} / button2: {} / button3 {}",
+        //     format!("{mask:#b}"),
+        //     buttons_peripherals.button2.pin(),
+        //     buttons_peripherals.button3.pin()
+        // );
 
         #[cfg(any(esp32, esp32s2, esp32s3))]
         esp!(esp_idf_sys::esp_sleep_enable_ext1_wakeup(

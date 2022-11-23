@@ -16,7 +16,7 @@ pub struct SystemPeripherals<P, ADC, V, B1, B2, B3, SPI, I2C> {
 }
 
 #[cfg(esp32)]
-impl SystemPeripherals<Gpio33, ADC1, Gpio36, Gpio14, Gpio4, Gpio32, SPI2, I2C0> {
+impl SystemPeripherals<Gpio33, ADC1, Gpio36, Gpio14, Gpio27, Gpio15, SPI2, I2C0> {
     pub fn take() -> Self {
         let peripherals = Peripherals::take().unwrap();
 
@@ -29,7 +29,7 @@ impl SystemPeripherals<Gpio33, ADC1, Gpio36, Gpio14, Gpio4, Gpio32, SPI2, I2C0> 
             valve: ValvePeripherals {
                 power: peripherals.pins.gpio25.into(),
                 open: peripherals.pins.gpio26.into(),
-                close: peripherals.pins.gpio27.into(),
+                close: peripherals.pins.gpio4.into(),
             },
             battery: BatteryPeripherals {
                 power: peripherals.pins.gpio35.into(),
@@ -37,13 +37,13 @@ impl SystemPeripherals<Gpio33, ADC1, Gpio36, Gpio14, Gpio4, Gpio32, SPI2, I2C0> 
                 adc: peripherals.adc1,
             },
             buttons: ButtonsPeripherals {
-                button1: peripherals.pins.gpio14,
-                button2: peripherals.pins.gpio4,
-                button3: peripherals.pins.gpio32,
+                button1: peripherals.pins.gpio14, // D0
+                button2: peripherals.pins.gpio27, // D1
+                button3: peripherals.pins.gpio15, // G0
             },
             display: DisplaySpiPeripherals {
                 control: DisplayControlPeripherals {
-                    backlight: Some(peripherals.pins.gpio15.into()),
+                    backlight: Some(peripherals.pins.gpio32.into()),
                     dc: peripherals.pins.gpio18.into(),
                     rst: peripherals.pins.gpio19.into(),
                 },
