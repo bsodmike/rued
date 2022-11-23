@@ -1,9 +1,13 @@
+use std::marker::PhantomData;
+
 use esp_idf_hal::adc::*;
 use esp_idf_hal::gpio::*;
 use esp_idf_hal::i2c::*;
 use esp_idf_hal::modem::Modem;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::spi::*;
+use esp_idf_hal::units::Hertz;
+use shared_bus::{BusManager, NullMutex};
 
 pub struct SystemPeripherals<P, ADC, V, B1, B2, B3, SPI, I2C> {
     pub pulse_counter: PulseCounterPeripherals<P>,
@@ -11,14 +15,41 @@ pub struct SystemPeripherals<P, ADC, V, B1, B2, B3, SPI, I2C> {
     pub battery: BatteryPeripherals<ADC, V>,
     pub buttons: ButtonsPeripherals<B1, B2, B3>,
     pub display: DisplaySpiPeripherals<SPI>,
-    pub rtc_module: ExternalRtcPeripherals<I2C>,
+    pub display_i2c: DisplayI2cPeripherals<I2C>,
+    // pub rtc_module: ExternalRtcPeripherals<I2C>,
     pub modem: Modem,
 }
 
 #[cfg(esp32)]
-impl SystemPeripherals<Gpio33, ADC1, Gpio36, Gpio14, Gpio27, Gpio15, SPI2, I2C0> {
+impl<'a> SystemPeripherals<Gpio33, ADC1, Gpio36, Gpio14, Gpio27, Gpio15, SPI2, I2C0> {
     pub fn take() -> Self {
         let peripherals = Peripherals::take().unwrap();
+
+        // let (i2c_driver, i2c_bus_manager) = {
+        //     let mut config = I2cConfig::new();
+        //     config.baudrate(Hertz::from(400 as u32));
+
+        //     let i2c_driver = I2cDriver::new::<_>(
+        //         peripherals.i2c0,
+        //         peripherals.pins.gpio21,
+        //         peripherals.pins.gpio22,
+        //         &config,
+        //     )
+        //     .expect("Expected to initialise I2C");
+
+        //     // Create a shared-bus for the I2C devices that supports threads
+        //     let i2c_bus_manager = shared_bus::BusManagerSimple::new(i2c_driver);
+
+        //     (i2c_driver, i2c_bus_manager)
+        // };
+
+        // let i2c_bus0 = I2cBus {
+        //     i2c: peripherals.i2c0,
+        //     sda: peripherals.pins.gpio21.into(),
+        //     scl: peripherals.pins.gpio22.into(),
+        //     driver: i2c_driver,
+        //     bus: i2c_bus_manager,
+        // };
 
         SystemPeripherals {
             pulse_counter: PulseCounterPeripherals {
@@ -53,11 +84,16 @@ impl SystemPeripherals<Gpio33, ADC1, Gpio36, Gpio14, Gpio27, Gpio15, SPI2, I2C0>
                 cs: Some(peripherals.pins.gpio5.into()),
             },
             modem: peripherals.modem,
-            rtc_module: ExternalRtcPeripherals {
+            display_i2c: DisplayI2cPeripherals {
                 i2c: peripherals.i2c0,
                 sda: peripherals.pins.gpio21.into(),
                 scl: peripherals.pins.gpio22.into(),
             },
+            // rtc_module: ExternalRtcPeripherals {
+            //     i2c: peripherals.i2c0,
+            //     sda: peripherals.pins.gpio21.into(),
+            //     scl: peripherals.pins.gpio22.into(),
+            // },
         }
     }
 }
@@ -180,6 +216,19 @@ pub struct DisplaySpiPeripherals<SPI> {
     pub sclk: AnyOutputPin,
     pub sdo: AnyOutputPin,
     pub cs: Option<AnyOutputPin>,
+}
+
+// pub struct I2cBus<'a, I2C> {
+//     pub i2c: I2C,
+//     pub scl: AnyOutputPin,
+//     pub sda: AnyOutputPin,
+//     pub driver: I2cDriver<'a>,
+//     pub bus: BusManager<NullMutex<I2cDriver<'a>>>,
+// }
+pub struct DisplayI2cPeripherals<I2C> {
+    pub i2c: I2C,
+    pub scl: AnyIOPin,
+    pub sda: AnyIOPin,
 }
 
 pub struct ExternalRtcPeripherals<I2C> {

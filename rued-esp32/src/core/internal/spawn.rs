@@ -12,8 +12,10 @@ use edge_executor::*;
 
 use channel_bridge::asynch::*;
 
-use crate::core::internal::mqtt::MqttCommand;
+use crate::core::internal::{mqtt::MqttCommand, screen};
 
+use super::button::{self, PressedLevel};
+use super::screen::{Color, Flushable};
 use super::{battery, mqtt, wifi};
 
 pub fn high_prio_test<'a, const C: usize, M>(
@@ -88,25 +90,26 @@ where
     Ok(())
 }
 
-// pub fn mid_prio<'a, const C: usize, M, D>(
-//     executor: &mut Executor<'a, C, M, Local>,
-//     tasks: &mut heapless::Vec<Task<()>, C>,
-//     display: D,
-//     wm_flash: impl FnMut(WaterMeterState) + 'a,
-// ) -> Result<(), SpawnError>
-// where
-//     M: Monitor + Default,
-//     D: Flushable<Color = Color> + 'a,
-//     D::Error: Debug,
-// {
-//     executor
-//         .spawn_local_collect(wm_stats::process(), tasks)?
-//         .spawn_local_collect(screen::process(), tasks)?
-//         .spawn_local_collect(screen::run_draw(display), tasks)?
-//         .spawn_local_collect(wm::flash(wm_flash), tasks)?;
+pub fn mid_prio<'a, const C: usize, M, D>(
+    executor: &mut Executor<'a, C, M, Local>,
+    tasks: &mut heapless::Vec<Task<()>, C>,
+    display: D,
+    // wm_flash: impl FnMut(WaterMeterState) + 'a,
+) -> Result<(), SpawnError>
+where
+    M: Monitor + Default,
+    D: Flushable<Color = Color> + 'a,
+    D::Error: Debug,
+{
+    executor
+        .spawn_local_collect(screen::process(), tasks)?
+        .spawn_local_collect(screen::run_draw(display), tasks)?;
 
-//     Ok(())
-// }
+    // .spawn_local_collect(wm_stats::process(), tasks)?
+    // .spawn_local_collect(wm::flash(wm_flash), tasks)?;
+
+    Ok(())
+}
 
 pub fn wifi<'a, const C: usize, M, D>(
     executor: &mut Executor<'a, C, M, Local>,

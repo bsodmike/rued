@@ -294,37 +294,38 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Mid-prio tasks
 
-    // log::info!("Starting mid-prio executor");
+    log::info!("Starting mid-prio executor");
 
-    // ThreadSpawnConfiguration {
-    //     name: Some(b"async-exec-mid\0"),
-    //     ..Default::default()
-    // }
-    // .set()
-    // .unwrap();
+    ThreadSpawnConfiguration {
+        name: Some(b"async-exec-mid\0"),
+        ..Default::default()
+    }
+    .set()
+    .unwrap();
 
-    // // let display_peripherals = peripherals.display;
+    let display_peripherals = peripherals.display_i2c;
+    // let proxy = display_peripherals.bus.bus.acquire_i2c();
 
-    // let mid_prio_execution = services::schedule::<8, _>(50000, move || {
-    //     let mut executor = EspExecutor::new();
-    //     let mut tasks = heapless::Vec::new();
+    let mid_prio_execution = services::schedule::<8, _>(50000, move || {
+        let mut executor = EspExecutor::new();
+        let mut tasks = heapless::Vec::new();
 
-    //     // spawn::mid_prio(
-    //     //     &mut executor,
-    //     //     &mut tasks,
-    //     //     services::display(display_peripherals).unwrap(),
-    //     //     move |_new_state| {
-    //     //         #[cfg(feature = "nvs")]
-    //     //         flash_wm_state(storage, _new_state);
-    //     //     },
-    //     // )?;
+        spawn::mid_prio(
+            &mut executor,
+            &mut tasks,
+            services::display(display_peripherals).unwrap(),
+            // move |_new_state| {
+            //     #[cfg(feature = "nvs")]
+            //     flash_wm_state(storage, _new_state);
+            // },
+        )?;
 
-    //     spawn::wifi(&mut executor, &mut tasks, wifi, wifi_notif)?;
+        // spawn::wifi(&mut executor, &mut tasks, wifi, wifi_notif)?;
 
-    //     // spawn::mqtt_receive(&mut executor, &mut tasks, mqtt_conn)?;
+        // spawn::mqtt_receive(&mut executor, &mut tasks, mqtt_conn)?;
 
-    //     Ok((executor, tasks))
-    // });
+        Ok((executor, tasks))
+    });
 
     // Low-prio tasks
 
@@ -362,7 +363,9 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     std::thread::sleep(crate::StdDuration::from_millis(2000));
 
-    // mid_prio_execution.join().unwrap();
+    if let Err(error) = mid_prio_execution.join() {
+        log::error!("Error: mid_prio_execution.join(): {:?}", error)
+    }
     // low_prio_execution.join().unwrap();
 
     log::info!("Finished execution");

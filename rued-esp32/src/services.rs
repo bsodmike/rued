@@ -20,6 +20,7 @@ use embedded_svc::ws::asynch::server::Acceptor;
 use esp_idf_hal::delay;
 use esp_idf_hal::delay::FreeRtos;
 use esp_idf_hal::gpio::*;
+use esp_idf_hal::i2c::{I2c, I2cConfig, I2cDriver};
 use esp_idf_hal::modem::WifiModemPeripheral;
 use esp_idf_hal::peripheral::Peripheral;
 use esp_idf_hal::prelude::*;
@@ -45,6 +46,7 @@ use crate::core::internal::mqtt::{MessageParser, MqttCommand};
 use crate::core::internal::pulse_counter::PulseCounter;
 use crate::core::internal::pulse_counter::PulseWakeup;
 
+use crate::core::internal::screen::{Color, Flushable, OwnedDrawTargetExt};
 // use ruwm::button::PressedLevel;
 // use ruwm::pulse_counter::PulseCounter;
 // use ruwm::pulse_counter::PulseWakeup;
@@ -56,8 +58,20 @@ use crate::core::internal::pulse_counter::PulseWakeup;
 
 use channel_bridge::{asynch::pubsub, asynch::*, notification::Notification};
 
-use crate::errors::*;
-use crate::peripherals::{DisplaySpiPeripherals, PulseCounterPeripherals, ValvePeripherals};
+use crate::peripherals::{
+    DisplayI2cPeripherals, DisplaySpiPeripherals, PulseCounterPeripherals, ValvePeripherals,
+};
+use crate::{errors::*, peripherals};
+
+// Display
+use embedded_graphics::{
+    draw_target::DrawTarget,
+    mono_font::{ascii::FONT_6X10, MonoTextStyleBuilder},
+    pixelcolor::BinaryColor,
+    prelude::*,
+    text::{Baseline, Text},
+};
+use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
 
 const SSID: &str = env!("WIFI_SSID");
 const PASS: &str = env!("WIFI_PSK");
@@ -202,6 +216,46 @@ pub fn button<'d, P: InputPin + OutputPin>(
     notification: &'static Notification,
 ) -> Result<impl embedded_hal_0_2::digital::v2::InputPin<Error = impl Debug + 'd> + 'd, InitError> {
     subscribe_pin(pin, move || notification.notify())
+}
+
+pub fn display(
+    peripherals: DisplayI2cPeripherals<impl Peripheral<P = impl I2c + 'static> + 'static>,
+    // i2c: impl embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_Write + 'static,
+) -> Result<impl Flushable<Color = Color, Error = impl Debug + 'static> + 'static, InitError> {
+    let mut config = I2cConfig::new();
+    config.baudrate(Hertz::from(400 as u32));
+
+    let i2c = I2cDriver::new(peripherals.i2c, peripherals.sda, peripherals.scl, &config)
+        .expect("Expected to initialise I2C");
+
+    #[cfg(feature = "ssd1306")]
+    let display = {
+        let interface = I2CDisplayInterface::new(i2c);
+        let mut display = Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
+            .into_buffered_graphics_mode();
+        display.init().unwrap();
+
+        // let text_style = MonoTextStyleBuilder::new()
+        //     .font(&FONT_6X10)
+        //     .text_color(BinaryColor::On)
+        //     .build();
+
+        // Text::with_baseline("Hello world!", Point::zero(), text_style, Baseline::Top)
+        //     .draw(&mut display)
+        //     .unwrap();
+
+        // Text::with_baseline("Hello Rust!", Point::new(0, 16), text_style, Baseline::Top)
+        //     .draw(&mut display)
+        //     .unwrap();
+
+        display.flush().unwrap();
+
+        display
+    };
+
+    let display = display.owned_color_converted().owned_noop_flushing();
+
+    Ok(display)
 }
 
 // pub fn display(

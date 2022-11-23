@@ -10,7 +10,7 @@ use channel_bridge::notification::Notification;
 use super::state::State;
 use super::{battery, quit};
 
-const TIMEOUT: Duration = Duration::from_secs(20);
+const TIMEOUT: Duration = Duration::from_secs(3);
 
 pub static STATE: State<RemainingTime> = State::new(
     "REMAINING TIME",

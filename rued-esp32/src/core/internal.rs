@@ -7,6 +7,7 @@ pub mod keepalive;
 pub mod mqtt;
 pub mod pulse_counter;
 pub mod quit;
+pub mod screen;
 pub mod spawn;
 pub mod state;
 pub mod wifi;
