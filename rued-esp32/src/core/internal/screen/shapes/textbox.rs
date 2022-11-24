@@ -2,16 +2,19 @@ use core::str;
 
 use embedded_graphics::draw_target::DrawTarget;
 use embedded_graphics::mono_font::*;
+use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::prelude::{OriginDimensions, Point, Size};
 use embedded_graphics::primitives::{Line, Primitive, PrimitiveStyle};
 use embedded_graphics::Drawable;
+
+use crate::core::internal::screen::DisplayColor;
 
 use super::util::{clear_cropped, draw, text};
 use super::Color;
 
 pub struct Textbox<'a> {
     pub text: &'a str,
-    pub color: Color,
+    pub color: DisplayColor,
     pub divider: u32,
     pub padding: u32,
     pub outline: u32,
@@ -23,7 +26,7 @@ impl<'a> Textbox<'a> {
     pub const fn new() -> Self {
         Self {
             text: "???",
-            color: Color::Yellow,
+            color: BinaryColor::On, // Color::Yellow
             divider: 1,
             padding: 2,
             outline: 2,
@@ -41,14 +44,14 @@ impl<'a> Textbox<'a> {
 
     pub fn draw<T>(&self, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = Color>,
+        T: DrawTarget<Color = BinaryColor>,
     {
         self.draw_shape(&mut clear_cropped(target, self.padding)?)
     }
 
     fn draw_shape<T>(&self, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = Color> + OriginDimensions,
+        T: DrawTarget<Color = BinaryColor> + OriginDimensions,
     {
         let bbox = target.bounding_box();
 
@@ -66,8 +69,11 @@ impl<'a> Textbox<'a> {
         )?;
 
         if self.strikethrough {
+            // let color = Color::White;
+            let color = BinaryColor::On;
+
             Line::new(bbox.top_left, bbox.top_left + bbox.size - Point::new(1, 1))
-                .into_styled(PrimitiveStyle::with_stroke(Color::White, self.outline))
+                .into_styled(PrimitiveStyle::with_stroke(color, self.outline))
                 .draw(target)?;
         }
 

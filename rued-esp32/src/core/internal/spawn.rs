@@ -1,5 +1,6 @@
 use core::fmt::Debug;
 
+use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_hal_0_2::adc;
 use embedded_hal_0_2::digital::v2::{InputPin, OutputPin};
 
@@ -8,6 +9,8 @@ use embedded_svc::wifi::Wifi as WifiTrait;
 use embedded_svc::ws::asynch::server::Acceptor;
 use esp_idf_svc::wifi::{EspWifi, WifiEvent};
 
+use gfx_xtra::draw_target::Flushable;
+
 use edge_executor::*;
 
 use channel_bridge::asynch::*;
@@ -15,17 +18,21 @@ use channel_bridge::asynch::*;
 use crate::core::internal::{mqtt::MqttCommand, screen};
 
 use super::button::{self, PressedLevel};
-use super::screen::{Color, Flushable};
+use super::screen::Color;
 use super::{battery, mqtt, wifi};
 
-pub fn high_prio_test<'a, const C: usize, M>(
+pub fn high_prio_test<'a, const C: usize, M, D>(
     executor: &mut Executor<'a, C, M, Local>,
     tasks: &mut heapless::Vec<Task<()>, C>,
     button1_pin: impl InputPin<Error = impl Debug + 'a> + 'a,
+    display: D,
+    // display2: D,
     // wifi: (EspWifi<'a>, impl Receiver<Data = WifiEvent> + 'a),
 ) -> Result<(), SpawnError>
 where
     M: Monitor + Default,
+    D: Flushable<Color = BinaryColor> + 'a,
+    D::Error: Debug,
 {
     executor
         .spawn_local_collect(
@@ -33,7 +40,10 @@ where
             tasks,
         )?
         .spawn_local_collect(super::inspector::process(), tasks)?
-        .spawn_local_collect(super::keepalive::process(), tasks)?;
+        .spawn_local_collect(super::keepalive::process(), tasks)?
+        .spawn_local_collect(screen::process(), tasks)?
+        .spawn_local_collect(screen::run_draw(display), tasks)?;
+    // .spawn_local_collect(screen::run_flush(display2), tasks)?;
 
     // FIXME - need to get wifi running.
     // executor.spawn_local_collect(super::wifi::process(wifi.0, wifi.1), tasks)?;
@@ -98,7 +108,7 @@ pub fn mid_prio<'a, const C: usize, M, D>(
 ) -> Result<(), SpawnError>
 where
     M: Monitor + Default,
-    D: Flushable<Color = Color> + 'a,
+    D: Flushable<Color = BinaryColor> + 'a,
     D::Error: Debug,
 {
     executor

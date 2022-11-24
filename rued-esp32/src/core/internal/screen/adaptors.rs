@@ -2,6 +2,7 @@ use core::cmp::{max, min};
 use core::convert::Infallible;
 use core::fmt::Debug;
 use core::marker::PhantomData;
+use std::ops::DerefMut;
 
 use log::trace;
 
@@ -27,6 +28,13 @@ pub trait Transformer {
         Self: 'a;
 
     fn transform<'a>(&'a mut self) -> Self::DrawTarget<'a>;
+
+    // fn source<'a>(&'a mut self) -> <Self as Transformer>::DrawTarget<'a>
+    // where
+    //     Self: Sized,
+    // {
+    //     self
+    // }
 
     fn into_owned(self) -> Owned<Self>
     where

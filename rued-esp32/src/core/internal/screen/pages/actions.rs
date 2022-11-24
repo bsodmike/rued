@@ -1,3 +1,4 @@
+use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::{
     prelude::{DrawTarget, DrawTargetExt, Point, Size},
     primitives::Rectangle,
@@ -11,7 +12,7 @@ use crate::core::internal::screen::{
 
 pub fn draw<T>(target: &mut T, actions: EnumSet<Action>, action: Action) -> Result<(), T::Error>
 where
-    T: DrawTarget<Color = Color>,
+    T: DrawTarget<Color = BinaryColor>,
 {
     let bbox = target.bounding_box();
 

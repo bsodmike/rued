@@ -10,6 +10,7 @@ use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, T
 use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use peripherals::{ButtonsPeripherals, PulseCounterPeripherals};
+use shared_bus::{BusManager, NullMutex};
 use std::{
     env, fmt, ptr,
     sync::{
@@ -261,6 +262,29 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     let mut high_prio_executor = EspExecutor::<16, _>::new();
     let mut high_prio_tasks = heapless::Vec::<_, 16>::new();
 
+    let display_peripherals = peripherals.display_i2c;
+    let mut config = I2cConfig::new();
+    config.baudrate(Hertz::from(400 as u32));
+
+    let i2c_driver = I2cDriver::new(
+        display_peripherals.i2c,
+        display_peripherals.sda,
+        display_peripherals.scl,
+        &config,
+    )
+    .expect("Expected to initialise I2C");
+
+    // // Create a shared-bus for the I2C devices that supports threads
+    // let i2c_bus_manager: BusManager<NullMutex<I2cDriver>> =
+    //     shared_bus::BusManagerSimple::new(i2c_driver);
+    // let proxy1 = i2c_bus_manager.acquire_i2c();
+
+    let display =
+        services::display(i2c_driver).expect("Return display service to the high_prio executor");
+
+    // let display2 =
+    //     services::display(proxy2).expect("Return display service to the mid_prio executor");
+
     spawn::high_prio_test(
         &mut high_prio_executor,
         &mut high_prio_tasks,
@@ -268,6 +292,8 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
             peripherals.buttons.button1,
             &core::internal::button::BUTTON1_PIN_EDGE,
         )?,
+        display,
+        // display2,
         // (wifi, wifi_notif),
     )?;
 
@@ -294,38 +320,39 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Mid-prio tasks
 
-    log::info!("Starting mid-prio executor");
+    // log::info!("Starting mid-prio executor");
 
-    ThreadSpawnConfiguration {
-        name: Some(b"async-exec-mid\0"),
-        ..Default::default()
-    }
-    .set()
-    .unwrap();
+    // ThreadSpawnConfiguration {
+    //     name: Some(b"async-exec-mid\0"),
+    //     ..Default::default()
+    // }
+    // .set()
+    // .unwrap();
 
-    let display_peripherals = peripherals.display_i2c;
-    // let proxy = display_peripherals.bus.bus.acquire_i2c();
+    // // let display_peripherals = peripherals.display_i2c;
+    // // let proxy = display_peripherals.bus.bus.acquire_i2c();
 
-    let mid_prio_execution = services::schedule::<8, _>(50000, move || {
-        let mut executor = EspExecutor::new();
-        let mut tasks = heapless::Vec::new();
+    // let mid_prio_execution = services::schedule::<8, _>(50000, move || {
+    //     let mut executor = EspExecutor::new();
+    //     let mut tasks = heapless::Vec::new();
 
-        spawn::mid_prio(
-            &mut executor,
-            &mut tasks,
-            services::display(display_peripherals).unwrap(),
-            // move |_new_state| {
-            //     #[cfg(feature = "nvs")]
-            //     flash_wm_state(storage, _new_state);
-            // },
-        )?;
+    //     spawn::mid_prio(
+    //         &mut executor,
+    //         &mut tasks,
+    //         services::display(display_peripherals)
+    //             .expect("Return display service to the mid_prio executor"),
+    //         // move |_new_state| {
+    //         //     #[cfg(feature = "nvs")]
+    //         //     flash_wm_state(storage, _new_state);
+    //         // },
+    //     )?;
 
-        // spawn::wifi(&mut executor, &mut tasks, wifi, wifi_notif)?;
+    //     // spawn::wifi(&mut executor, &mut tasks, wifi, wifi_notif)?;
 
-        // spawn::mqtt_receive(&mut executor, &mut tasks, mqtt_conn)?;
+    //     // spawn::mqtt_receive(&mut executor, &mut tasks, mqtt_conn)?;
 
-        Ok((executor, tasks))
-    });
+    //     Ok((executor, tasks))
+    // });
 
     // Low-prio tasks
 
@@ -363,9 +390,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     std::thread::sleep(crate::StdDuration::from_millis(2000));
 
-    if let Err(error) = mid_prio_execution.join() {
-        log::error!("Error: mid_prio_execution.join(): {:?}", error)
-    }
+    // mid_prio_execution.join().unwrap();
     // low_prio_execution.join().unwrap();
 
     log::info!("Finished execution");

@@ -1,6 +1,8 @@
 use core::cell::RefCell;
 use core::fmt::Debug;
 
+use embedded_graphics::mono_font::iso_8859_9::FONT_10X20;
+use embedded_graphics::pixelcolor::BinaryColor;
 use serde::{Deserialize, Serialize};
 
 use log::trace;
@@ -11,6 +13,8 @@ use embassy_futures::select::select_array;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::blocking_mutex::Mutex;
 
+use gfx_xtra::draw_target::Flushable;
+
 use embedded_svc::executor::asynch::Unblocker;
 
 use channel_bridge::notification::Notification;
@@ -19,13 +23,13 @@ use super::battery::{self, BatteryState};
 use super::keepalive::{self, RemainingTime};
 use super::screen::shapes::util::clear;
 
-pub use adaptors::*;
 pub use shapes::Color;
 
 use self::pages::{Battery, Summary};
 use self::shapes::Action;
 
-mod adaptors;
+pub type DisplayColor = BinaryColor;
+
 mod pages;
 mod shapes;
 
@@ -123,6 +127,7 @@ pub(crate) static BUTTON1_PRESSED_NOTIF: Notification = Notification::new();
 pub(crate) static REMAINING_TIME_NOTIF: Notification = Notification::new();
 
 static DRAW_REQUEST_NOTIF: Notification = Notification::new();
+static FLUSH_REQUEST_NOTIF: Notification = Notification::new();
 
 static STATE: Mutex<CriticalSectionRawMutex, RefCell<ScreenState>> =
     Mutex::new(RefCell::new(ScreenState::new()));
@@ -164,6 +169,7 @@ pub async fn process() {
             });
         }
 
+        log::info!("screen: DRAW_REQUEST_NOTIF.notify()");
         DRAW_REQUEST_NOTIF.notify();
     }
 }
@@ -171,7 +177,7 @@ pub async fn process() {
 pub async fn unblock_run_draw<U, D>(unblocker: U, mut display: D)
 where
     U: Unblocker,
-    D: Flushable<Color = Color> + Send + 'static,
+    D: Flushable<Color = BinaryColor> + Send + 'static,
     D::Error: Debug + Send + 'static,
 {
     loop {
@@ -184,9 +190,21 @@ where
     }
 }
 
+pub async fn run_flush<D>(mut display: D)
+where
+    D: Flushable<Color = BinaryColor>,
+    D::Error: Debug,
+{
+    loop {
+        FLUSH_REQUEST_NOTIF.wait().await;
+
+        display.flush().unwrap();
+    }
+}
+
 pub async fn run_draw<D>(mut display: D)
 where
-    D: Flushable<Color = Color>,
+    D: Flushable<Color = BinaryColor>,
     D::Error: Debug,
 {
     loop {
@@ -209,37 +227,70 @@ async fn wait_change() -> ScreenState {
     })
 }
 
+fn draw_text<T>(target: &mut T) -> Result<(), T::Error>
+where
+    T: embedded_graphics::prelude::DrawTarget<Color = BinaryColor>,
+    // FIXME needed to call target.size()
+    // + embedded_graphics::geometry::OriginDimensions,
+
+    // + super::screen::adaptors::Flushable,
+    // T::Error: Debug,
+{
+    // let embedded_graphics::prelude::Size { width, height } = target.size();
+
+    // let position = embedded_graphics::prelude::Point::new(width as i32 / 2, height as i32 / 2);
+    let position = embedded_graphics::prelude::Point::new(0, 0);
+
+    let text = "hello!!!";
+    log::info!("DRAWING text: {}", &text);
+    super::screen::shapes::util::text(&FONT_10X20, target, position, text, BinaryColor::On, None);
+
+    Ok(())
+}
+
+pub fn draw_test<T>(target: &mut T) -> Result<(), T::Error>
+where
+    T: embedded_graphics::prelude::DrawTarget<Color = BinaryColor>,
+    T::Error: Debug,
+{
+    draw_text(target)
+}
+
 fn draw<D>(mut display: D, screen_state: ScreenState) -> Result<D, D::Error>
 where
-    D: Flushable<Color = Color>,
+    D: Flushable<Color = BinaryColor>,
     D::Error: Debug,
 {
     trace!("DRAWING: {:?}", screen_state);
+    log::info!("DRAWING: {:?}", screen_state);
 
-    let page_changed = screen_state.changeset.contains(DataSource::Page);
+    draw_test(&mut display)?;
 
-    if page_changed {
-        clear(&display.bounding_box(), &mut display)?;
-    }
+    // let page_changed = screen_state.changeset.contains(DataSource::Page);
 
-    match screen_state.active_page {
-        Page::Summary => Summary::draw(
-            &mut display,
-            page_changed,
-            // screen_state.valve().as_ref(),
-            // screen_state.wm().as_ref(),
-            screen_state.battery().as_ref(),
-            screen_state.remaining_time().as_ref(),
-        )?,
-        Page::Battery => {
-            Battery::draw(&mut display, page_changed, screen_state.battery().as_ref())?
-        }
-    }
+    // if page_changed {
+    //     clear(&display.bounding_box(), &mut display)?;
+    // }
 
-    if let Some((actions, action)) = screen_state.page_actions {
-        pages::actions::draw(&mut display, actions, action)?;
-    }
+    // match screen_state.active_page {
+    //     Page::Summary => Summary::draw(
+    //         &mut display,
+    //         page_changed,
+    //         // screen_state.valve().as_ref(),
+    //         // screen_state.wm().as_ref(),
+    //         screen_state.battery().as_ref(),
+    //         screen_state.remaining_time().as_ref(),
+    //     )?,
+    //     Page::Battery => {
+    //         Battery::draw(&mut display, page_changed, screen_state.battery().as_ref())?
+    //     }
+    // }
 
+    // if let Some((actions, action)) = screen_state.page_actions {
+    //     pages::actions::draw(&mut display, actions, action)?;
+    // }
+
+    FLUSH_REQUEST_NOTIF.notify();
     display.flush()?;
 
     Ok(display)

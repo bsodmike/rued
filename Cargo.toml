@@ -46,6 +46,7 @@ shared-bus = { git = "https://github.com/taks/shared-bus", branch = "embedded-ha
 #embassy-time = { path = "../embassy/embassy-time" }
 
 [profile.release]
+debug = true
 opt-level = "s"
 
 [profile.dev]

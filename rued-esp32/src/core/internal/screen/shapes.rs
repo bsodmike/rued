@@ -104,6 +104,7 @@ impl Into<BinaryColor> for Color {
 pub mod util {
     use embedded_graphics::draw_target::Cropped;
     use embedded_graphics::mono_font::{MonoFont, MonoTextStyleBuilder};
+    use embedded_graphics::pixelcolor::BinaryColor;
     use embedded_graphics::prelude::{DrawTarget, DrawTargetExt, Point, Size};
     use embedded_graphics::primitives::{Primitive, PrimitiveStyle, Rectangle};
     use embedded_graphics::text::{Alignment, Baseline, Text, TextStyle, TextStyleBuilder};
@@ -113,14 +114,14 @@ pub mod util {
 
     pub fn clear<T>(area: &Rectangle, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = Color>,
+        T: DrawTarget<Color = BinaryColor>,
     {
-        fill(area, Color::Black, target)
+        fill(area, BinaryColor::On, target)
     }
 
     pub fn fill<T>(area: &Rectangle, color: T::Color, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = Color>,
+        T: DrawTarget<Color = BinaryColor>,
     {
         area.into_styled(PrimitiveStyle::with_fill(color))
             .draw(target)?;
@@ -135,7 +136,7 @@ pub mod util {
         target: &mut T,
     ) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = Color>,
+        T: DrawTarget<Color = BinaryColor>,
     {
         area.into_styled(PrimitiveStyle::with_stroke(color, width))
             .draw(target)?;
@@ -152,8 +153,13 @@ pub mod util {
         text_style: Option<TextStyle>,
     ) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = Color>,
+        T: DrawTarget<Color = BinaryColor>,
     {
+        // let character_style = MonoTextStyleBuilder::new()
+        //     .font(font)
+        //     .text_color(color)
+        //     .build();
+
         let character_style = MonoTextStyleBuilder::new()
             .font(font)
             .text_color(color)
@@ -166,7 +172,8 @@ pub mod util {
                 .build()
         });
 
-        Text::with_text_style(text, position, character_style, text_style).draw(target)?;
+        // Text::with_text_style(text, position, character_style, text_style).draw(target)?;
+        Text::with_baseline(text, position, character_style, text_style.baseline).draw(target)?;
 
         Ok(())
     }
@@ -193,7 +200,7 @@ pub mod util {
 
     pub fn clear_cropped<'a, T>(target: &'a mut T, padding: u32) -> Result<Cropped<'a, T>, T::Error>
     where
-        T: DrawTarget<Color = Color>,
+        T: DrawTarget<Color = BinaryColor>,
     {
         let bbox = target.bounding_box();
 

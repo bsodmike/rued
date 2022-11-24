@@ -2,9 +2,12 @@ use core::str;
 
 use embedded_graphics::draw_target::{DrawTarget, DrawTargetExt};
 use embedded_graphics::mono_font::*;
+use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::prelude::{OriginDimensions, Point, Size};
 use embedded_graphics::primitives::Rectangle;
 use embedded_graphics::text::{Alignment, Baseline, TextStyleBuilder};
+
+use crate::core::internal::screen::DisplayColor;
 
 use super::util::{clear, clear_cropped, fill, text, to_str};
 use super::Color;
@@ -44,14 +47,14 @@ impl<'a> Battery<'a> {
 
     pub fn draw<T>(&self, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = Color>,
+        T: DrawTarget<Color = BinaryColor>,
     {
         self.draw_shape(&mut clear_cropped(target, self.padding)?)
     }
 
     fn draw_shape<T>(&self, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = Color> + OriginDimensions,
+        T: DrawTarget<Color = BinaryColor> + OriginDimensions,
     {
         let Size { width, height } = target.size();
 
@@ -63,21 +66,23 @@ impl<'a> Battery<'a> {
             height * (100 - percentage as u32) / 100
         };
 
-        let charged_color = if let Some(percentage) = self.charged_percentage {
-            if percentage < self.percentage_threhsold {
-                Color::Red
-            } else {
-                Color::Green
-            }
-        } else {
-            Color::Yellow
-        };
+        // let charged_color = if let Some(percentage) = self.charged_percentage {
+        //     if percentage < self.percentage_threhsold {
+        //         Color::Red
+        //     } else {
+        //         Color::Green
+        //     }
+        // } else {
+        //     Color::Yellow
+        // };
 
-        let outline_color = if self.distinct_outline && self.charged_percentage.is_some() {
-            Color::White
-        } else {
-            charged_color
-        };
+        // let outline_color = if self.distinct_outline && self.charged_percentage.is_some() {
+        //     Color::White
+        // } else {
+        //     charged_color
+        // };
+        let charged_color = BinaryColor::On;
+        let outline_color = BinaryColor::On;
 
         // Draw charging level fill
         fill(
@@ -193,11 +198,13 @@ impl<'a> Battery<'a> {
             target,
         )?;
 
-        let light_color = if percentage < self.percentage_threhsold {
-            charged_color
-        } else {
-            outline_color
-        };
+        // let light_color = if percentage < self.percentage_threhsold {
+        //     charged_color
+        // } else {
+        //     outline_color
+        // };
+        let light_color = BinaryColor::On;
+        let dark_color = light_color; // Color::Black
 
         let position = Point::new(width as i32 / 2, height as i32 / 2);
 
@@ -212,7 +219,7 @@ impl<'a> Battery<'a> {
                 Point::new(0, fill_line as i32),
                 Size::new(width, height - fill_line),
             ));
-            self.draw_percentage(&mut bonw, position, Color::Black)?;
+            self.draw_percentage(&mut bonw, position, dark_color)?;
         } else if self.text == BatteryChargedText::Outline {
             self.draw_percentage(target, position, light_color)?;
         }
@@ -224,10 +231,10 @@ impl<'a> Battery<'a> {
         &self,
         target: &mut T,
         position: Point,
-        color: Color,
+        color: DisplayColor,
     ) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = Color>,
+        T: DrawTarget<Color = BinaryColor>,
     {
         let text_style = Some(
             TextStyleBuilder::new()

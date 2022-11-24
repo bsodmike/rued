@@ -9,6 +9,7 @@ use edge_frame::assets::serve::AssetMetadata;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_time::Duration;
 
+use embedded_graphics::mono_font::iso_8859_9::FONT_10X20;
 use embedded_hal_0_2::digital::v2::OutputPin as EHOutputPin;
 
 use embedded_svc::http::server::Method;
@@ -38,6 +39,8 @@ use esp_idf_svc::wifi::{EspWifi, WifiEvent, WifiWait};
 
 use esp_idf_sys::EspError;
 
+use gfx_xtra::draw_target::{Flushable, OwnedDrawTargetExt};
+
 use edge_frame::assets;
 
 use edge_executor::*;
@@ -46,7 +49,7 @@ use crate::core::internal::mqtt::{MessageParser, MqttCommand};
 use crate::core::internal::pulse_counter::PulseCounter;
 use crate::core::internal::pulse_counter::PulseWakeup;
 
-use crate::core::internal::screen::{Color, Flushable, OwnedDrawTargetExt};
+use crate::core::internal::screen::Color;
 // use ruwm::button::PressedLevel;
 // use ruwm::pulse_counter::PulseCounter;
 // use ruwm::pulse_counter::PulseWakeup;
@@ -218,16 +221,12 @@ pub fn button<'d, P: InputPin + OutputPin>(
     subscribe_pin(pin, move || notification.notify())
 }
 
+// embedded_hal::i2c::I2c<embedded_hal::i2c::SevenBitAddress
 pub fn display(
-    peripherals: DisplayI2cPeripherals<impl Peripheral<P = impl I2c + 'static> + 'static>,
-    // i2c: impl embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_Write + 'static,
-) -> Result<impl Flushable<Color = Color, Error = impl Debug + 'static> + 'static, InitError> {
-    let mut config = I2cConfig::new();
-    config.baudrate(Hertz::from(400 as u32));
-
-    let i2c = I2cDriver::new(peripherals.i2c, peripherals.sda, peripherals.scl, &config)
-        .expect("Expected to initialise I2C");
-
+    // peripherals: DisplayI2cPeripherals<impl Peripheral<P = impl I2c + 'static> + 'static>,
+    i2c: impl embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_Write + 'static,
+) -> Result<impl Flushable<Color = BinaryColor, Error = impl Debug + 'static> + 'static, InitError>
+{
     #[cfg(feature = "ssd1306")]
     let display = {
         let interface = I2CDisplayInterface::new(i2c);
@@ -236,24 +235,30 @@ pub fn display(
         display.init().unwrap();
 
         // let text_style = MonoTextStyleBuilder::new()
-        //     .font(&FONT_6X10)
+        //     .font(&FONT_10X20)
         //     .text_color(BinaryColor::On)
         //     .build();
 
-        // Text::with_baseline("Hello world!", Point::zero(), text_style, Baseline::Top)
-        //     .draw(&mut display)
-        //     .unwrap();
+        // Text::with_baseline(
+        //     "->>>>   Hello Rust!",
+        //     Point::new(0, 0),
+        //     text_style,
+        //     Baseline::Top,
+        // )
+        // .draw(&mut display)
+        // .unwrap();
 
-        // Text::with_baseline("Hello Rust!", Point::new(0, 16), text_style, Baseline::Top)
-        //     .draw(&mut display)
-        //     .unwrap();
-
+        // NOTE this works, but if I uncomment this, nothing happens.
         display.flush().unwrap();
 
         display
     };
 
-    let display = display.owned_color_converted().owned_noop_flushing();
+    let mut display = display.owned_color_converted().owned_noop_flushing();
+
+    // Flushable -> flush()
+    // this does not work
+    display.flush()?;
 
     Ok(display)
 }

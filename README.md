@@ -30,9 +30,17 @@ With any IoT 'stack', there are some rudimentary basics; this repo is an attempt
 - Install rustup, preferrably in linux.  Using an x86 CPU will help a great deal. Attempts on an [Apple M1 Max failed terribly](https://desilva.io/posts/rust-for-embedded-is-better-on-x86) for me.
 - Build your ESP toolchain by following: https://github.com/esp-rs/rust-build
 - Run `cargo +esp build --release`
-- Use `espflash` to flash your ESP32, make sure you enable the `--monitor` option to watch the output.
+- Use the following:
 
-Conecting to Wifi can be flakey at times, I usually have to reboot it once after each flashing attempt to connect.
+```
+// flash
+scp 10.0.3.70:/home/mdesilva/esp/rued/target/xtensa-esp32-espidf/release/rued-esp32 . && espflash flash --baud 920000 --monitor rued-esp32
+
+// monitor for stack-traces
+scp 10.0.3.70:/home/mdesilva/esp/rued/target/xtensa-esp32-espidf/release/rued-esp32 . && espflash monitor --baud 115200 --elf rued-esp32
+// You will need to restart the chip
+```
+
 
 ## Features
 

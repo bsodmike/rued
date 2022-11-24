@@ -1,19 +1,19 @@
 use core::{cmp::min, fmt::Write};
 
+use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::{
     draw_target::DrawTarget,
     prelude::{DrawTargetExt, Point, Size},
     primitives::Rectangle,
 };
 
-use crate::core::internal::screen::{
-    shapes::{self, BatteryChargedText},
-    DrawTargetExt2,
-};
+use gfx_xtra::draw_target::{DrawTargetExt2, RotateAngle};
+
+use crate::core::internal::battery::BatteryState;
+use crate::core::internal::keepalive::RemainingTime;
+use crate::core::internal::screen::shapes::{self, BatteryChargedText, Color};
 // use crate::valve::ValveState;
 // use crate::wm::WaterMeterState;
-use crate::core::internal::{battery::BatteryState, screen::shapes::Color};
-use crate::core::internal::{keepalive::RemainingTime, screen::RotateAngle};
 
 pub struct Summary;
 
@@ -27,7 +27,7 @@ impl Summary {
         remaining_time_state: Option<&RemainingTime>,
     ) -> Result<(), D::Error>
     where
-        D: DrawTarget<Color = Color>,
+        D: DrawTarget<Color = BinaryColor>,
     {
         let bbox = target.bounding_box();
 
@@ -49,7 +49,7 @@ impl Summary {
         battery_state: Option<&BatteryState>,
     ) -> Result<u32, D::Error>
     where
-        D: DrawTarget<Color = Color>,
+        D: DrawTarget<Color = BinaryColor>,
     {
         let bbox = target.bounding_box();
 
@@ -131,7 +131,7 @@ impl Summary {
             } else {
                 "   "
             },
-            color: Color::Green,
+            color: BinaryColor::On, //Color::Green
             font: status_font,
             padding: 1,
             outline: 0,
@@ -215,7 +215,7 @@ impl Summary {
         remaining_time: Option<&RemainingTime>,
     ) -> Result<u32, D::Error>
     where
-        D: DrawTarget<Color = Color>,
+        D: DrawTarget<Color = BinaryColor>,
     {
         let bbox = target.bounding_box();
 
@@ -236,7 +236,7 @@ impl Summary {
         if let Some(remaining_time) = remaining_time {
             let mut status_rt = shapes::Textbox {
                 text: ">>>>            ",
-                color: Color::Yellow,
+                color: BinaryColor::On, //Color::Yellow
                 font: status_font,
                 padding: 1,
                 outline: 0,

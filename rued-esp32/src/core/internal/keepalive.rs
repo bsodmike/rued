@@ -10,14 +10,14 @@ use channel_bridge::notification::Notification;
 use super::state::State;
 use super::{battery, quit};
 
-const TIMEOUT: Duration = Duration::from_secs(3);
+const TIMEOUT: Duration = Duration::from_secs(30);
 
 pub static STATE: State<RemainingTime> = State::new(
     "REMAINING TIME",
     RemainingTime::Indefinite,
     &[
         &super::inspector::REMAINING_TIME_NOTIF,
-        // &crate::screen::REMAINING_TIME_NOTIF,
+        &super::screen::REMAINING_TIME_NOTIF,
         // &crate::web::REMAINING_TIME_STATE_NOTIF,
     ],
 );
@@ -43,10 +43,11 @@ pub async fn process() {
 
         let now = Instant::now();
 
-        let is_battery_powered = battery::STATE.get().powered.unwrap_or(false);
+        let is_ext_powered = battery::STATE.get().powered.unwrap_or(false);
+        // log::info!("Battery powered? {}", is_ext_powered);
 
-        // FIXME this is to simulate Deep-sleep
-        if false {
+        // Do not enter deep-sleep when externally powered.
+        if is_ext_powered {
             quit_time = None;
         } else if matches!(result, Either::First(_)) {
             // Only if this recieves a NOTIF trigger

@@ -45,7 +45,8 @@ channel-bridge = { version = "0.1", git = "https://github.com/ivmarkov/channel-b
 # time = { version = "0.3.17", features = ["macros"] }
 chrono = { version = "0.4.23", default-features = false, features = ["clock", "std", "wasmbind"] } 
 embedded-graphics = "0.7"
-display-interface = "0.4.1"
+display-interface = "0.4"
+gfx-xtra = "0.1"
 serde_json = "1.0.87"
 cstr_core = "0.2.6"
 uncased = { version = "0.9.7" }

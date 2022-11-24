@@ -2,6 +2,7 @@ use core::str;
 
 use embedded_graphics::draw_target::DrawTarget;
 use embedded_graphics::mono_font::*;
+use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::prelude::{OriginDimensions, Point, Size};
 use embedded_graphics::primitives::Rectangle;
 use enumset::{EnumSet, EnumSetType};
@@ -168,18 +169,18 @@ impl<'a> Actions<'a> {
 
     pub fn draw<T>(&self, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = Color>,
+        T: DrawTarget<Color = BinaryColor>,
     {
         self.draw_shape(&mut clear_cropped(target, self.padding)?)
     }
 
     fn draw_shape<T>(&self, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = Color> + OriginDimensions,
+        T: DrawTarget<Color = BinaryColor> + OriginDimensions,
     {
         let bbox = target.bounding_box();
 
-        fill(&bbox, Color::LightBlue, target)?;
+        fill(&bbox, BinaryColor::On, target)?;
 
         for (line, action) in self.enabled.iter().enumerate() {
             if self.selected == action {
@@ -196,7 +197,7 @@ impl<'a> Actions<'a> {
                             self.font.character_size.height,
                         ),
                     ),
-                    Color::Black,
+                    BinaryColor::On,
                     target,
                 )?;
             }
@@ -211,7 +212,7 @@ impl<'a> Actions<'a> {
                         + self.font.character_size.height as i32 * line as i32,
                 ),
                 action.text(),
-                Color::White,
+                BinaryColor::On,
                 None,
             )?;
         }

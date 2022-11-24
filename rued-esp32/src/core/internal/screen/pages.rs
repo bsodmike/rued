@@ -1,7 +1,8 @@
 pub use battery::*;
 use embedded_graphics::{
     draw_target::Cropped,
-    prelude::{DrawTarget, DrawTargetExt, Point, Size},
+    pixelcolor::BinaryColor,
+    prelude::{DrawTarget, DrawTargetExt, Size},
     primitives::Rectangle,
 };
 pub use summary::*;
@@ -18,7 +19,7 @@ pub fn with_title<'a, T>(
     title: &str,
 ) -> Result<Cropped<'a, T>, T::Error>
 where
-    T: DrawTarget<Color = Color>,
+    T: DrawTarget<Color = BinaryColor>,
 {
     let padding = 2;
 

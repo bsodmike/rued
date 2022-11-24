@@ -1,4 +1,5 @@
 use embedded_graphics::draw_target::DrawTarget;
+use embedded_graphics::pixelcolor::BinaryColor;
 
 use crate::core::internal::battery::BatteryState;
 use crate::core::internal::screen::shapes::{self, Color};
@@ -14,7 +15,7 @@ impl Battery {
         state: Option<&BatteryState>,
     ) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = Color>,
+        T: DrawTarget<Color = BinaryColor>,
     {
         let mut target = with_title(target, page_changed, "Battery")?;
 
