@@ -230,35 +230,38 @@ pub fn display(
     #[cfg(feature = "ssd1306")]
     let display = {
         let interface = I2CDisplayInterface::new(i2c);
-        let mut display = Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
+        let mut display = Ssd1306::new(interface, DisplaySize128x32, DisplayRotation::Rotate0)
             .into_buffered_graphics_mode();
         display.init().unwrap();
 
-        // let text_style = MonoTextStyleBuilder::new()
-        //     .font(&FONT_10X20)
-        //     .text_color(BinaryColor::On)
-        //     .build();
+        let text_style = MonoTextStyleBuilder::new()
+            .font(&FONT_10X20)
+            .text_color(BinaryColor::On)
+            .build();
 
-        // Text::with_baseline(
-        //     "->>>>   Hello Rust!",
-        //     Point::new(0, 0),
-        //     text_style,
-        //     Baseline::Top,
-        // )
-        // .draw(&mut display)
-        // .unwrap();
-
-        // NOTE this works, but if I uncomment this, nothing happens.
-        display.flush().unwrap();
+        Text::with_baseline(
+            "[OK] Display online.",
+            Point::new(0, 0),
+            text_style,
+            Baseline::Top,
+        )
+        .draw(&mut display)
+        .unwrap();
 
         display
     };
 
-    let mut display = display.owned_color_converted().owned_noop_flushing();
+    let mut display = display.owned_flushing(|target| target.flush());
+    display.flush().unwrap();
 
-    // Flushable -> flush()
-    // this does not work
-    display.flush()?;
+    // let mut display = display
+    //     .owned_flushing(|target| {
+    //         target.flush();
+
+    //         Ok(())
+    //     })
+    //     .owned_color_converted();
+    // display.flush().unwrap();
 
     Ok(display)
 }

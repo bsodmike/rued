@@ -3,6 +3,7 @@ use core::fmt::Debug;
 
 use embedded_graphics::mono_font::iso_8859_9::FONT_10X20;
 use embedded_graphics::pixelcolor::BinaryColor;
+use embedded_graphics::prelude::{DrawTarget, Point};
 use serde::{Deserialize, Serialize};
 
 use log::trace;
@@ -21,7 +22,7 @@ use channel_bridge::notification::Notification;
 
 use super::battery::{self, BatteryState};
 use super::keepalive::{self, RemainingTime};
-use super::screen::shapes::util::clear;
+use super::screen::shapes::util::{self, clear};
 
 pub use shapes::Color;
 
@@ -227,33 +228,22 @@ async fn wait_change() -> ScreenState {
     })
 }
 
-fn draw_text<T>(target: &mut T) -> Result<(), T::Error>
+fn draw_text<T>(target: &mut T, text: &str) -> Result<(), T::Error>
 where
-    T: embedded_graphics::prelude::DrawTarget<Color = BinaryColor>,
+    T: DrawTarget<Color = BinaryColor>,
     // FIXME needed to call target.size()
-    // + embedded_graphics::geometry::OriginDimensions,
-
-    // + super::screen::adaptors::Flushable,
+    // + OriginDimensions,
+    // + Flushable,
     // T::Error: Debug,
 {
-    // let embedded_graphics::prelude::Size { width, height } = target.size();
+    // Size { width, height } = target.size();
+    // let position = Point::new(width as i32 / 2, height as i32 / 2);
+    let position = Point::new(0, 16);
 
-    // let position = embedded_graphics::prelude::Point::new(width as i32 / 2, height as i32 / 2);
-    let position = embedded_graphics::prelude::Point::new(0, 0);
-
-    let text = "hello!!!";
     log::info!("DRAWING text: {}", &text);
-    super::screen::shapes::util::text(&FONT_10X20, target, position, text, BinaryColor::On, None);
+    util::text(&FONT_10X20, target, position, text, BinaryColor::On, None)?;
 
     Ok(())
-}
-
-pub fn draw_test<T>(target: &mut T) -> Result<(), T::Error>
-where
-    T: embedded_graphics::prelude::DrawTarget<Color = BinaryColor>,
-    T::Error: Debug,
-{
-    draw_text(target)
 }
 
 fn draw<D>(mut display: D, screen_state: ScreenState) -> Result<D, D::Error>
@@ -264,7 +254,9 @@ where
     trace!("DRAWING: {:?}", screen_state);
     log::info!("DRAWING: {:?}", screen_state);
 
-    draw_test(&mut display)?;
+    let text = "> B1 Pressed!";
+    display.clear(BinaryColor::Off);
+    draw_text(&mut display, text)?;
 
     // let page_changed = screen_state.changeset.contains(DataSource::Page);
 
