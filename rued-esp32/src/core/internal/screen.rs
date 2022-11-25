@@ -1,6 +1,7 @@
 use core::cell::RefCell;
 use core::fmt::Debug;
 
+use embedded_graphics::mono_font::ascii::FONT_9X15;
 use embedded_graphics::mono_font::iso_8859_9::FONT_10X20;
 use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::prelude::{DrawTarget, Point};
@@ -155,14 +156,7 @@ pub async fn process() {
                         screen_state.changeset.insert(DataSource::Page);
                     }
                     1 => {
-                        if let Some((actions, action)) = screen_state.page_actions {
-                            screen_state.page_actions =
-                                action.next(&actions).map(|action| (actions, action));
-                        } else {
-                            screen_state.active_page = screen_state.active_page.next();
-                        }
-
-                        screen_state.changeset.insert(DataSource::Page);
+                        screen_state.changeset.insert(DataSource::RemainingTime);
                     }
 
                     _ => unreachable!(),
@@ -228,9 +222,9 @@ async fn wait_change() -> ScreenState {
     })
 }
 
-fn draw_text<T>(target: &mut T, text: &str) -> Result<(), T::Error>
+fn draw_text<T>(target: &mut T, text: &str, top: bool) -> Result<(), T::Error>
 where
-    T: DrawTarget<Color = BinaryColor>,
+    T: DrawTarget<Color = BinaryColor> + Flushable<Color = BinaryColor>,
     // FIXME needed to call target.size()
     // + OriginDimensions,
     // + Flushable,
@@ -238,12 +232,19 @@ where
 {
     // Size { width, height } = target.size();
     // let position = Point::new(width as i32 / 2, height as i32 / 2);
-    let position = Point::new(0, 16);
+    let mut position: Point;
+    if top {
+        position = Point::new(0, 0)
+    } else {
+        position = Point::new(0, 16)
+    }
 
     target.clear(BinaryColor::Off)?;
 
     log::info!("DRAWING text: {}", &text);
-    util::text(&FONT_10X20, target, position, text, BinaryColor::On, None)?;
+    util::text(&FONT_9X15, target, position, text, BinaryColor::On, None)?;
+
+    target.flush()?;
 
     Ok(())
 }
@@ -257,7 +258,23 @@ where
     log::info!("DRAWING: {:?}", screen_state);
 
     let text = "> B1 Pressed!";
-    draw_text(&mut display, text)?;
+    draw_text(&mut display, text, true)?;
+
+    let page_changed = screen_state.changeset.contains(DataSource::RemainingTime);
+    if page_changed {
+        match super::keepalive::STATE.get() {
+            RemainingTime::Indefinite => (),
+            RemainingTime::Duration(time_to_sleep) => {
+                log::warn!("--> Entering Deep-sleep in {}!!", time_to_sleep);
+
+                draw_text(
+                    &mut display,
+                    format!("Deep-sleep in:\n{}", time_to_sleep).as_str(),
+                    true,
+                )?;
+            }
+        }
+    }
 
     // let page_changed = screen_state.changeset.contains(DataSource::Page);
 

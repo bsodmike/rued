@@ -10,7 +10,7 @@ use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, T
 use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use peripherals::{ButtonsPeripherals, PulseCounterPeripherals};
-use shared_bus::{BusManager, NullMutex};
+use shared_bus::BusManager;
 use std::{
     env, fmt, ptr,
     sync::{
@@ -274,13 +274,13 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     )
     .expect("Expected to initialise I2C");
 
-    // // Create a shared-bus for the I2C devices that supports threads
-    // let i2c_bus_manager: BusManager<NullMutex<I2cDriver>> =
-    //     shared_bus::BusManagerSimple::new(i2c_driver);
-    // let proxy1 = i2c_bus_manager.acquire_i2c();
+    // Create a shared-bus for the I2C devices that supports threads
+    let i2c_bus_manager: &'static _ = shared_bus::new_std!(I2cDriver = i2c_driver).unwrap();
+
+    let proxy1 = i2c_bus_manager.acquire_i2c();
 
     let display =
-        services::display(i2c_driver).expect("Return display service to the high_prio executor");
+        services::display_i2c(proxy1).expect("Return display service to the high_prio executor");
 
     // let display2 =
     //     services::display(proxy2).expect("Return display service to the mid_prio executor");

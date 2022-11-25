@@ -222,9 +222,11 @@ pub fn button<'d, P: InputPin + OutputPin>(
 }
 
 // embedded_hal::i2c::I2c<embedded_hal::i2c::SevenBitAddress
-pub fn display(
-    // peripherals: DisplayI2cPeripherals<impl Peripheral<P = impl I2c + 'static> + 'static>,
-    i2c: impl embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_Write + 'static,
+
+pub fn display_i2c(
+    i2c: impl embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_Write
+        + embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_WriteRead
+        + 'static,
 ) -> Result<impl Flushable<Color = BinaryColor, Error = impl Debug + 'static> + 'static, InitError>
 {
     #[cfg(feature = "ssd1306")]

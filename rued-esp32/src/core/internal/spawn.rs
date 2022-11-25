@@ -43,7 +43,6 @@ where
         .spawn_local_collect(super::keepalive::process(), tasks)?
         .spawn_local_collect(screen::process(), tasks)?
         .spawn_local_collect(screen::run_draw(display), tasks)?;
-    // .spawn_local_collect(screen::run_flush(display2), tasks)?;
 
     // FIXME - need to get wifi running.
     // executor.spawn_local_collect(super::wifi::process(wifi.0, wifi.1), tasks)?;
