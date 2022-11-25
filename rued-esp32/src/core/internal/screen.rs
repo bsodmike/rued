@@ -240,6 +240,8 @@ where
     // let position = Point::new(width as i32 / 2, height as i32 / 2);
     let position = Point::new(0, 16);
 
+    target.clear(BinaryColor::Off)?;
+
     log::info!("DRAWING text: {}", &text);
     util::text(&FONT_10X20, target, position, text, BinaryColor::On, None)?;
 
@@ -255,7 +257,6 @@ where
     log::info!("DRAWING: {:?}", screen_state);
 
     let text = "> B1 Pressed!";
-    display.clear(BinaryColor::Off);
     draw_text(&mut display, text)?;
 
     // let page_changed = screen_state.changeset.contains(DataSource::Page);

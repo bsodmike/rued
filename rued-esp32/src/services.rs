@@ -9,7 +9,7 @@ use edge_frame::assets::serve::AssetMetadata;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_time::Duration;
 
-use embedded_graphics::mono_font::iso_8859_9::FONT_10X20;
+use embedded_graphics::mono_font::iso_8859_9::FONT_9X15;
 use embedded_hal_0_2::digital::v2::OutputPin as EHOutputPin;
 
 use embedded_svc::http::server::Method;
@@ -233,14 +233,16 @@ pub fn display(
         let mut display = Ssd1306::new(interface, DisplaySize128x32, DisplayRotation::Rotate0)
             .into_buffered_graphics_mode();
         display.init().unwrap();
+        display.clear();
+        display.flush().unwrap();
 
         let text_style = MonoTextStyleBuilder::new()
-            .font(&FONT_10X20)
+            .font(&FONT_9X15)
             .text_color(BinaryColor::On)
             .build();
 
         Text::with_baseline(
-            "[OK] Display online.",
+            "[OK] System\n     online.",
             Point::new(0, 0),
             text_style,
             Baseline::Top,
@@ -251,17 +253,15 @@ pub fn display(
         display
     };
 
-    let mut display = display.owned_flushing(|target| target.flush());
-    display.flush().unwrap();
+    let mut display = display
+        .owned_flushing(|target| {
+            target.flush().expect("Flushing the target display.");
 
-    // let mut display = display
-    //     .owned_flushing(|target| {
-    //         target.flush();
+            Ok(())
+        })
+        .owned_color_converted();
 
-    //         Ok(())
-    //     })
-    //     .owned_color_converted();
-    // display.flush().unwrap();
+    display.flush().expect("Flushing the target display.");
 
     Ok(display)
 }
