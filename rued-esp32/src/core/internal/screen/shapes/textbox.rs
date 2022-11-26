@@ -26,7 +26,7 @@ impl<'a> Textbox<'a> {
     pub const fn new() -> Self {
         Self {
             text: "???",
-            color: BinaryColor::On, // Color::Yellow
+            color: super::super::super::screen::DISPLAY_COLOR_YELLOW,
             divider: 1,
             padding: 2,
             outline: 2,
@@ -69,8 +69,7 @@ impl<'a> Textbox<'a> {
         )?;
 
         if self.strikethrough {
-            // let color = Color::White;
-            let color = BinaryColor::On;
+            let color = super::super::super::screen::DISPLAY_COLOR_WHITE;
 
             Line::new(bbox.top_left, bbox.top_left + bbox.size - Point::new(1, 1))
                 .into_styled(PrimitiveStyle::with_stroke(color, self.outline))

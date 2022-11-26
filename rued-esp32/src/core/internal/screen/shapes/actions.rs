@@ -92,7 +92,7 @@ impl Action {
         //     valve_state,
         //     Some(ValveState::Open) | Some(ValveState::Opening(_))
         // ) {
-        //     actions |= Action::OpenValve;
+        actions |= Action::OpenValve;
         // }
 
         // if !matches!(

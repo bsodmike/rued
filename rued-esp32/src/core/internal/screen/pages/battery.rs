@@ -19,13 +19,19 @@ impl Battery {
     {
         let mut target = with_title(target, page_changed, "Battery")?;
 
-        if let Some(state) = state {
-            shapes::Battery {
-                charged_percentage: state.percentage(),
-                ..Default::default()
-            }
-            .draw(&mut target)?;
+        shapes::Battery {
+            charged_percentage: Some(50),
+            ..Default::default()
         }
+        .draw(&mut target)?;
+
+        // if let Some(state) = state {
+        //     shapes::Battery {
+        //         charged_percentage: state.percentage(),
+        //         ..Default::default()
+        //     }
+        //     .draw(&mut target)?;
+        // }
 
         Ok(())
     }

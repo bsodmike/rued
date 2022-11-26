@@ -24,14 +24,18 @@ use channel_bridge::notification::Notification;
 use super::battery::{self, BatteryState};
 use super::keepalive::{self, RemainingTime};
 use super::screen::shapes::util::{self, clear};
-use super::wifi::WifiConnection;
+use super::wifi::{self, WifiConnection};
 
 pub use shapes::Color;
 
-use self::pages::{Battery, Summary};
+use self::pages::{Battery, Summary, Wifi};
 use self::shapes::Action;
 
 pub type DisplayColor = BinaryColor;
+pub const DISPLAY_COLOR_YELLOW: DisplayColor = BinaryColor::On; // Color::Yellow
+pub const DISPLAY_COLOR_GREEN: DisplayColor = BinaryColor::On; // Color::Green
+pub const DISPLAY_COLOR_WHITE: DisplayColor = BinaryColor::On; // Color::White
+pub const DISPLAY_COLOR_GRAY: DisplayColor = BinaryColor::On; // Color::Gray
 
 mod pages;
 mod shapes;
@@ -40,6 +44,7 @@ mod shapes;
 enum Page {
     Summary = 0,
     Battery = 1,
+    Wifi = 2,
 }
 
 impl Page {
@@ -49,7 +54,8 @@ impl Page {
 
     pub fn prev(&self) -> Self {
         match self {
-            Self::Summary => Self::Battery,
+            Self::Summary => Self::Wifi,
+            Self::Wifi => Self::Battery,
             Self::Battery => Self::Summary,
         }
     }
@@ -57,7 +63,8 @@ impl Page {
     pub fn next(&self) -> Self {
         match self {
             Self::Summary => Self::Battery,
-            Self::Battery => Self::Summary,
+            Self::Battery => Self::Wifi,
+            Self::Wifi => Self::Summary,
         }
     }
 
@@ -65,6 +72,7 @@ impl Page {
         let actions = match self {
             Self::Summary => Action::OpenValve | Action::CloseValve | Action::Arm | Action::Disarm,
             Self::Battery => EnumSet::empty(),
+            Self::Wifi => EnumSet::empty(),
         };
 
         let mut actions = actions.intersection(Action::active());
@@ -88,7 +96,7 @@ pub enum DataSource {
     Page,
     Battery,
     RemainingTime,
-    WifiDetails,
+    Wifi,
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
@@ -102,7 +110,10 @@ impl ScreenState {
     pub const fn new() -> Self {
         Self {
             changeset: enum_set!(
-                DataSource::Page | DataSource::Battery | DataSource::RemainingTime
+                DataSource::Page
+                    | DataSource::Battery
+                    | DataSource::RemainingTime
+                    | DataSource::Wifi
             ),
             active_page: Page::new(),
             page_actions: None,
@@ -119,6 +130,11 @@ impl ScreenState {
             .then(|| keepalive::STATE.get())
     }
 
+    pub fn wiif(&self) -> Option<Option<WifiConnection>> {
+        self.changed([DataSource::Wifi, DataSource::Page])
+            .then(|| wifi::STATE.get())
+    }
+
     fn changed<const N: usize>(&self, changes: [DataSource; N]) -> bool {
         changes
             .iter()
@@ -128,6 +144,8 @@ impl ScreenState {
 }
 
 pub(crate) static BUTTON1_PRESSED_NOTIF: Notification = Notification::new();
+pub(crate) static BUTTON2_PRESSED_NOTIF: Notification = Notification::new();
+pub(crate) static BUTTON3_PRESSED_NOTIF: Notification = Notification::new();
 pub(crate) static WIFI_STATE_NOTIF: Notification = Notification::new();
 pub(crate) static REMAINING_TIME_NOTIF: Notification = Notification::new();
 
@@ -140,9 +158,11 @@ static STATE: Mutex<CriticalSectionRawMutex, RefCell<ScreenState>> =
 pub async fn process() {
     loop {
         let (_future, index) = select_array([
-            WIFI_STATE_NOTIF.wait(),
-            BUTTON1_PRESSED_NOTIF.wait(),
-            REMAINING_TIME_NOTIF.wait(),
+            BUTTON1_PRESSED_NOTIF.wait(), // 0
+            BUTTON2_PRESSED_NOTIF.wait(), // 1
+            BUTTON3_PRESSED_NOTIF.wait(), // 2
+            REMAINING_TIME_NOTIF.wait(),  // 3
+            WIFI_STATE_NOTIF.wait(),      // 4
         ])
         .await;
 
@@ -152,28 +172,46 @@ pub async fn process() {
 
                 match index {
                     0 => {
-                        // let mut conn = WifiConnection::default();
-                        // if let Some(value) = super::wifi::STATE.get() {
-                        //     conn = value
-                        // };
+                        if let Some((actions, action)) = screen_state.page_actions {
+                            screen_state.page_actions =
+                                action.prev(&actions).map(|action| (actions, action));
 
-                        // let ip = conn.ip();
-                        // let dns = conn.dns();
+                            log::info!("0: page_actions: {:?}", screen_state.page_actions);
+                        } else {
+                            screen_state.active_page = screen_state.active_page.prev();
+                            log::info!("0: active_page: {:?}", screen_state.active_page);
+                        }
 
-                        screen_state.changeset.insert(DataSource::WifiDetails);
+                        screen_state.changeset.insert(DataSource::Page);
                     }
                     1 => {
                         if let Some((actions, action)) = screen_state.page_actions {
                             screen_state.page_actions =
-                                action.prev(&actions).map(|action| (actions, action));
+                                action.next(&actions).map(|action| (actions, action));
                         } else {
-                            screen_state.active_page = screen_state.active_page.prev();
+                            screen_state.active_page = screen_state.active_page.next();
                         }
 
                         screen_state.changeset.insert(DataSource::Page);
                     }
                     2 => {
+                        if let Some((_, action)) = screen_state.page_actions {
+                            screen_state.page_actions = None;
+                            action.trigger();
+                        } else {
+                            let actions = screen_state.active_page.actions();
+                            screen_state.page_actions =
+                                Action::first(&actions).map(|action| (actions, action));
+                        }
+
+                        screen_state.changeset.insert(DataSource::Page);
+                    }
+                    3 => {
                         screen_state.changeset.insert(DataSource::RemainingTime);
+                    }
+                    4 => {
+                        screen_state.active_page = Page::Summary;
+                        screen_state.changeset.insert(DataSource::Page);
                     }
 
                     _ => unreachable!(),
@@ -262,22 +300,8 @@ where
     trace!("DRAWING: {:?}", screen_state);
     log::info!("DRAWING: {:?}", screen_state);
 
-    let text = "> B1 Pressed!";
-    draw_text(&mut display, text, true)?;
-
-    let page_changed = screen_state.changeset.contains(DataSource::WifiDetails);
-    if page_changed {
-        let mut conn = WifiConnection::default();
-        if let Some(value) = super::wifi::STATE.get() {
-            conn = value
-        };
-
-        draw_text(
-            &mut display,
-            format!("IP: {}\nDNS: {}", conn.ip(), conn.dns()).as_str(),
-            true,
-        )?;
-    }
+    // let text = "> B1 Pressed!";
+    // draw_text(&mut display, text, true)?;
 
     let page_changed = screen_state.changeset.contains(DataSource::RemainingTime);
     if page_changed {
@@ -295,25 +319,26 @@ where
         }
     }
 
-    // let page_changed = screen_state.changeset.contains(DataSource::Page);
+    let page_changed = screen_state.changeset.contains(DataSource::Page);
+    if page_changed {
+        clear(&display.bounding_box(), &mut display)?;
+    }
 
-    // if page_changed {
-    //     clear(&display.bounding_box(), &mut display)?;
-    // }
-
-    // match screen_state.active_page {
-    //     Page::Summary => Summary::draw(
-    //         &mut display,
-    //         page_changed,
-    //         // screen_state.valve().as_ref(),
-    //         // screen_state.wm().as_ref(),
-    //         screen_state.battery().as_ref(),
-    //         screen_state.remaining_time().as_ref(),
-    //     )?,
-    //     Page::Battery => {
-    //         Battery::draw(&mut display, page_changed, screen_state.battery().as_ref())?
-    //     }
-    // }
+    match screen_state.active_page {
+        Page::Summary => Summary::draw(
+            &mut display,
+            page_changed,
+            // screen_state.valve().as_ref(),
+            // screen_state.wm().as_ref(),
+            screen_state.battery().as_ref(),
+            screen_state.remaining_time().as_ref(),
+            screen_state.wiif().as_ref(),
+        )?,
+        Page::Battery => {
+            Battery::draw(&mut display, page_changed, screen_state.battery().as_ref())?
+        }
+        Page::Wifi => Wifi::draw(&mut display, page_changed, screen_state.wiif().as_ref())?,
+    }
 
     // if let Some((actions, action)) = screen_state.page_actions {
     //     pages::actions::draw(&mut display, actions, action)?;

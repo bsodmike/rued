@@ -1,17 +1,20 @@
 pub use battery::*;
+pub use summary::*;
+pub use wifi::*;
+
 use embedded_graphics::{
     draw_target::Cropped,
     pixelcolor::BinaryColor,
     prelude::{DrawTarget, DrawTargetExt, Size},
     primitives::Rectangle,
 };
-pub use summary::*;
 
 use super::{shapes::Textbox, Color};
 
 pub mod actions;
 mod battery;
 mod summary;
+mod wifi;
 
 pub fn with_title<'a, T>(
     target: &'a mut T,

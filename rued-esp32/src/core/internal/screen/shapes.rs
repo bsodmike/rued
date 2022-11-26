@@ -6,14 +6,14 @@ pub use actions::*;
 pub use battery::*;
 pub use textbox::*;
 // pub use valve::*;
-// pub use wifi::*;
+pub use wifi::*;
 // pub use wm::*;
 
 mod actions;
 mod battery;
 mod textbox;
 // mod valve;
-// mod wifi;
+mod wifi;
 // mod wm;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -116,7 +116,7 @@ pub mod util {
     where
         T: DrawTarget<Color = BinaryColor>,
     {
-        fill(area, BinaryColor::On, target)
+        fill(area, BinaryColor::Off, target)
     }
 
     pub fn fill<T>(area: &Rectangle, color: T::Color, target: &mut T) -> Result<(), T::Error>
@@ -155,11 +155,6 @@ pub mod util {
     where
         T: DrawTarget<Color = BinaryColor>,
     {
-        // let character_style = MonoTextStyleBuilder::new()
-        //     .font(font)
-        //     .text_color(color)
-        //     .build();
-
         let character_style = MonoTextStyleBuilder::new()
             .font(font)
             .text_color(color)
@@ -172,8 +167,8 @@ pub mod util {
                 .build()
         });
 
-        // Text::with_text_style(text, position, character_style, text_style).draw(target)?;
-        Text::with_baseline(text, position, character_style, text_style.baseline).draw(target)?;
+        Text::with_text_style(text, position, character_style, text_style).draw(target)?;
+        // Text::with_baseline(text, position, character_style, text_style.baseline).draw(target)?;
 
         Ok(())
     }

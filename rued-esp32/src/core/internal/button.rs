@@ -23,7 +23,7 @@ pub static BUTTON3_PIN_EDGE: Notification = Notification::new();
 static BUTTON1_NOTIFY: &[&Notification] = &[
     &super::inspector::BUTTON1_PRESSED_NOTIF,
     &super::screen::BUTTON1_PRESSED_NOTIF,
-    &super::keepalive::NOTIF,
+    // &super::keepalive::NOTIF,
 ];
 static BUTTON2_NOTIFY: &[&Notification] = &[];
 // &[&crate::screen::BUTTON2_PRESSED_NOTIF];
