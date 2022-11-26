@@ -425,6 +425,12 @@ fn mark_wakeup_pins(
         //     buttons_peripherals.button3.pin()
         // );
 
+        // Enable power for RTC IO, sensors and ULP co-processor during Deep-sleep
+        esp!(esp_idf_sys::esp_sleep_pd_config(
+            esp_idf_sys::esp_sleep_pd_domain_t_ESP_PD_DOMAIN_RTC_PERIPH,
+            esp_idf_sys::esp_sleep_pd_option_t_ESP_PD_OPTION_ON
+        ))?;
+
         #[cfg(any(esp32, esp32s2, esp32s3))]
         esp!(esp_idf_sys::esp_sleep_enable_ext1_wakeup(
             mask,

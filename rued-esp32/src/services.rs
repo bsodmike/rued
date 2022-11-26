@@ -231,7 +231,8 @@ pub fn display_i2c(
 {
     #[cfg(feature = "ssd1306")]
     let display = {
-        let interface = I2CDisplayInterface::new(i2c);
+        let interface = I2CDisplayInterface::new_custom_address(i2c, 0x3C);
+
         let mut display = Ssd1306::new(interface, DisplaySize128x32, DisplayRotation::Rotate0)
             .into_buffered_graphics_mode();
         display.init().unwrap();
