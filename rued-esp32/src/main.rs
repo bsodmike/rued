@@ -155,7 +155,7 @@ static LOGGER: EspLogger = EspLogger;
 fn wifi_connect() -> Result<()> {
     info!("Connect requested");
 
-    esp!(unsafe { esp_wifi_connect() })?;
+    unsafe { esp!(esp_wifi_connect())? }
 
     info!("Connecting");
 
@@ -243,11 +243,37 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Wifi
 
-    // let (wifi, wifi_notif) = services::wifi(
-    //     peripherals.modem,
-    //     sysloop.clone(),
-    //     Some(nvs_default_partition.clone()),
-    // )?;
+    let (wifi, wifi_notif) = services::wifi(
+        peripherals.modem,
+        sysloop.clone(),
+        Some(nvs_default_partition.clone()),
+    )?;
+
+    info!("******* Wifi: Subscribing to events");
+    let _wifi_event_sub = sysloop.subscribe(move |event: &WifiEvent| match event {
+        WifiEvent::StaConnected => {
+            info!("******* Received STA Connected Event");
+        }
+        WifiEvent::StaDisconnected => {
+            info!("******* Received STA Disconnected event");
+
+            FreeRtos::delay_ms(1000);
+
+            // NOTE: this is a hack
+            if let Err(err) = wifi_connect() {
+                info!("Error calling wifi.connect in wifi reconnect {:?}", err);
+            }
+        }
+        _ => info!("Received other Wifi event"),
+    })?;
+
+    let _ip_event_sub = sysloop.subscribe(move |event: &IpEvent| match event {
+        IpEvent::DhcpIpAssigned(_) => {
+            log::info!("WifiCommand::DhcpIpAssigned fired!");
+            core::internal::wifi::COMMAND.signal(core::internal::wifi::WifiCommand::DhcpIpAssigned);
+        }
+        _ => info!("Received other IPEvent"),
+    })?;
 
     // Httpd
 
@@ -259,12 +285,9 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // High-prio tasks
 
-    let mut high_prio_executor = EspExecutor::<16, _>::new();
-    let mut high_prio_tasks = heapless::Vec::<_, 16>::new();
-
     let display_peripherals = peripherals.display_i2c;
     let mut config = I2cConfig::new();
-    config.baudrate(Hertz::from(400 as u32));
+    let _ = config.baudrate(Hertz::from(400 as u32));
 
     let i2c_driver = I2cDriver::new(
         display_peripherals.i2c,
@@ -282,10 +305,9 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     let display =
         services::display_i2c(proxy1).expect("Return display service to the high_prio executor");
 
-    // let display2 =
-    //     services::display(proxy2).expect("Return display service to the mid_prio executor");
-
-    spawn::high_prio_test(
+    let mut high_prio_executor = EspExecutor::<16, _>::new();
+    let mut high_prio_tasks = heapless::Vec::<_, 16>::new();
+    spawn::high_prio1(
         &mut high_prio_executor,
         &mut high_prio_tasks,
         services::button(
@@ -293,8 +315,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
             &core::internal::button::BUTTON1_PIN_EDGE,
         )?,
         display,
-        // display2,
-        // (wifi, wifi_notif),
+        (wifi, wifi_notif),
     )?;
 
     // spawn::high_prio(
@@ -425,11 +446,14 @@ fn mark_wakeup_pins(
         //     buttons_peripherals.button3.pin()
         // );
 
-        // Enable power for RTC IO, sensors and ULP co-processor during Deep-sleep
-        esp!(esp_idf_sys::esp_sleep_pd_config(
-            esp_idf_sys::esp_sleep_pd_domain_t_ESP_PD_DOMAIN_RTC_PERIPH,
-            esp_idf_sys::esp_sleep_pd_option_t_ESP_PD_OPTION_ON
-        ))?;
+        #[cfg(not(feature = "ulp"))]
+        {
+            // Enable power for RTC IO, sensors and ULP co-processor during Deep-sleep
+            esp!(esp_idf_sys::esp_sleep_pd_config(
+                esp_idf_sys::esp_sleep_pd_domain_t_ESP_PD_DOMAIN_RTC_PERIPH,
+                esp_idf_sys::esp_sleep_pd_option_t_ESP_PD_OPTION_ON
+            ))?;
+        }
 
         #[cfg(any(esp32, esp32s2, esp32s3))]
         esp!(esp_idf_sys::esp_sleep_enable_ext1_wakeup(

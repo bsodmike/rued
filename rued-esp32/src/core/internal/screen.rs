@@ -24,6 +24,7 @@ use channel_bridge::notification::Notification;
 use super::battery::{self, BatteryState};
 use super::keepalive::{self, RemainingTime};
 use super::screen::shapes::util::{self, clear};
+use super::wifi::WifiConnection;
 
 pub use shapes::Color;
 
@@ -87,6 +88,7 @@ pub enum DataSource {
     Page,
     Battery,
     RemainingTime,
+    WifiDetails,
 }
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
@@ -126,10 +128,10 @@ impl ScreenState {
 }
 
 pub(crate) static BUTTON1_PRESSED_NOTIF: Notification = Notification::new();
+pub(crate) static WIFI_STATE_NOTIF: Notification = Notification::new();
 pub(crate) static REMAINING_TIME_NOTIF: Notification = Notification::new();
 
 static DRAW_REQUEST_NOTIF: Notification = Notification::new();
-static FLUSH_REQUEST_NOTIF: Notification = Notification::new();
 
 static STATE: Mutex<CriticalSectionRawMutex, RefCell<ScreenState>> =
     Mutex::new(RefCell::new(ScreenState::new()));
@@ -137,8 +139,12 @@ static STATE: Mutex<CriticalSectionRawMutex, RefCell<ScreenState>> =
 #[allow(clippy::too_many_arguments)]
 pub async fn process() {
     loop {
-        let (_future, index) =
-            select_array([BUTTON1_PRESSED_NOTIF.wait(), REMAINING_TIME_NOTIF.wait()]).await;
+        let (_future, index) = select_array([
+            WIFI_STATE_NOTIF.wait(),
+            BUTTON1_PRESSED_NOTIF.wait(),
+            REMAINING_TIME_NOTIF.wait(),
+        ])
+        .await;
 
         {
             STATE.lock(|screen_state| {
@@ -146,6 +152,17 @@ pub async fn process() {
 
                 match index {
                     0 => {
+                        // let mut conn = WifiConnection::default();
+                        // if let Some(value) = super::wifi::STATE.get() {
+                        //     conn = value
+                        // };
+
+                        // let ip = conn.ip();
+                        // let dns = conn.dns();
+
+                        screen_state.changeset.insert(DataSource::WifiDetails);
+                    }
+                    1 => {
                         if let Some((actions, action)) = screen_state.page_actions {
                             screen_state.page_actions =
                                 action.prev(&actions).map(|action| (actions, action));
@@ -155,7 +172,7 @@ pub async fn process() {
 
                         screen_state.changeset.insert(DataSource::Page);
                     }
-                    1 => {
+                    2 => {
                         screen_state.changeset.insert(DataSource::RemainingTime);
                     }
 
@@ -182,18 +199,6 @@ where
             .unblock(move || draw(display, screen_state))
             .await
             .unwrap();
-    }
-}
-
-pub async fn run_flush<D>(mut display: D)
-where
-    D: Flushable<Color = BinaryColor>,
-    D::Error: Debug,
-{
-    loop {
-        FLUSH_REQUEST_NOTIF.wait().await;
-
-        display.flush().unwrap();
     }
 }
 
@@ -260,6 +265,20 @@ where
     let text = "> B1 Pressed!";
     draw_text(&mut display, text, true)?;
 
+    let page_changed = screen_state.changeset.contains(DataSource::WifiDetails);
+    if page_changed {
+        let mut conn = WifiConnection::default();
+        if let Some(value) = super::wifi::STATE.get() {
+            conn = value
+        };
+
+        draw_text(
+            &mut display,
+            format!("IP: {}\nDNS: {}", conn.ip(), conn.dns()).as_str(),
+            true,
+        )?;
+    }
+
     let page_changed = screen_state.changeset.contains(DataSource::RemainingTime);
     if page_changed {
         match super::keepalive::STATE.get() {
@@ -300,7 +319,6 @@ where
     //     pages::actions::draw(&mut display, actions, action)?;
     // }
 
-    FLUSH_REQUEST_NOTIF.notify();
     display.flush()?;
 
     Ok(display)

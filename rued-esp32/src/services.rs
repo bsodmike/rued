@@ -377,9 +377,9 @@ pub fn wifi<'d>(
 
     wifi.connect()?;
 
-    if !PASS.is_empty() {
-        wait.wait(|| wifi.is_connected().unwrap());
-    }
+    // if !PASS.is_empty() {
+    //     wait.wait(|| wifi.is_connected().unwrap());
+    // }
 
     Ok((
         wifi,

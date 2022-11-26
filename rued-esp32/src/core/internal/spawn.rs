@@ -21,13 +21,12 @@ use super::button::{self, PressedLevel};
 use super::screen::Color;
 use super::{battery, mqtt, wifi};
 
-pub fn high_prio_test<'a, const C: usize, M, D>(
+pub fn high_prio1<'a, const C: usize, M, D>(
     executor: &mut Executor<'a, C, M, Local>,
     tasks: &mut heapless::Vec<Task<()>, C>,
     button1_pin: impl InputPin<Error = impl Debug + 'a> + 'a,
     display: D,
-    // display2: D,
-    // wifi: (EspWifi<'a>, impl Receiver<Data = WifiEvent> + 'a),
+    wifi: (EspWifi<'a>, impl Receiver<Data = WifiEvent> + 'a),
 ) -> Result<(), SpawnError>
 where
     M: Monitor + Default,
@@ -42,15 +41,27 @@ where
         .spawn_local_collect(super::inspector::process(), tasks)?
         .spawn_local_collect(super::keepalive::process(), tasks)?
         .spawn_local_collect(screen::process(), tasks)?
-        .spawn_local_collect(screen::run_draw(display), tasks)?;
-
-    // FIXME - need to get wifi running.
-    // executor.spawn_local_collect(super::wifi::process(wifi.0, wifi.1), tasks)?;
+        .spawn_local_collect(screen::run_draw(display), tasks)?
+        .spawn_local_collect(super::wifi::process(wifi.0, wifi.1), tasks)?;
 
     Ok(())
 }
 
-pub fn high_prio<'a, ADC, BP, const C: usize, M>(
+pub fn high_prio2<'a, const C: usize, M>(
+    executor: &mut Executor<'a, C, M, Local>,
+    tasks: &mut heapless::Vec<Task<()>, C>,
+    wifi: (EspWifi<'a>, impl Receiver<Data = WifiEvent> + 'a),
+) -> Result<(), SpawnError>
+where
+    M: Monitor + Default,
+{
+    // FIXME - need to get wifi running.
+    executor.spawn_local_collect(super::wifi::process(wifi.0, wifi.1), tasks)?;
+
+    Ok(())
+}
+
+pub fn high_prio_original<'a, ADC, BP, const C: usize, M>(
     executor: &mut Executor<'a, C, M, Local>,
     tasks: &mut heapless::Vec<Task<()>, C>,
     battery_voltage: impl adc::OneShot<ADC, u16, BP> + 'a,
@@ -129,6 +140,7 @@ pub fn wifi<'a, const C: usize, M, D>(
 where
     M: Monitor + Default,
     D: 'a,
+    WifiEvent: From<D>,
 {
     executor.spawn_local_collect(super::wifi::process(wifi, wifi_notif), tasks)?;
 
