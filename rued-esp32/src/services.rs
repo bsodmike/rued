@@ -37,7 +37,7 @@ use esp_idf_svc::netif::IpEvent;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::wifi::{EspWifi, WifiEvent, WifiWait};
 
-use esp_idf_sys::EspError;
+use esp_idf_sys::{esp, esp_restart, EspError};
 
 use gfx_xtra::draw_target::{Flushable, OwnedDrawTargetExt};
 
@@ -373,9 +373,15 @@ pub fn wifi<'d>(
 
     wifi.start()?;
 
-    wait.wait(|| wifi.is_started().unwrap());
-
-    wifi.connect()?;
+    let started = wait.wait_with_timeout(std::time::Duration::from_secs(20), || {
+        wifi.is_started().unwrap()
+    });
+    if !started {
+        log::warn!("Wifi failed to start, restarting.");
+        unsafe {
+            esp_restart();
+        }
+    }
 
     // if !PASS.is_empty() {
     //     wait.wait(|| wifi.is_connected().unwrap());

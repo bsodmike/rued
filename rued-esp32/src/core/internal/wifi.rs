@@ -18,6 +18,7 @@ use super::state::State;
 pub enum WifiCommand {
     SetConfiguration(Configuration),
     DhcpIpAssigned,
+    StaConnected,
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, Default)]
@@ -74,6 +75,13 @@ pub async fn process<'a, D>(
             }
             Either::Second(command) => match command {
                 WifiCommand::SetConfiguration(conf) => wifi.set_configuration(&conf).unwrap(),
+                WifiCommand::StaConnected => {
+                    if let Ok(val) = wifi.connect() {
+                        val
+                    } else {
+                        log::warn!("WifiCommand::StaConnected: Unable to unwrap wifi.connect()");
+                    }
+                }
                 WifiCommand::DhcpIpAssigned => {
                     log::info!("************ WifiCommand::DhcpIpAssigned");
 

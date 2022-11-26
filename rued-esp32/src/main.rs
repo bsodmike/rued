@@ -243,16 +243,18 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Wifi
 
-    let (wifi, wifi_notif) = services::wifi(
+    let (mut wifi, wifi_notif) = services::wifi(
         peripherals.modem,
         sysloop.clone(),
         Some(nvs_default_partition.clone()),
     )?;
+    wifi.connect()?;
 
     info!("******* Wifi: Subscribing to events");
     let _wifi_event_sub = sysloop.subscribe(move |event: &WifiEvent| match event {
         WifiEvent::StaConnected => {
             info!("******* Received STA Connected Event");
+            core::internal::wifi::COMMAND.signal(core::internal::wifi::WifiCommand::StaConnected);
         }
         WifiEvent::StaDisconnected => {
             info!("******* Received STA Disconnected event");
