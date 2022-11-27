@@ -261,9 +261,12 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
             FreeRtos::delay_ms(1000);
 
-            // NOTE: this is a hack
-            if let Err(err) = wifi_connect() {
-                info!("Error calling wifi.connect in wifi reconnect {:?}", err);
+            // NOTE: calling the FFI binding directly to prevent casusing a move
+            // on the the EspWifi instance.
+            unsafe {
+                if let Err(err) = esp!(esp_wifi_connect()) {
+                    info!("Error calling wifi.connect in wifi reconnect {:?}", err);
+                }
             }
         }
         _ => info!("Received other Wifi event"),
@@ -309,7 +312,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     let mut high_prio_executor = EspExecutor::<16, _>::new();
     let mut high_prio_tasks = heapless::Vec::<_, 16>::new();
-    spawn::high_prio1(
+    spawn::high_prio(
         &mut high_prio_executor,
         &mut high_prio_tasks,
         services::button(

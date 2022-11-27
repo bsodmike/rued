@@ -83,7 +83,7 @@ pub async fn process<'a, D>(
                     }
                 }
                 WifiCommand::DhcpIpAssigned => {
-                    log::info!("************ WifiCommand::DhcpIpAssigned");
+                    log::info!("************ WifiCommand::DhcpIpAssigned: Inside handler");
 
                     let netif = wifi.sta_netif();
                     if let Ok(up) = netif.is_up() {
