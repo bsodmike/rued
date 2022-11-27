@@ -1,6 +1,7 @@
 use core::cell::RefCell;
 use core::fmt::Debug;
 use core::mem;
+use std::fmt::Write;
 
 extern crate alloc;
 
@@ -44,6 +45,7 @@ use gfx_xtra::draw_target::{Flushable, OwnedDrawTargetExt};
 use edge_frame::assets;
 
 use edge_executor::*;
+use once_cell::sync::Lazy;
 
 use crate::core::internal::mqtt::{MessageParser, MqttCommand};
 use crate::core::internal::pulse_counter::PulseCounter;
@@ -76,8 +78,9 @@ use embedded_graphics::{
 };
 use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
 
-const SSID: &str = env!("WIFI_SSID");
-const PASS: &str = env!("WIFI_PSK");
+const WIFI_SSID: &str = env!("WIFI_SSID");
+const WIFI_PSK: &str = env!("WIFI_PSK");
+const WIFI_START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
 // const ASSETS: assets::serve::Assets = edge_frame::assets!("RUWM_WEB");
 
@@ -352,19 +355,21 @@ pub fn wifi<'d>(
     modem: impl Peripheral<P = impl WifiModemPeripheral + 'd> + 'd,
     mut sysloop: EspSystemEventLoop,
     partition: Option<EspDefaultNvsPartition>,
+    auth_method: AuthMethod,
 ) -> Result<(EspWifi<'d>, impl Receiver<Data = WifiEvent>), InitError> {
     let mut wifi = EspWifi::new(modem, sysloop.clone(), partition)?;
 
-    if PASS.is_empty() {
+    if WIFI_PSK.is_empty() {
         wifi.set_configuration(&Configuration::Client(ClientConfiguration {
-            ssid: SSID.into(),
+            ssid: WIFI_SSID.into(),
             auth_method: AuthMethod::None,
             ..Default::default()
         }))?;
     } else {
         wifi.set_configuration(&Configuration::Client(ClientConfiguration {
-            ssid: SSID.into(),
-            password: PASS.into(),
+            ssid: WIFI_SSID.into(),
+            password: WIFI_PSK.into(),
+            auth_method,
             ..Default::default()
         }))?;
     }
@@ -373,15 +378,15 @@ pub fn wifi<'d>(
 
     wifi.start()?;
 
-    let started = wait.wait_with_timeout(std::time::Duration::from_secs(20), || {
-        wifi.is_started().unwrap()
-    });
+    let started = wait.wait_with_timeout(WIFI_START_TIMEOUT, || wifi.is_started().unwrap());
     if !started {
         log::warn!("Wifi failed to start, restarting.");
         unsafe {
             esp_restart();
         }
     }
+
+    wifi.connect()?;
 
     // if !PASS.is_empty() {
     //     wait.wait(|| wifi.is_connected().unwrap());

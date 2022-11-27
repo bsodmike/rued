@@ -191,7 +191,13 @@ fn init() -> Result<(), InitError> {
     esp_idf_sys::link_patches();
 
     // Bind the log crate to the ESP Logging facilities
-    esp_idf_svc::log::EspLogger::initialize_default();
+    // esp_idf_svc::log::EspLogger::initialize_default();
+    log::set_logger(&LOGGER)
+        .map(|()| {
+            LOGGER.initialize();
+            log::set_max_level(log::LevelFilter::Debug)
+        })
+        .expect("Configure and set logger with log level");
 
     esp!(unsafe {
         #[allow(clippy::needless_update)]
@@ -247,8 +253,8 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         peripherals.modem,
         sysloop.clone(),
         Some(nvs_default_partition.clone()),
+        AuthMethod::default(),
     )?;
-    wifi.connect()?;
 
     info!("******* Wifi: Subscribing to events");
     let _wifi_event_sub = sysloop.subscribe(move |event: &WifiEvent| match event {
@@ -263,10 +269,9 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
             // NOTE: calling the FFI binding directly to prevent casusing a move
             // on the the EspWifi instance.
-            unsafe {
-                if let Err(err) = esp!(esp_wifi_connect()) {
-                    info!("Error calling wifi.connect in wifi reconnect {:?}", err);
-                }
+
+            if let Err(err) = esp!(unsafe { esp_wifi_connect() }) {
+                info!("Error calling wifi.connect in wifi reconnect {:?}", err);
             }
         }
         _ => info!("Received other Wifi event"),
