@@ -11,6 +11,10 @@ use enumset::{EnumSet, EnumSetType};
 // use crate::dto::water_meter::WaterMeterCommand;
 // use crate::{valve, wm};
 
+use crate::core::internal::screen::{
+    DISPLAY_COLOR_BLACK, DISPLAY_COLOR_LIGHT_BLUE, DISPLAY_COLOR_WHITE,
+};
+
 use super::util::{clear_cropped, fill, text};
 use super::Color;
 
@@ -169,18 +173,18 @@ impl<'a> Actions<'a> {
 
     pub fn draw<T>(&self, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = BinaryColor>,
+        T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>,
     {
         self.draw_shape(&mut clear_cropped(target, self.padding)?)
     }
 
     fn draw_shape<T>(&self, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = BinaryColor> + OriginDimensions,
+        T: DrawTarget<Color = crate::core::internal::screen::DisplayColor> + OriginDimensions,
     {
         let bbox = target.bounding_box();
 
-        fill(&bbox, BinaryColor::On, target)?;
+        fill(&bbox, DISPLAY_COLOR_LIGHT_BLUE, target)?; // Color::LightBlue
 
         for (line, action) in self.enabled.iter().enumerate() {
             if self.selected == action {
@@ -197,7 +201,7 @@ impl<'a> Actions<'a> {
                             self.font.character_size.height,
                         ),
                     ),
-                    BinaryColor::On,
+                    DISPLAY_COLOR_BLACK,
                     target,
                 )?;
             }
@@ -212,7 +216,7 @@ impl<'a> Actions<'a> {
                         + self.font.character_size.height as i32 * line as i32,
                 ),
                 action.text(),
-                BinaryColor::On,
+                DISPLAY_COLOR_WHITE,
                 None,
             )?;
         }

@@ -22,7 +22,7 @@ pub fn with_title<'a, T>(
     title: &str,
 ) -> Result<Cropped<'a, T>, T::Error>
 where
-    T: DrawTarget<Color = BinaryColor>,
+    T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>,
 {
     let padding = 2;
 

@@ -30,7 +30,7 @@ pub fn high_prio<'a, const C: usize, M, D>(
 ) -> Result<(), SpawnError>
 where
     M: Monitor + Default,
-    D: Flushable<Color = BinaryColor> + 'a,
+    D: Flushable<Color = crate::core::internal::screen::DisplayColor> + 'a,
     D::Error: Debug,
 {
     executor
@@ -104,7 +104,7 @@ pub fn mid_prio<'a, const C: usize, M, D>(
 ) -> Result<(), SpawnError>
 where
     M: Monitor + Default,
-    D: Flushable<Color = BinaryColor> + 'a,
+    D: Flushable<Color = crate::core::internal::screen::DisplayColor> + 'a,
     D::Error: Debug,
 {
     executor

@@ -12,7 +12,7 @@ use crate::core::internal::screen::{
 
 pub fn draw<T>(target: &mut T, actions: EnumSet<Action>, action: Action) -> Result<(), T::Error>
 where
-    T: DrawTarget<Color = BinaryColor>,
+    T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>,
 {
     let bbox = target.bounding_box();
 

@@ -34,8 +34,10 @@ use self::shapes::Action;
 pub type DisplayColor = BinaryColor;
 pub const DISPLAY_COLOR_YELLOW: DisplayColor = BinaryColor::On; // Color::Yellow
 pub const DISPLAY_COLOR_GREEN: DisplayColor = BinaryColor::On; // Color::Green
+pub const DISPLAY_COLOR_BLACK: DisplayColor = BinaryColor::On; // Color::Black
 pub const DISPLAY_COLOR_WHITE: DisplayColor = BinaryColor::On; // Color::White
 pub const DISPLAY_COLOR_GRAY: DisplayColor = BinaryColor::On; // Color::Gray
+pub const DISPLAY_COLOR_LIGHT_BLUE: DisplayColor = BinaryColor::On; // Color::LightBlue
 
 mod pages;
 mod shapes;
@@ -227,7 +229,7 @@ pub async fn process() {
 pub async fn unblock_run_draw<U, D>(unblocker: U, mut display: D)
 where
     U: Unblocker,
-    D: Flushable<Color = BinaryColor> + Send + 'static,
+    D: Flushable<Color = crate::core::internal::screen::DisplayColor> + Send + 'static,
     D::Error: Debug + Send + 'static,
 {
     loop {
@@ -242,7 +244,7 @@ where
 
 pub async fn run_draw<D>(mut display: D)
 where
-    D: Flushable<Color = BinaryColor>,
+    D: Flushable<Color = crate::core::internal::screen::DisplayColor>,
     D::Error: Debug,
 {
     loop {
@@ -267,7 +269,8 @@ async fn wait_change() -> ScreenState {
 
 fn draw_text<T>(target: &mut T, text: &str, top: bool) -> Result<(), T::Error>
 where
-    T: DrawTarget<Color = BinaryColor> + Flushable<Color = BinaryColor>,
+    T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>
+        + Flushable<Color = crate::core::internal::screen::DisplayColor>,
     // FIXME needed to call target.size()
     // + OriginDimensions,
     // + Flushable,
@@ -285,7 +288,14 @@ where
     target.clear(BinaryColor::Off)?;
 
     log::info!("DRAWING text: {}", &text);
-    util::text(&FONT_9X15, target, position, text, BinaryColor::On, None)?;
+    util::text(
+        &FONT_9X15,
+        target,
+        position,
+        text,
+        DISPLAY_COLOR_WHITE,
+        None,
+    )?;
 
     target.flush()?;
 
@@ -294,7 +304,7 @@ where
 
 fn draw<D>(mut display: D, screen_state: ScreenState) -> Result<D, D::Error>
 where
-    D: Flushable<Color = BinaryColor>,
+    D: Flushable<Color = crate::core::internal::screen::DisplayColor>,
     D::Error: Debug,
 {
     trace!("DRAWING: {:?}", screen_state);

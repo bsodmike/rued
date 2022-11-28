@@ -114,14 +114,14 @@ pub mod util {
 
     pub fn clear<T>(area: &Rectangle, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = BinaryColor>,
+        T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>,
     {
         fill(area, BinaryColor::Off, target)
     }
 
     pub fn fill<T>(area: &Rectangle, color: T::Color, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = BinaryColor>,
+        T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>,
     {
         area.into_styled(PrimitiveStyle::with_fill(color))
             .draw(target)?;
@@ -136,7 +136,7 @@ pub mod util {
         target: &mut T,
     ) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = BinaryColor>,
+        T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>,
     {
         area.into_styled(PrimitiveStyle::with_stroke(color, width))
             .draw(target)?;
@@ -153,7 +153,7 @@ pub mod util {
         text_style: Option<TextStyle>,
     ) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = BinaryColor>,
+        T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>,
     {
         let character_style = MonoTextStyleBuilder::new()
             .font(font)
@@ -195,7 +195,7 @@ pub mod util {
 
     pub fn clear_cropped<'a, T>(target: &'a mut T, padding: u32) -> Result<Cropped<'a, T>, T::Error>
     where
-        T: DrawTarget<Color = BinaryColor>,
+        T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>,
     {
         let bbox = target.bounding_box();
 

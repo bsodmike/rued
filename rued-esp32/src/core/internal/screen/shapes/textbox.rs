@@ -44,14 +44,14 @@ impl<'a> Textbox<'a> {
 
     pub fn draw<T>(&self, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = BinaryColor>,
+        T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>,
     {
         self.draw_shape(&mut clear_cropped(target, self.padding)?)
     }
 
     fn draw_shape<T>(&self, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = BinaryColor> + OriginDimensions,
+        T: DrawTarget<Color = crate::core::internal::screen::DisplayColor> + OriginDimensions,
     {
         let bbox = target.bounding_box();
 

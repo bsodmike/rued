@@ -7,7 +7,9 @@ use embedded_graphics::prelude::{OriginDimensions, Point, Size};
 use embedded_graphics::primitives::Rectangle;
 use embedded_graphics::text::{Alignment, Baseline, TextStyleBuilder};
 
-use crate::core::internal::screen::DisplayColor;
+use crate::core::internal::screen::{
+    DisplayColor, DISPLAY_COLOR_BLACK, DISPLAY_COLOR_WHITE, DISPLAY_COLOR_YELLOW,
+};
 
 use super::util::{clear, clear_cropped, fill, text, to_str};
 use super::Color;
@@ -47,14 +49,14 @@ impl<'a> Battery<'a> {
 
     pub fn draw<T>(&self, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = BinaryColor>,
+        T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>,
     {
         self.draw_shape(&mut clear_cropped(target, self.padding)?)
     }
 
     fn draw_shape<T>(&self, target: &mut T) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = BinaryColor> + OriginDimensions,
+        T: DrawTarget<Color = crate::core::internal::screen::DisplayColor> + OriginDimensions,
     {
         let Size { width, height } = target.size();
 
@@ -81,8 +83,8 @@ impl<'a> Battery<'a> {
         // } else {
         //     charged_color
         // };
-        let charged_color = BinaryColor::On;
-        let outline_color = BinaryColor::On;
+        let charged_color = DISPLAY_COLOR_YELLOW;
+        let outline_color = DISPLAY_COLOR_WHITE;
 
         // Draw charging level fill
         fill(
@@ -203,8 +205,8 @@ impl<'a> Battery<'a> {
         // } else {
         //     outline_color
         // };
-        let light_color = BinaryColor::On;
-        let dark_color = light_color; // Color::Black
+        let light_color = outline_color;
+        let dark_color = DISPLAY_COLOR_BLACK; // Color::Black
 
         let position = Point::new(width as i32 / 2, height as i32 / 2);
 
@@ -234,7 +236,7 @@ impl<'a> Battery<'a> {
         color: DisplayColor,
     ) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = BinaryColor>,
+        T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>,
     {
         let text_style = Some(
             TextStyleBuilder::new()

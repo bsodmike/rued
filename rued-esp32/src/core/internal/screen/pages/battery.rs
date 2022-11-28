@@ -15,7 +15,7 @@ impl Battery {
         state: Option<&BatteryState>,
     ) -> Result<(), T::Error>
     where
-        T: DrawTarget<Color = BinaryColor>,
+        T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>,
     {
         let mut target = with_title(target, page_changed, "Battery")?;
 
