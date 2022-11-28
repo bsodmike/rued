@@ -294,25 +294,30 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // High-prio tasks
 
-    let display_peripherals = peripherals.display_i2c;
-    let mut config = I2cConfig::new();
-    let _ = config.baudrate(Hertz::from(400 as u32));
+    #[cfg(feature = "display-i2c")]
+    let display = {
+        let display_peripherals = peripherals.display_i2c;
+        let mut config = I2cConfig::new();
+        let _ = config.baudrate(Hertz::from(400 as u32));
 
-    let i2c_driver = I2cDriver::new(
-        display_peripherals.i2c,
-        display_peripherals.sda,
-        display_peripherals.scl,
-        &config,
-    )
-    .expect("Expected to initialise I2C");
+        let i2c_driver = I2cDriver::new(
+            display_peripherals.i2c,
+            display_peripherals.sda,
+            display_peripherals.scl,
+            &config,
+        )
+        .expect("Expected to initialise I2C");
 
-    // Create a shared-bus for the I2C devices that supports threads
-    let i2c_bus_manager: &'static _ = shared_bus::new_std!(I2cDriver = i2c_driver).unwrap();
+        // Create a shared-bus for the I2C devices that supports threads
+        let i2c_bus_manager: &'static _ = shared_bus::new_std!(I2cDriver = i2c_driver).unwrap();
 
-    let proxy1 = i2c_bus_manager.acquire_i2c();
+        let proxy1 = i2c_bus_manager.acquire_i2c();
 
-    let display =
-        services::display_i2c(proxy1).expect("Return display service to the high_prio executor");
+        services::display(proxy1).expect("Return display service to the high_prio executor")
+    };
+
+    #[cfg(not(feature = "display-i2c"))]
+    let display = { services::display(peripherals.display).unwrap() };
 
     let mut high_prio_executor = EspExecutor::<16, _>::new();
     let mut high_prio_tasks = heapless::Vec::<_, 16>::new();

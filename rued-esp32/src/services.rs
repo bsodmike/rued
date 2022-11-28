@@ -76,6 +76,8 @@ use embedded_graphics::{
     prelude::*,
     text::{Baseline, Text},
 };
+
+#[cfg(feature = "display-i2c")]
 use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
 
 const WIFI_SSID: &str = env!("WIFI_SSID");
@@ -226,7 +228,8 @@ pub fn button<'d, P: InputPin + OutputPin>(
 
 // embedded_hal::i2c::I2c<embedded_hal::i2c::SevenBitAddress
 
-pub fn display_i2c(
+#[cfg(feature = "display-i2c")]
+pub fn display(
     i2c: impl embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_Write
         + embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_WriteRead
         + 'static,
@@ -272,84 +275,85 @@ pub fn display_i2c(
     Ok(display)
 }
 
-// pub fn display(
-//     peripherals: DisplaySpiPeripherals<impl Peripheral<P = impl SpiAnyPins + 'static> + 'static>,
-// ) -> Result<impl Flushable<Color = Color, Error = impl Debug + 'static> + 'static, InitError> {
-//     if let Some(backlight) = peripherals.control.backlight {
-//         let mut backlight = PinDriver::output(backlight)?;
+#[cfg(not(feature = "display-i2c"))]
+pub fn display(
+    peripherals: DisplaySpiPeripherals<impl Peripheral<P = impl SpiAnyPins + 'static> + 'static>,
+) -> Result<impl Flushable<Color = Color, Error = impl Debug + 'static> + 'static, InitError> {
+    if let Some(backlight) = peripherals.control.backlight {
+        let mut backlight = PinDriver::output(backlight)?;
 
-//         backlight.set_drive_strength(DriveStrength::I40mA)?;
-//         backlight.set_high()?;
+        backlight.set_drive_strength(DriveStrength::I40mA)?;
+        backlight.set_high()?;
 
-//         mem::forget(backlight); // TODO: For now
-//     }
+        mem::forget(backlight); // TODO: For now
+    }
 
-//     let baudrate = 26.MHz().into();
-//     //let baudrate = 40.MHz().into();
+    let baudrate = 26.MHz().into();
+    //let baudrate = 40.MHz().into();
 
-//     let spi = SpiDeviceDriver::new_single(
-//         peripherals.spi,
-//         peripherals.sclk,
-//         peripherals.sdo,
-//         Option::<Gpio21>::None,
-//         Dma::Disabled,
-//         peripherals.cs,
-//         &SpiConfig::new().baudrate(baudrate),
-//     )?;
+    let spi = SpiDeviceDriver::new_single(
+        peripherals.spi,
+        peripherals.sclk,
+        peripherals.sdo,
+        Option::<Gpio21>::None,
+        Dma::Disabled,
+        peripherals.cs,
+        &SpiConfig::new().baudrate(baudrate),
+    )?;
 
-//     let dc = PinDriver::output(peripherals.control.dc)?;
+    let dc = PinDriver::output(peripherals.control.dc)?;
 
-//     #[cfg(any(feature = "ili9342", feature = "st7789"))]
-//     let display = {
-//         let rst = PinDriver::output(peripherals.control.rst)?;
+    #[cfg(any(feature = "ili9342", feature = "st7789"))]
+    let display = {
+        let rst = PinDriver::output(peripherals.control.rst)?;
 
-//         #[cfg(feature = "ili9342")]
-//         let builder = mipidsi::Builder::ili9342c_rgb565(
-//             display_interface_spi::SPIInterfaceNoCS::new(spi, dc),
-//         );
+        #[cfg(feature = "ili9342")]
+        let builder = mipidsi::Builder::ili9342c_rgb565(
+            display_interface_spi::SPIInterfaceNoCS::new(spi, dc),
+        );
 
-//         #[cfg(feature = "st7789")]
-//         let builder =
-//             mipidsi::Builder::st7789(display_interface_spi::SPIInterfaceNoCS::new(spi, dc));
+        #[cfg(feature = "st7789")]
+        let builder =
+            mipidsi::Builder::st7789(display_interface_spi::SPIInterfaceNoCS::new(spi, dc));
 
-//         builder.init(&mut delay::Ets, Some(rst)).unwrap()
-//     };
+        builder.init(&mut delay::Ets, Some(rst)).unwrap()
+    };
 
-//     #[cfg(feature = "ssd1351")]
-//     let display = {
-//         use ssd1351::mode::displaymode::DisplayModeTrait;
+    #[cfg(feature = "ssd1351")]
+    let display = {
+        use ssd1351::mode::displaymode::DisplayModeTrait;
 
-//         let mut display =
-//             ssd1351::mode::graphics::GraphicsMode::new(ssd1351::display::Display::new(
-//                 ssd1351::interface::spi::SpiInterface::new(spi, dc),
-//                 ssd1351::properties::DisplaySize::Display128x128,
-//                 ssd1351::properties::DisplayRotation::Rotate0,
-//             ));
+        let mut display =
+            ssd1351::mode::graphics::GraphicsMode::new(ssd1351::display::Display::new(
+                ssd1351::interface::spi::SpiInterface::new(spi, dc),
+                ssd1351::properties::DisplaySize::Display128x128,
+                ssd1351::properties::DisplayRotation::Rotate0,
+            ));
 
-//         display
-//             .reset(
-//                 &mut PinDriver::output(peripherals.control.rst)?,
-//                 &mut delay::Ets,
-//             )
-//             .unwrap();
+        display
+            .reset(
+                &mut PinDriver::output(peripherals.control.rst)?,
+                &mut delay::Ets,
+            )
+            .unwrap();
 
-//         display
-//     };
+        display
+    };
 
-//     #[cfg(feature = "ttgo")]
-//     let mut display = {
-//         let rect = embedded_graphics::primitives::Rectangle::new(
-//             embedded_graphics::prelude::Point::new(52, 40),
-//             embedded_graphics::prelude::Size::new(135, 240),
-//         );
+    #[cfg(feature = "ttgo")]
+    let mut display = {
+        let rect = embedded_graphics::primitives::Rectangle::new(
+            embedded_graphics::prelude::Point::new(52, 40),
+            embedded_graphics::prelude::Size::new(135, 240),
+        );
 
-//         display.owned_cropped(display, &rect)
-//     };
+        display.owned_cropped(display, &rect)
+    };
 
-//     let display = display.owned_color_converted().owned_noop_flushing();
+    let display = display.owned_color_converted().owned_noop_flushing();
 
-//     Ok(display)
-// }
+    Ok(display)
+}
 
 pub fn wifi<'d>(
     modem: impl Peripheral<P = impl WifiModemPeripheral + 'd> + 'd,

@@ -44,6 +44,7 @@ impl Color {
         }
     }
 
+    #[cfg(feature = "display-i2c")]
     pub fn into_binary(self) -> BinaryColor {
         if self.is_off() {
             BinaryColor::Off
@@ -95,6 +96,7 @@ impl From<Color> for Rgb888 {
     }
 }
 
+#[cfg(feature = "display-i2c")]
 impl Into<BinaryColor> for Color {
     fn into(self) -> BinaryColor {
         self.into_binary()
@@ -112,11 +114,20 @@ pub mod util {
 
     use super::Color;
 
+    #[cfg(feature = "display-i2c")]
     pub fn clear<T>(area: &Rectangle, target: &mut T) -> Result<(), T::Error>
     where
         T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>,
     {
         fill(area, BinaryColor::Off, target)
+    }
+
+    #[cfg(not(feature = "display-i2c"))]
+    pub fn clear<T>(area: &Rectangle, target: &mut T) -> Result<(), T::Error>
+    where
+        T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>,
+    {
+        fill(area, Color::Black, target)
     }
 
     pub fn fill<T>(area: &Rectangle, color: T::Color, target: &mut T) -> Result<(), T::Error>

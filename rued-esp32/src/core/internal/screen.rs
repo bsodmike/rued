@@ -31,13 +31,35 @@ pub use shapes::Color;
 use self::pages::{Battery, Summary, Wifi};
 use self::shapes::Action;
 
-pub type DisplayColor = BinaryColor;
-pub const DISPLAY_COLOR_YELLOW: DisplayColor = BinaryColor::On; // Color::Yellow
-pub const DISPLAY_COLOR_GREEN: DisplayColor = BinaryColor::On; // Color::Green
-pub const DISPLAY_COLOR_BLACK: DisplayColor = BinaryColor::On; // Color::Black
-pub const DISPLAY_COLOR_WHITE: DisplayColor = BinaryColor::On; // Color::White
-pub const DISPLAY_COLOR_GRAY: DisplayColor = BinaryColor::On; // Color::Gray
-pub const DISPLAY_COLOR_LIGHT_BLUE: DisplayColor = BinaryColor::On; // Color::LightBlue
+#[cfg(feature = "display-i2c")]
+pub use i2c::*;
+#[cfg(feature = "display-i2c")]
+mod i2c {
+    use embedded_graphics::pixelcolor::BinaryColor;
+
+    pub type DisplayColor = BinaryColor;
+    pub const DISPLAY_COLOR_YELLOW: DisplayColor = BinaryColor::On; // Color::Yellow
+    pub const DISPLAY_COLOR_GREEN: DisplayColor = BinaryColor::On; // Color::Green
+    pub const DISPLAY_COLOR_BLACK: DisplayColor = BinaryColor::On; // Color::Black
+    pub const DISPLAY_COLOR_WHITE: DisplayColor = BinaryColor::On; // Color::White
+    pub const DISPLAY_COLOR_GRAY: DisplayColor = BinaryColor::On; // Color::Gray
+    pub const DISPLAY_COLOR_LIGHT_BLUE: DisplayColor = BinaryColor::On; // Color::LightBlue
+}
+
+#[cfg(not(feature = "display-i2c"))]
+pub use color::*;
+#[cfg(not(feature = "display-i2c"))]
+mod color {
+    use super::Color;
+
+    pub type DisplayColor = Color;
+    pub const DISPLAY_COLOR_YELLOW: DisplayColor = Color::Yellow;
+    pub const DISPLAY_COLOR_GREEN: DisplayColor = Color::Green;
+    pub const DISPLAY_COLOR_BLACK: DisplayColor = Color::Black;
+    pub const DISPLAY_COLOR_WHITE: DisplayColor = Color::White;
+    pub const DISPLAY_COLOR_GRAY: DisplayColor = Color::Gray;
+    pub const DISPLAY_COLOR_LIGHT_BLUE: DisplayColor = Color::LightBlue;
+}
 
 mod pages;
 mod shapes;
@@ -285,7 +307,10 @@ where
         position = Point::new(0, 16)
     }
 
+    #[cfg(feature = "display-i2c")]
     target.clear(BinaryColor::Off)?;
+    #[cfg(not(feature = "display-i2c"))]
+    target.clear(Color::Black)?;
 
     log::info!("DRAWING text: {}", &text);
     util::text(
