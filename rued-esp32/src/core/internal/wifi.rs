@@ -98,7 +98,7 @@ pub async fn process<'a, D>(
                                     format!("ERR: Unable to unwrap DNS value")
                                 };
 
-                                log::info!("************ Received IPEvent address assigned\n************ IP: {} / DNS: {}", ip, dns);
+                                log::info!("************ Received IPEvent address assigned / IP: {} / DNS: {}", ip, dns);
 
                                 STATE.update(Some(WifiConnection { ip, dns }));
                             }

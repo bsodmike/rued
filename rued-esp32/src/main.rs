@@ -279,7 +279,6 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     let _ip_event_sub = sysloop.subscribe(move |event: &IpEvent| match event {
         IpEvent::DhcpIpAssigned(_) => {
-            log::info!("WifiCommand::DhcpIpAssigned fired!");
             core::internal::wifi::COMMAND.signal(core::internal::wifi::WifiCommand::DhcpIpAssigned);
         }
         _ => info!("Received other IPEvent"),
