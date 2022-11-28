@@ -15,8 +15,8 @@ opt-level = "z"
 [features]
 pio = ["esp-idf-sys/pio"]
 default = ["edge-executor", "system"] # Note that edge-executor requires alloc
-# system = ["display-i2c"]
-system = ["display-spi"]
+system = ["display-i2c"]
+# system = ["display-spi"]
 
 display-spi = ["profont", "ssd1351"]
 display-i2c = ["profont", "ssd1306", "display-binary-color"]
