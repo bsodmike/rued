@@ -11,7 +11,7 @@ use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use peripherals::{ButtonsPeripherals, PulseCounterPeripherals};
 use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, Rv8803Bus, TIME_ARRAY_LENGTH};
-use shared_bus::BusManager;
+use shared_bus::{BusManager, I2cProxy};
 use std::{
     env,
     error::Error as StdError,
@@ -231,6 +231,23 @@ fn sleep() -> Result<(), InitError> {
 fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     let peripherals = peripherals::SystemPeripherals::take();
 
+    // Configure I2C0
+
+    let i2c0_peripherals = peripherals.i2c0;
+    let mut config = I2cConfig::new();
+    let _ = config.baudrate(Hertz::from(400 as u32));
+
+    let i2c0_driver = I2cDriver::new(
+        i2c0_peripherals.i2c,
+        i2c0_peripherals.sda,
+        i2c0_peripherals.scl,
+        &config,
+    )
+    .expect("Expected to initialise I2C for i2c0 peripherals");
+
+    // Create a shared-bus for the I2C devices that supports threads
+    let i2c0_bus_manager: &'static _ = shared_bus::new_std!(I2cDriver = i2c0_driver).unwrap();
+
     // Deep sleep wakeup init
 
     mark_wakeup_pins(&peripherals.pulse_counter, &peripherals.buttons)?;
@@ -297,22 +314,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     #[cfg(feature = "display-i2c")]
     let display = {
-        let display_peripherals = peripherals.display_i2c;
-        let mut config = I2cConfig::new();
-        let _ = config.baudrate(Hertz::from(400 as u32));
-
-        let i2c_driver = I2cDriver::new(
-            display_peripherals.i2c,
-            display_peripherals.sda,
-            display_peripherals.scl,
-            &config,
-        )
-        .expect("Expected to initialise I2C");
-
-        // Create a shared-bus for the I2C devices that supports threads
-        let i2c_bus_manager: &'static _ = shared_bus::new_std!(I2cDriver = i2c_driver).unwrap();
-
-        let proxy1 = i2c_bus_manager.acquire_i2c();
+        let proxy1 = i2c0_bus_manager.acquire_i2c();
 
         services::display(proxy1).expect("Return display service to the high_prio executor")
     };
@@ -501,7 +503,21 @@ fn main2() -> Result<()> {
 
     //  configure peripherals
     let peripherals = peripherals::SystemPeripherals::take();
-    // let (active_gpio, i2c_bus) = micromod::chip::configure()?;
+
+    let rtc_peripherals = peripherals.i2c0;
+    let mut config = I2cConfig::new();
+    let _ = config.baudrate(Hertz::from(400 as u32));
+
+    let i2c_driver = I2cDriver::new(
+        rtc_peripherals.i2c,
+        rtc_peripherals.sda,
+        rtc_peripherals.scl,
+        &config,
+    )
+    .expect("Expected to initialise I2C");
+
+    // Create a shared-bus for the I2C devices that supports threads
+    let i2c_bus_manager: &'static _ = shared_bus::new_std!(I2cDriver = i2c_driver).unwrap();
 
     // let mut led_onboard = PinDriver::output(active_gpio.led_onboard)?;
     // led_onboard.set_low()?;
@@ -620,23 +636,7 @@ fn main2() -> Result<()> {
         }
     }
 
-    let display_peripherals = peripherals.display_i2c;
-    let mut config = I2cConfig::new();
-    let _ = config.baudrate(Hertz::from(400 as u32));
-
-    let i2c_driver = I2cDriver::new(
-        display_peripherals.i2c,
-        display_peripherals.sda,
-        display_peripherals.scl,
-        &config,
-    )
-    .expect("Expected to initialise I2C");
-
-    // Create a shared-bus for the I2C devices that supports threads
-    let i2c_bus_manager: &'static _ = shared_bus::new_std!(I2cDriver = i2c_driver).unwrap();
-
-    let proxy1 = i2c_bus_manager.acquire_i2c();
-    let proxy2 = i2c_bus_manager.acquire_i2c();
+    // let display_peripherals = peripherals.display_i2c;
 
     // if let Err(e) = display::display_test(i2c_driver, &ip, &dns) {
     //     println!("Display error: {:?}", e)
@@ -652,12 +652,11 @@ fn main2() -> Result<()> {
 
     // setup RTC sensor
 
-    let bus = rv8803_rs::i2c0::Bus::new(proxy1, rv8803_rs::i2c0::Address::Default);
-    let mut rtc = rv8803_rs::Rv8803::new(bus)?;
-    let mut rtc_clock = RTClock::new(proxy2)?;
+    let mut rtc_clock: RTClock<I2cProxy<Mutex<I2cDriver>>> = RTClock::new(i2c_bus_manager)?;
+    let mut rtc = rtc_clock.rtc()?;
 
     unsafe {
-        get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
+        get_system_time_with_fallback(&mut rtc_clock)?;
 
         // Setup SNTP
         let server_array: [&str; 4] = [
@@ -692,7 +691,7 @@ fn main2() -> Result<()> {
             std::thread::sleep(StdDuration::from_millis(500));
 
             let rtc_reading = &rtc_clock.update_time()?;
-            let latest_system_time = get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
+            let latest_system_time = get_system_time_with_fallback(&mut rtc_clock)?;
 
             //             info!(
             //                 r#"
@@ -713,7 +712,7 @@ fn main2() -> Result<()> {
             let update_rtc_flag = core::get_update_rtc_flag();
             info!("update_rtc_flag: {}", update_rtc_flag);
             if update_rtc_flag {
-                update_rtc_from_local(&mut rtc, &latest_system_time)?;
+                update_rtc_from_local(&mut rtc_clock, &latest_system_time)?;
                 info!("[OK]: Updated RTC Clock from Local time");
 
                 core::update_rtc_disable();
@@ -724,7 +723,7 @@ fn main2() -> Result<()> {
             // This only occurs if SNTP update resolves in a valid update, but the updated
             // year is < the current year.
             if core::get_fallback_to_rtc_flag() {
-                update_local_from_rtc(&latest_system_time, &mut rtc, &mut rtc_clock)?;
+                update_local_from_rtc(&latest_system_time, &mut rtc_clock)?;
                 info!("[OK]: Updated System Clock from RTC time");
 
                 core::fallback_to_rtc_disable()
@@ -870,14 +869,14 @@ fn main2() -> Result<()> {
 
 type I2cDriverType<'a> = I2cDriver<'a>;
 
-unsafe fn get_system_time_with_fallback<B, I2C>(
-    rtc: &mut Rv8803<B>,
+unsafe fn get_system_time_with_fallback<I2C>(
     rtc_clock: &mut RTClock<I2C>,
 ) -> Result<SystemTimeBuffer>
 where
     I2C: _embedded_hal_blocking_i2c_WriteRead<Error = I2cError>
         + _embedded_hal_blocking_i2c_Write<Error = I2cError>,
 {
+    let mut rtc = rtc_clock.rtc()?;
     let system_time = get_system_time()?;
 
     // debug!(
@@ -896,15 +895,14 @@ where
         // clock will be updated from RTC and the conditional above (that compares the years), will prevent this from being called further.
         //
         // It's better to re-establish a valid SNTP update.
-        update_local_from_rtc(&system_time, rtc, rtc_clock)?;
+        update_local_from_rtc(&system_time, rtc_clock)?;
     }
 
     Ok(system_time)
 }
 
-unsafe fn update_local_from_rtc<B, I2C>(
+unsafe fn update_local_from_rtc<I2C>(
     system_time: &SystemTimeBuffer,
-    rtc: &mut Rv8803<B>,
     rtc_clock: &mut RTClock<I2C>,
 ) -> Result<bool>
 where
@@ -939,13 +937,14 @@ where
 }
 
 fn update_rtc_from_local<I2C>(
-    rtc: &mut Rv8803<I2C>,
+    rtc_clock: &mut RTClock<I2C>,
     latest_system_time: &SystemTimeBuffer,
 ) -> Result<bool>
 where
-    I2C: rv8803_rs::Rv8803Bus,
-    <I2C as Rv8803Bus>::Error: Sync + Send + StdError + 'static,
+    I2C: _embedded_hal_blocking_i2c_WriteRead<Error = I2cError>
+        + _embedded_hal_blocking_i2c_Write<Error = I2cError>,
 {
+    let mut rtc = rtc_clock.rtc()?;
     let weekday = latest_system_time.weekday()?;
 
     let resp = rtc.set_time(

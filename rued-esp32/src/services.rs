@@ -64,7 +64,7 @@ use crate::core::internal::screen::Color;
 use channel_bridge::{asynch::pubsub, asynch::*, notification::Notification};
 
 use crate::peripherals::{
-    DisplayI2cPeripherals, DisplaySpiPeripherals, PulseCounterPeripherals, ValvePeripherals,
+    DisplaySpiPeripherals, I2c0Peripherals, PulseCounterPeripherals, ValvePeripherals,
 };
 use crate::{errors::*, peripherals};
 

@@ -1,37 +1,46 @@
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike};
-use esp_idf_hal::i2c::I2cError;
+use esp_idf_hal::i2c::{I2cDriver, I2cError};
 use log::{debug, info, warn};
 use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, TIME_ARRAY_LENGTH};
-use std::{env, error::Error as StdError, fmt, ptr, sync::Mutex};
+use shared_bus::{BusManager, I2cProxy};
+use std::{env, error::Error as StdError, fmt, marker::PhantomData, ptr, sync::Mutex};
 
-#[derive(Debug)]
-pub struct RTClock<I2C> {
+pub struct RTClock<'a, I2C> {
     datetime: Option<DateTime<Utc>>,
-    rtc: Rv8803<I2cBus<I2C>>,
+    bus_manager: &'a BusManager<Mutex<I2cDriver<'a>>>,
+    phantom: PhantomData<Rv8803<I2cBus<I2C>>>,
 }
 
-impl<I2C> RTClock<I2C>
+impl<'a, I2C> RTClock<'a, I2C>
 where
     I2C: embedded_hal_0_2::blocking::i2c::Write<Error = I2cError>
         + embedded_hal_0_2::blocking::i2c::WriteRead<Error = I2cError>,
 {
-    pub fn new(i2c: I2C) -> Result<Self> {
+    pub fn new(bus_manager: &'a BusManager<Mutex<I2cDriver<'a>>>) -> Result<Self> {
         let address = rv8803_rs::i2c0::Address::Default;
-        let rtc = Rv8803::from_i2c0(i2c, address).unwrap();
-        // .expect("RTC module instantiated with I2c bus");
+        let rtc = Rv8803::from_i2c0(bus_manager.acquire_i2c(), address)?;
 
         Ok(Self {
             datetime: None,
-            rtc,
+            bus_manager,
+            phantom: PhantomData,
         })
+    }
+
+    pub fn rtc(&self) -> Result<Rv8803<I2cBus<I2cProxy<'_, std::sync::Mutex<I2cDriver<'a>>>>>> {
+        let proxy = self.bus_manager.acquire_i2c();
+
+        let bus = rv8803_rs::i2c0::Bus::new(proxy, rv8803_rs::i2c0::Address::Default);
+
+        Ok(Rv8803::new(bus)?)
     }
 
     pub fn update_time(&mut self) -> Result<RTCReading> {
         let mut time = [0_u8; TIME_ARRAY_LENGTH];
 
         // Fetch time from RTC.
-        let update = self.rtc.update_time(&mut time)?;
+        let update = self.rtc()?.update_time(&mut time)?;
         if !update {
             warn!("RTC: Failed reading latest time");
             println!("{:?}", time);

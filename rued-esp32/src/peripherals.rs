@@ -15,8 +15,7 @@ pub struct SystemPeripherals<P, ADC, V, B1, B2, B3, SPI, I2C> {
     pub battery: BatteryPeripherals<ADC, V>,
     pub buttons: ButtonsPeripherals<B1, B2, B3>,
     pub display: DisplaySpiPeripherals<SPI>,
-    pub display_i2c: DisplayI2cPeripherals<I2C>,
-    // pub rtc_module: ExternalRtcPeripherals<I2C>,
+    pub i2c0: I2c0Peripherals<I2C>,
     pub modem: Modem,
 }
 
@@ -84,16 +83,11 @@ impl<'a> SystemPeripherals<Gpio33, ADC1, Gpio36, Gpio14, Gpio27, Gpio15, SPI2, I
                 cs: Some(peripherals.pins.gpio5.into()),
             },
             modem: peripherals.modem,
-            display_i2c: DisplayI2cPeripherals {
+            i2c0: I2c0Peripherals {
                 i2c: peripherals.i2c0,
                 sda: peripherals.pins.gpio21.into(),
                 scl: peripherals.pins.gpio22.into(),
             },
-            // rtc_module: ExternalRtcPeripherals {
-            //     i2c: peripherals.i2c0,
-            //     sda: peripherals.pins.gpio21.into(),
-            //     scl: peripherals.pins.gpio22.into(),
-            // },
         }
     }
 }
@@ -218,21 +212,8 @@ pub struct DisplaySpiPeripherals<SPI> {
     pub cs: Option<AnyOutputPin>,
 }
 
-// pub struct I2cBus<'a, I2C> {
-//     pub i2c: I2C,
-//     pub scl: AnyOutputPin,
-//     pub sda: AnyOutputPin,
-//     pub driver: I2cDriver<'a>,
-//     pub bus: BusManager<NullMutex<I2cDriver<'a>>>,
-// }
-pub struct DisplayI2cPeripherals<I2C> {
+pub struct I2c0Peripherals<I2C> {
     pub i2c: I2C,
     pub scl: AnyIOPin,
     pub sda: AnyIOPin,
-}
-
-pub struct ExternalRtcPeripherals<I2C> {
-    pub i2c: I2C,
-    pub scl: AnyOutputPin,
-    pub sda: AnyOutputPin,
 }
