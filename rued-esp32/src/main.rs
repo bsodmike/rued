@@ -10,9 +10,12 @@ use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, T
 use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use peripherals::{ButtonsPeripherals, PulseCounterPeripherals};
+use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, Rv8803Bus, TIME_ARRAY_LENGTH};
 use shared_bus::BusManager;
 use std::{
-    env, fmt, ptr,
+    env,
+    error::Error as StdError,
+    fmt, ptr,
     sync::{
         mpsc::{self, Receiver, Sender},
         Arc, Mutex,
@@ -22,8 +25,11 @@ use std::{
 };
 
 use embedded_hal::i2c::I2c;
+use embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_Write;
+use embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_WriteRead;
 use esp_idf_hal::{
     delay::FreeRtos,
+    i2c::I2cError,
     peripheral::Peripheral,
     peripheral::{self, PeripheralRef},
     peripherals::Peripherals,
@@ -86,7 +92,6 @@ use crate::{
     core::internal::spawn,
     errors::*,
     models::{RTClock, SystemTimeBuffer},
-    sensors::rtc::rv8803::RV8803,
 };
 
 mod core;
@@ -97,7 +102,6 @@ mod http_client;
 mod http_server;
 mod models;
 mod peripherals;
-mod sensors;
 mod services;
 
 const CURRENT_YEAR: u16 = 2022;
@@ -499,13 +503,14 @@ fn main2() -> Result<()> {
     debug!("Hello, Rust from an ESP32!");
 
     //  configure peripherals
-    let (active_gpio, i2c_bus) = micromod::chip::configure()?;
+    let peripherals = peripherals::SystemPeripherals::take();
+    // let (active_gpio, i2c_bus) = micromod::chip::configure()?;
 
-    let mut led_onboard = PinDriver::output(active_gpio.led_onboard)?;
-    led_onboard.set_low()?;
+    // let mut led_onboard = PinDriver::output(active_gpio.led_onboard)?;
+    // led_onboard.set_low()?;
 
-    let i2c_proxy1 = i2c_bus.acquire_i2c();
-    let i2c_proxy2 = i2c_bus.acquire_i2c();
+    // let i2c_proxy1 = i2c_bus.acquire_i2c();
+    // let i2c_proxy2 = i2c_bus.acquire_i2c();
 
     // wifi mpsc
     let (tx, rx) = mpsc::channel::<SysLoopMsg>();
@@ -527,7 +532,7 @@ fn main2() -> Result<()> {
     let nvs_default_partition = EspDefaultNvsPartition::take()?;
 
     let mut wifi = EspWifi::new::<Modem>(
-        active_gpio.modem,
+        peripherals.modem,
         sysloop.clone(),
         Some(nvs_default_partition),
     )?;
@@ -618,8 +623,23 @@ fn main2() -> Result<()> {
         }
     }
 
-    // setup RTC sensor
-    let mut rtc = RV8803::new(i2c_proxy1)?;
+    let display_peripherals = peripherals.display_i2c;
+    let mut config = I2cConfig::new();
+    let _ = config.baudrate(Hertz::from(400 as u32));
+
+    let i2c_driver = I2cDriver::new(
+        display_peripherals.i2c,
+        display_peripherals.sda,
+        display_peripherals.scl,
+        &config,
+    )
+    .expect("Expected to initialise I2C");
+
+    // Create a shared-bus for the I2C devices that supports threads
+    let i2c_bus_manager: &'static _ = shared_bus::new_std!(I2cDriver = i2c_driver).unwrap();
+
+    let proxy1 = i2c_bus_manager.acquire_i2c();
+    let proxy2 = i2c_bus_manager.acquire_i2c();
 
     // if let Err(e) = display::display_test(i2c_driver, &ip, &dns) {
     //     println!("Display error: {:?}", e)
@@ -633,9 +653,13 @@ fn main2() -> Result<()> {
     //     toggle_led(&mut led_onboard);
     // }
 
-    unsafe {
-        let mut rtc_clock = RTClock::new();
+    // setup RTC sensor
 
+    let bus = rv8803_rs::i2c0::Bus::new(proxy1, rv8803_rs::i2c0::Address::Default);
+    let mut rtc = rv8803_rs::Rv8803::new(bus)?;
+    let mut rtc_clock = RTClock::new(proxy2)?;
+
+    unsafe {
         get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
 
         // Setup SNTP
@@ -670,7 +694,7 @@ fn main2() -> Result<()> {
             info!("loop start...");
             std::thread::sleep(StdDuration::from_millis(500));
 
-            let rtc_reading = &rtc_clock.update_time(&mut rtc)?;
+            let rtc_reading = &rtc_clock.update_time()?;
             let latest_system_time = get_system_time_with_fallback(&mut rtc, &mut rtc_clock)?;
 
             //             info!(
@@ -849,10 +873,14 @@ fn main2() -> Result<()> {
 
 type I2cDriverType<'a> = I2cDriver<'a>;
 
-unsafe fn get_system_time_with_fallback(
-    rtc: &mut RV8803,
-    rtc_clock: &mut RTClock,
-) -> Result<SystemTimeBuffer> {
+unsafe fn get_system_time_with_fallback<B, I2C>(
+    rtc: &mut Rv8803<B>,
+    rtc_clock: &mut RTClock<I2C>,
+) -> Result<SystemTimeBuffer>
+where
+    I2C: _embedded_hal_blocking_i2c_WriteRead<Error = I2cError>
+        + _embedded_hal_blocking_i2c_Write<Error = I2cError>,
+{
     let system_time = get_system_time()?;
 
     // debug!(
@@ -877,13 +905,17 @@ unsafe fn get_system_time_with_fallback(
     Ok(system_time)
 }
 
-unsafe fn update_local_from_rtc(
+unsafe fn update_local_from_rtc<B, I2C>(
     system_time: &SystemTimeBuffer,
-    rtc: &mut RV8803,
-    rtc_clock: &mut RTClock,
-) -> Result<bool> {
+    rtc: &mut Rv8803<B>,
+    rtc_clock: &mut RTClock<I2C>,
+) -> Result<bool>
+where
+    I2C: _embedded_hal_blocking_i2c_WriteRead<Error = I2cError>
+        + _embedded_hal_blocking_i2c_Write<Error = I2cError>,
+{
     // This should be from the RTC clock
-    rtc_clock.update_time(rtc)?;
+    rtc_clock.update_time()?;
     let dt = rtc_clock.datetime()?;
 
     // If the System time has not been updated due to any SNTP failure,
@@ -909,7 +941,14 @@ unsafe fn update_local_from_rtc(
     Ok(true)
 }
 
-fn update_rtc_from_local(rtc: &mut RV8803, latest_system_time: &SystemTimeBuffer) -> Result<bool> {
+fn update_rtc_from_local<I2C>(
+    rtc: &mut Rv8803<I2C>,
+    latest_system_time: &SystemTimeBuffer,
+) -> Result<bool>
+where
+    I2C: rv8803_rs::Rv8803Bus,
+    <I2C as Rv8803Bus>::Error: Sync + Send + StdError + 'static,
+{
     let weekday = latest_system_time.weekday()?;
 
     let resp = rtc.set_time(

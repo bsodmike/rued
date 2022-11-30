@@ -1,24 +1,37 @@
-use crate::sensors::rtc::rv8803::{Weekday, RV8803, TIME_ARRAY_LENGTH};
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike};
+use esp_idf_hal::i2c::I2cError;
 use log::{debug, info, warn};
-use std::{env, fmt, ptr, sync::Mutex};
+use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, TIME_ARRAY_LENGTH};
+use std::{env, error::Error as StdError, fmt, ptr, sync::Mutex};
 
 #[derive(Debug)]
-pub struct RTClock {
+pub struct RTClock<I2C> {
     datetime: Option<DateTime<Utc>>,
+    rtc: Rv8803<I2cBus<I2C>>,
 }
 
-impl RTClock {
-    pub fn new() -> Self {
-        Self { datetime: None }
+impl<I2C> RTClock<I2C>
+where
+    I2C: embedded_hal_0_2::blocking::i2c::Write<Error = I2cError>
+        + embedded_hal_0_2::blocking::i2c::WriteRead<Error = I2cError>,
+{
+    pub fn new(i2c: I2C) -> Result<Self> {
+        let address = rv8803_rs::i2c0::Address::Default;
+        let rtc = Rv8803::from_i2c0(i2c, address).unwrap();
+        // .expect("RTC module instantiated with I2c bus");
+
+        Ok(Self {
+            datetime: None,
+            rtc,
+        })
     }
 
-    pub fn update_time(&mut self, rtc: &mut RV8803) -> Result<RTCReading> {
+    pub fn update_time(&mut self) -> Result<RTCReading> {
         let mut time = [0_u8; TIME_ARRAY_LENGTH];
 
         // Fetch time from RTC.
-        let update = rtc.update_time(&mut time)?;
+        let update = self.rtc.update_time(&mut time)?;
         if !update {
             warn!("RTC: Failed reading latest time");
             println!("{:?}", time);
@@ -153,5 +166,78 @@ impl SystemTimeBuffer {
 
     pub fn datetime(&self) -> Result<DateTime<Utc>> {
         Ok(self.datetime)
+    }
+}
+
+// RTC Extra
+#[derive(Debug, Clone, Copy)]
+pub enum Weekday {
+    Sunday = 1,
+    Monday = 2,
+    Tuesday = 4,
+    Wednesday = 8,
+    Thursday = 16,
+    Friday = 32,
+    Saturday = 64,
+}
+
+impl fmt::Display for Weekday {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_str())
+    }
+}
+
+impl Weekday {
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            Self::Sunday => "Sunday",
+            Self::Monday => "Monday",
+            Self::Tuesday => "Tuesday",
+            Self::Wednesday => "Wednesday",
+            Self::Thursday => "Thursday",
+            Self::Friday => "Friday",
+            Self::Saturday => "Saturday",
+        }
+    }
+
+    // Returns the first 3-letters of the day of the week
+    pub fn to_short(&self) -> Result<String> {
+        let day = self.to_str();
+        let result: String = day.chars().take(3).collect();
+
+        Ok(result)
+    }
+}
+
+impl From<u8> for Weekday {
+    fn from(day: u8) -> Self {
+        match day {
+            1 => Self::Sunday,
+            2 => Self::Monday,
+            4 => Self::Tuesday,
+            8 => Self::Wednesday,
+            16 => Self::Thursday,
+            32 => Self::Friday,
+            64 => Self::Saturday,
+            _ => Self::Sunday,
+        }
+    }
+}
+
+impl From<chrono::Weekday> for Weekday {
+    fn from(day: chrono::Weekday) -> Self {
+        match day {
+            chrono::Weekday::Sun => Self::Sunday,
+            chrono::Weekday::Mon => Self::Monday,
+            chrono::Weekday::Tue => Self::Tuesday,
+            chrono::Weekday::Wed => Self::Wednesday,
+            chrono::Weekday::Thu => Self::Thursday,
+            chrono::Weekday::Fri => Self::Friday,
+            chrono::Weekday::Sat => Self::Saturday,
+        }
     }
 }
