@@ -85,9 +85,6 @@ use esp_idf_sys::esp;
 // use ruwm::spawn;
 // use ruwm::wm::WaterMeterState;
 
-extern crate rued_esp32 as blinky;
-use blinky::micromod;
-
 use crate::{
     core::internal::spawn,
     errors::*,
