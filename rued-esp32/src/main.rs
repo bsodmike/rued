@@ -24,24 +24,12 @@ use std::{
     time::Duration as StdDuration,
 };
 
-use embedded_hal::i2c::I2c;
 use embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_Write;
 use embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_WriteRead;
+use esp_idf_hal::{delay::FreeRtos, i2c::I2cError, peripheral::Peripheral};
 use esp_idf_hal::{
-    delay::FreeRtos,
-    i2c::I2cError,
-    peripheral::Peripheral,
-    peripheral::{self, PeripheralRef},
-    peripherals::Peripherals,
-};
-use esp_idf_hal::{
-    gpio::PinDriver,
     i2c::{config::Config as I2cConfig, I2cDriver, I2C0},
     units::Hertz,
-};
-use esp_idf_hal::{
-    task::executor::FreeRtosMonitor,
-    timer::{Timer, TimerConfig, TimerDriver, TIMER00},
 };
 use esp_idf_svc::{
     log::EspLogger,
@@ -88,7 +76,12 @@ use esp_idf_sys::esp;
 use crate::{
     core::internal::spawn,
     errors::*,
-    models::{RTClock, SystemTimeBuffer},
+    models::{
+        rtc_external::{
+            get_system_time_with_fallback, update_local_from_rtc, update_rtc_from_local,
+        },
+        RTClock, SystemTimeBuffer,
+    },
 };
 
 mod core;
@@ -97,7 +90,7 @@ mod errors;
 mod http;
 mod http_client;
 mod http_server;
-mod models;
+pub(crate) mod models;
 mod peripherals;
 mod services;
 
@@ -301,6 +294,11 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         }
         _ => info!("Received other IPEvent"),
     })?;
+
+    // RTC module (External)
+
+    let mut rtc_clock: RTClock<I2cProxy<Mutex<I2cDriver>>> = RTClock::new(i2c0_bus_manager)?;
+    let mut rtc = rtc_clock.rtc()?;
 
     // Httpd
 
@@ -867,104 +865,6 @@ fn main2() -> Result<()> {
     }
 }
 
-type I2cDriverType<'a> = I2cDriver<'a>;
-
-unsafe fn get_system_time_with_fallback<I2C>(
-    rtc_clock: &mut RTClock<I2C>,
-) -> Result<SystemTimeBuffer>
-where
-    I2C: _embedded_hal_blocking_i2c_WriteRead<Error = I2cError>
-        + _embedded_hal_blocking_i2c_Write<Error = I2cError>,
-{
-    let mut rtc = rtc_clock.rtc()?;
-    let system_time = get_system_time()?;
-
-    // debug!(
-    //     "System time Year: ({} / {}) / Current Year {}",
-    //     &system_time.year,
-    //     &system_time.to_rfc3339()?,
-    //     CURRENT_YEAR
-    // );
-    if system_time.year >= CURRENT_YEAR {
-        // Update RTC clock from System time due to SNTP update
-
-        // FIXME: Disabled as this is done via the callback flag.
-        // update_rtc_from_local(rtc, &system_time)?;
-    } else {
-        // When SNTP is unavailable, this will be called once where the system
-        // clock will be updated from RTC and the conditional above (that compares the years), will prevent this from being called further.
-        //
-        // It's better to re-establish a valid SNTP update.
-        update_local_from_rtc(&system_time, rtc_clock)?;
-    }
-
-    Ok(system_time)
-}
-
-unsafe fn update_local_from_rtc<I2C>(
-    system_time: &SystemTimeBuffer,
-    rtc_clock: &mut RTClock<I2C>,
-) -> Result<bool>
-where
-    I2C: _embedded_hal_blocking_i2c_WriteRead<Error = I2cError>
-        + _embedded_hal_blocking_i2c_Write<Error = I2cError>,
-{
-    // This should be from the RTC clock
-    rtc_clock.update_time()?;
-    let dt = rtc_clock.datetime()?;
-
-    // If the System time has not been updated due to any SNTP failure,
-    // update the System time from the RTC clock.
-    let tz = timezone {
-        tz_minuteswest: 0,
-        tz_dsttime: 0,
-    };
-
-    let tv_sec = dt.timestamp() as i32;
-    let tv_usec = dt.timestamp_subsec_micros() as i32;
-    let tm = timeval { tv_sec, tv_usec };
-
-    settimeofday(&tm, &tz);
-    info!(
-        "Updated System Clock from RTC time: {} / sec: {}, usec: {}",
-        system_time.to_rfc3339()?,
-        tv_sec,
-        tv_usec
-    );
-    info!("timestamp: {}", dt.timestamp());
-
-    Ok(true)
-}
-
-fn update_rtc_from_local<I2C>(
-    rtc_clock: &mut RTClock<I2C>,
-    latest_system_time: &SystemTimeBuffer,
-) -> Result<bool>
-where
-    I2C: _embedded_hal_blocking_i2c_WriteRead<Error = I2cError>
-        + _embedded_hal_blocking_i2c_Write<Error = I2cError>,
-{
-    let mut rtc = rtc_clock.rtc()?;
-    let weekday = latest_system_time.weekday()?;
-
-    let resp = rtc.set_time(
-        latest_system_time.seconds,
-        latest_system_time.minutes,
-        latest_system_time.hours,
-        weekday.value(),
-        latest_system_time.date,
-        latest_system_time.month,
-        latest_system_time.year,
-    )?;
-
-    info!(
-        "Updated RTC Clock from local time: {}",
-        latest_system_time.to_rfc3339()?
-    );
-
-    Ok(resp)
-}
-
 /// Configure SNTP
 /// - <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/system_time.html#sntp-time-synchronization>
 /// - <https://wokwi.com/projects/342312626601067091>
@@ -972,34 +872,6 @@ where
 
 //     Ok((sntp, servers))
 // }
-
-unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
-    let timer: *mut time_t = ptr::null_mut();
-    let timestamp = esp_idf_sys::time(timer);
-
-    let naive_dt_opt = NaiveDateTime::from_timestamp_opt(timestamp as i64, 0);
-    let naivedatetime_utc = if let Some(value) = naive_dt_opt {
-        value
-    } else {
-        return Err(Error::msg(
-            "Unable to unwrap NaiveDateTime, when attempting to parse UNIX timestamp",
-        ));
-    };
-
-    let datetime_utc = DateTime::<Utc>::from_utc(naivedatetime_utc, UTC_OFFSET_CHRONO);
-
-    let buf = SystemTimeBuffer {
-        date: datetime_utc.day() as u8,
-        year: datetime_utc.year() as u16,
-        hours: datetime_utc.hour() as u8,
-        minutes: datetime_utc.minute() as u8,
-        seconds: datetime_utc.second() as u8,
-        month: datetime_utc.month() as u8,
-        datetime: datetime_utc,
-    };
-
-    Ok(buf)
-}
 
 fn toggle_led<P>(driver: &mut P)
 where

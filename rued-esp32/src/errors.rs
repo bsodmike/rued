@@ -10,6 +10,7 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
 pub enum InitError {
+    AnyhowError(anyhow::Error),
     EspError(EspError),
     SpawnError(SpawnError),
 }
@@ -29,6 +30,12 @@ impl From<EspIOError> for InitError {
 impl From<SpawnError> for InitError {
     fn from(e: SpawnError) -> Self {
         Self::SpawnError(e)
+    }
+}
+
+impl From<anyhow::Error> for InitError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::AnyhowError(e)
     }
 }
 

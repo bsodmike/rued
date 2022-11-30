@@ -6,6 +6,8 @@ use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, TIME_ARRAY_LENGTH};
 use shared_bus::{BusManager, I2cProxy};
 use std::{env, error::Error as StdError, fmt, marker::PhantomData, ptr, sync::Mutex};
 
+use self::rtc_external::Weekday;
+
 pub struct RTClock<'a, I2C> {
     datetime: Option<DateTime<Utc>>,
     bus_manager: &'a BusManager<Mutex<I2cDriver<'a>>>,
@@ -178,75 +180,213 @@ impl SystemTimeBuffer {
     }
 }
 
-// RTC Extra
-#[derive(Debug, Clone, Copy)]
-pub enum Weekday {
-    Sunday = 1,
-    Monday = 2,
-    Tuesday = 4,
-    Wednesday = 8,
-    Thursday = 16,
-    Friday = 32,
-    Saturday = 64,
-}
+pub(crate) mod rtc_external {
+    use super::*;
 
-impl fmt::Display for Weekday {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_str())
+    use crate::UTC_OFFSET_CHRONO;
+    use crate::{CURRENT_YEAR, TIME_ARRAY_LENGTH};
+    use chrono::{offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
+    use embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_Write;
+    use embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_WriteRead;
+    use esp_idf_sys::timezone;
+    use esp_idf_sys::{settimeofday, time_t, timeval};
+
+    type I2cDriverType<'a> = I2cDriver<'a>;
+
+    pub(crate) unsafe fn get_system_time_with_fallback<I2C>(
+        rtc_clock: &mut RTClock<I2C>,
+    ) -> Result<SystemTimeBuffer>
+    where
+        I2C: _embedded_hal_blocking_i2c_WriteRead<Error = I2cError>
+            + _embedded_hal_blocking_i2c_Write<Error = I2cError>,
+    {
+        let mut rtc = rtc_clock.rtc()?;
+        let system_time = get_system_time()?;
+
+        // debug!(
+        //     "System time Year: ({} / {}) / Current Year {}",
+        //     &system_time.year,
+        //     &system_time.to_rfc3339()?,
+        //     CURRENT_YEAR
+        // );
+        if system_time.year >= CURRENT_YEAR {
+            // Update RTC clock from System time due to SNTP update
+
+            // FIXME: Disabled as this is done via the callback flag.
+            // update_rtc_from_local(rtc, &system_time)?;
+        } else {
+            // When SNTP is unavailable, this will be called once where the system
+            // clock will be updated from RTC and the conditional above (that compares the years), will prevent this from being called further.
+            //
+            // It's better to re-establish a valid SNTP update.
+            update_local_from_rtc(&system_time, rtc_clock)?;
+        }
+
+        Ok(system_time)
     }
-}
 
-impl Weekday {
-    pub fn value(&self) -> u8 {
-        *self as u8
+    pub(crate) unsafe fn update_local_from_rtc<I2C>(
+        system_time: &SystemTimeBuffer,
+        rtc_clock: &mut RTClock<I2C>,
+    ) -> Result<bool>
+    where
+        I2C: _embedded_hal_blocking_i2c_WriteRead<Error = I2cError>
+            + _embedded_hal_blocking_i2c_Write<Error = I2cError>,
+    {
+        // This should be from the RTC clock
+        rtc_clock.update_time()?;
+        let dt = rtc_clock.datetime()?;
+
+        // If the System time has not been updated due to any SNTP failure,
+        // update the System time from the RTC clock.
+        let tz = timezone {
+            tz_minuteswest: 0,
+            tz_dsttime: 0,
+        };
+
+        let tv_sec = dt.timestamp() as i32;
+        let tv_usec = dt.timestamp_subsec_micros() as i32;
+        let tm = timeval { tv_sec, tv_usec };
+
+        settimeofday(&tm, &tz);
+        info!(
+            "Updated System Clock from RTC time: {} / sec: {}, usec: {}",
+            system_time.to_rfc3339()?,
+            tv_sec,
+            tv_usec
+        );
+        info!("timestamp: {}", dt.timestamp());
+
+        Ok(true)
     }
 
-    pub fn to_str(&self) -> &'static str {
-        match self {
-            Self::Sunday => "Sunday",
-            Self::Monday => "Monday",
-            Self::Tuesday => "Tuesday",
-            Self::Wednesday => "Wednesday",
-            Self::Thursday => "Thursday",
-            Self::Friday => "Friday",
-            Self::Saturday => "Saturday",
+    pub(crate) unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
+        let timer: *mut time_t = ptr::null_mut();
+        let timestamp = esp_idf_sys::time(timer);
+
+        let naive_dt_opt = NaiveDateTime::from_timestamp_opt(timestamp as i64, 0);
+        let naivedatetime_utc = if let Some(value) = naive_dt_opt {
+            value
+        } else {
+            return Err(Error::msg(
+                "Unable to unwrap NaiveDateTime, when attempting to parse UNIX timestamp",
+            ));
+        };
+
+        let datetime_utc = DateTime::<Utc>::from_utc(naivedatetime_utc, UTC_OFFSET_CHRONO);
+
+        let buf = SystemTimeBuffer {
+            date: datetime_utc.day() as u8,
+            year: datetime_utc.year() as u16,
+            hours: datetime_utc.hour() as u8,
+            minutes: datetime_utc.minute() as u8,
+            seconds: datetime_utc.second() as u8,
+            month: datetime_utc.month() as u8,
+            datetime: datetime_utc,
+        };
+
+        Ok(buf)
+    }
+
+    pub(crate) fn update_rtc_from_local<I2C>(
+        rtc_clock: &mut RTClock<I2C>,
+        latest_system_time: &SystemTimeBuffer,
+    ) -> Result<bool>
+    where
+        I2C: _embedded_hal_blocking_i2c_WriteRead<Error = I2cError>
+            + _embedded_hal_blocking_i2c_Write<Error = I2cError>,
+    {
+        let mut rtc = rtc_clock.rtc()?;
+        let weekday = latest_system_time.weekday()?;
+
+        let resp = rtc.set_time(
+            latest_system_time.seconds,
+            latest_system_time.minutes,
+            latest_system_time.hours,
+            weekday.value(),
+            latest_system_time.date,
+            latest_system_time.month,
+            latest_system_time.year,
+        )?;
+
+        info!(
+            "Updated RTC Clock from local time: {}",
+            latest_system_time.to_rfc3339()?
+        );
+
+        Ok(resp)
+    }
+
+    // RTC Extra
+    #[derive(Debug, Clone, Copy)]
+    pub enum Weekday {
+        Sunday = 1,
+        Monday = 2,
+        Tuesday = 4,
+        Wednesday = 8,
+        Thursday = 16,
+        Friday = 32,
+        Saturday = 64,
+    }
+
+    impl fmt::Display for Weekday {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{}", self.to_str())
         }
     }
 
-    // Returns the first 3-letters of the day of the week
-    pub fn to_short(&self) -> Result<String> {
-        let day = self.to_str();
-        let result: String = day.chars().take(3).collect();
+    impl Weekday {
+        pub fn value(&self) -> u8 {
+            *self as u8
+        }
 
-        Ok(result)
-    }
-}
+        pub fn to_str(&self) -> &'static str {
+            match self {
+                Self::Sunday => "Sunday",
+                Self::Monday => "Monday",
+                Self::Tuesday => "Tuesday",
+                Self::Wednesday => "Wednesday",
+                Self::Thursday => "Thursday",
+                Self::Friday => "Friday",
+                Self::Saturday => "Saturday",
+            }
+        }
 
-impl From<u8> for Weekday {
-    fn from(day: u8) -> Self {
-        match day {
-            1 => Self::Sunday,
-            2 => Self::Monday,
-            4 => Self::Tuesday,
-            8 => Self::Wednesday,
-            16 => Self::Thursday,
-            32 => Self::Friday,
-            64 => Self::Saturday,
-            _ => Self::Sunday,
+        // Returns the first 3-letters of the day of the week
+        pub fn to_short(&self) -> Result<String> {
+            let day = self.to_str();
+            let result: String = day.chars().take(3).collect();
+
+            Ok(result)
         }
     }
-}
 
-impl From<chrono::Weekday> for Weekday {
-    fn from(day: chrono::Weekday) -> Self {
-        match day {
-            chrono::Weekday::Sun => Self::Sunday,
-            chrono::Weekday::Mon => Self::Monday,
-            chrono::Weekday::Tue => Self::Tuesday,
-            chrono::Weekday::Wed => Self::Wednesday,
-            chrono::Weekday::Thu => Self::Thursday,
-            chrono::Weekday::Fri => Self::Friday,
-            chrono::Weekday::Sat => Self::Saturday,
+    impl From<u8> for Weekday {
+        fn from(day: u8) -> Self {
+            match day {
+                1 => Self::Sunday,
+                2 => Self::Monday,
+                4 => Self::Tuesday,
+                8 => Self::Wednesday,
+                16 => Self::Thursday,
+                32 => Self::Friday,
+                64 => Self::Saturday,
+                _ => Self::Sunday,
+            }
+        }
+    }
+
+    impl From<chrono::Weekday> for Weekday {
+        fn from(day: chrono::Weekday) -> Self {
+            match day {
+                chrono::Weekday::Sun => Self::Sunday,
+                chrono::Weekday::Mon => Self::Monday,
+                chrono::Weekday::Tue => Self::Tuesday,
+                chrono::Weekday::Wed => Self::Wednesday,
+                chrono::Weekday::Thu => Self::Thursday,
+                chrono::Weekday::Fri => Self::Friday,
+                chrono::Weekday::Sat => Self::Saturday,
+            }
         }
     }
 }
