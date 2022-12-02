@@ -226,8 +226,6 @@ pub fn button<'d, P: InputPin + OutputPin>(
     subscribe_pin(pin, move || notification.notify())
 }
 
-// embedded_hal::i2c::I2c<embedded_hal::i2c::SevenBitAddress
-
 #[cfg(feature = "display-i2c")]
 pub fn display(
     i2c: impl embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_Write
@@ -316,7 +314,12 @@ pub fn display(
         let builder =
             mipidsi::Builder::st7789(display_interface_spi::SPIInterfaceNoCS::new(spi, dc));
 
-        builder.init(&mut delay::Ets, Some(rst)).unwrap()
+        builder
+            .with_display_size(240, 320)
+            .with_invert_vertical_refresh(true)
+            .with_orientation(mipidsi::Orientation::Portrait(true))
+            .init(&mut delay::Ets, Some(rst))
+            .unwrap()
     };
 
     #[cfg(feature = "ssd1351")]

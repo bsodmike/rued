@@ -341,25 +341,25 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         &config,
     )?;
 
-    println!("Spawning PWM threads");
+    // println!("Spawning PWM threads");
 
-    let thread0 = std::thread::Builder::new()
-        .stack_size(7000)
-        .spawn(move || cycle_duty(channel0, "PWM 0"))?;
-    let thread1 = std::thread::Builder::new()
-        .stack_size(7000)
-        .spawn(move || cycle_duty(channel1, "PWM 1"))?;
-    let thread2 = std::thread::Builder::new()
-        .stack_size(7000)
-        .spawn(move || cycle_duty(channel2, "PWM 2"))?;
+    // let thread0 = std::thread::Builder::new()
+    //     .stack_size(7000)
+    //     .spawn(move || cycle_duty(channel0, "PWM 0"))?;
+    // let thread1 = std::thread::Builder::new()
+    //     .stack_size(7000)
+    //     .spawn(move || cycle_duty(channel1, "PWM 1"))?;
+    // let thread2 = std::thread::Builder::new()
+    //     .stack_size(7000)
+    //     .spawn(move || cycle_duty(channel2, "PWM 2"))?;
 
-    println!("Waiting for PWM threads");
+    // println!("Waiting for PWM threads");
 
-    thread0.join().unwrap()?;
-    thread1.join().unwrap()?;
-    thread2.join().unwrap()?;
+    // thread0.join().unwrap()?;
+    // thread1.join().unwrap()?;
+    // thread2.join().unwrap()?;
 
-    println!("Joined PWM threads");
+    // println!("Joined PWM threads");
 
     // High-prio tasks
 
@@ -495,13 +495,13 @@ where
     let duty_cycle = max_duty / 2;
 
     pwm.set_duty(duty_cycle);
-    info!(
-        "PWM({}): max_duty: {} / set_duty: {}",
-        log_prefix, &max_duty, &duty_cycle
-    );
     pwm.enable();
 
-    loop {
+    for cycle in 0..60 {
+        info!(
+            "[{}] PWM({}): max_duty: {} / set_duty: {}",
+            cycle, log_prefix, &max_duty, &duty_cycle
+        );
         FreeRtos::delay_ms(1000);
     }
 

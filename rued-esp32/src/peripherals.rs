@@ -48,10 +48,10 @@ impl
     SystemPeripherals<
         Gpio33,
         ADC1,
-        Gpio36,
+        Gpio2,
         Gpio14,
-        Gpio27,
-        Gpio4,
+        Gpio32,
+        Gpio36,
         SPI2,
         I2C0,
         TIMER0,
@@ -79,24 +79,24 @@ impl
             },
             battery: BatteryPeripherals {
                 power: peripherals.pins.gpio35.into(), // A1
-                voltage: peripherals.pins.gpio36,
+                voltage: peripherals.pins.gpio2,
                 adc: peripherals.adc1,
             },
             buttons: ButtonsPeripherals {
                 button1: peripherals.pins.gpio14, // D0
-                button2: peripherals.pins.gpio27, // D1
-                button3: peripherals.pins.gpio4,  // I2C_INT
+                button2: peripherals.pins.gpio32, //
+                button3: peripherals.pins.gpio36, // G5
             },
             display: DisplaySpiPeripherals {
                 control: DisplayControlPeripherals {
-                    backlight: Some(peripherals.pins.gpio32.into()), // G5
-                    dc: peripherals.pins.gpio2.into(),
-                    rst: peripherals.pins.gpio19.into(),
+                    backlight: Some(peripherals.pins.gpio16.into()), // G4
+                    dc: peripherals.pins.gpio27.into(),              // D1
+                    rst: peripherals.pins.gpio4.into(),              // I2C_INT
                 },
                 spi: peripherals.spi2,
-                sclk: peripherals.pins.gpio18.into(), // SCK
-                sdo: peripherals.pins.gpio23.into(),  // COPI
-                cs: Some(peripherals.pins.gpio5.into()),
+                sclk: peripherals.pins.gpio18.into(),    // SCK
+                sdo: peripherals.pins.gpio23.into(),     // COPI
+                cs: Some(peripherals.pins.gpio5.into()), // CS
             },
             modem: peripherals.modem,
             i2c0: I2c0Peripherals {
