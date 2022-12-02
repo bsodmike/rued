@@ -308,7 +308,7 @@ pub fn display(
         let rst = PinDriver::output(peripherals.control.rst)?;
 
         #[cfg(feature = "ili9342")]
-        let builder = mipidsi::Builder::ili9342c_rgb565(
+        let builder = mipidsi::Builder::ili9342c_rgb666(
             display_interface_spi::SPIInterfaceNoCS::new(spi, dc),
         );
 
