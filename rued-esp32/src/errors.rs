@@ -1,5 +1,6 @@
 use std::error::Error as StdError;
 use std::fmt;
+use std::io::Error as IoError;
 
 use edge_executor::SpawnError;
 use esp_idf_hal::i2c::I2cError;
@@ -8,11 +9,13 @@ use esp_idf_sys::EspError;
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum InitError {
     AnyhowError(anyhow::Error),
     EspError(EspError),
     SpawnError(SpawnError),
+    IoError(IoError),
 }
 
 impl From<EspError> for InitError {
@@ -39,6 +42,12 @@ impl From<anyhow::Error> for InitError {
     }
 }
 
+impl From<IoError> for InitError {
+    fn from(e: IoError) -> Self {
+        Self::IoError(e)
+    }
+}
+
 // OTHERS
 
 #[derive(Debug)]
@@ -54,6 +63,7 @@ impl BlanketError {
         }
     }
 
+    #[allow(dead_code)]
     /// Convert an `Error` back into the underlying boxed trait object.
     pub fn into_inner(self) -> BoxError {
         self.inner
@@ -119,6 +129,7 @@ impl CustomError {
         self.0 = Some(error.into());
     }
 
+    #[allow(dead_code)]
     /// Convert an `Error` back into the underlying boxed trait object.
     pub fn into_inner(self) -> BoxError {
         self.0.expect("Unwrapping option for CustomError")
@@ -137,8 +148,7 @@ impl fmt::Display for CustomError {
 impl StdError for CustomError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         Some(
-            &*self
-                .0
+            self.0
                 .as_deref()
                 .expect("Unwrapping option for CustomError"),
         )

@@ -56,10 +56,7 @@ where
             weekday: time[4],
             date: time[5],
             month: time[6],
-            year: format!("20{}", time[7])
-                .to_string()
-                .parse::<u32>()
-                .unwrap_or_default(),
+            year: format!("20{}", time[7]).parse::<u32>().unwrap_or_default(),
         };
 
         let naivedatetime_utc = NaiveDate::from_ymd_opt(
@@ -331,7 +328,7 @@ pub(crate) mod rtc_external {
 
     impl fmt::Display for Weekday {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "{}", self.to_str())
+            write!(f, "{}", self.as_str())
         }
     }
 
@@ -340,7 +337,7 @@ pub(crate) mod rtc_external {
             *self as u8
         }
 
-        pub fn to_str(&self) -> &'static str {
+        pub fn as_str(&self) -> &'static str {
             match self {
                 Self::Sunday => "Sunday",
                 Self::Monday => "Monday",
@@ -353,8 +350,8 @@ pub(crate) mod rtc_external {
         }
 
         // Returns the first 3-letters of the day of the week
-        pub fn to_short(&self) -> Result<String> {
-            let day = self.to_str();
+        pub fn as_short(&self) -> Result<String> {
+            let day = self.as_str();
             let result: String = day.chars().take(3).collect();
 
             Ok(result)

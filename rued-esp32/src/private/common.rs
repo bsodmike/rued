@@ -7,4 +7,5 @@
 //         })
 //     }
 // }
+#[allow(dead_code)]
 pub struct Newtype<T>(pub T);

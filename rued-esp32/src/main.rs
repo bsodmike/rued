@@ -24,12 +24,18 @@ use std::{
     time::Duration as StdDuration,
 };
 
-use embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_Write;
 use embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_WriteRead;
-use esp_idf_hal::{delay::FreeRtos, i2c::I2cError, peripheral::Peripheral};
+use embedded_hal_0_2::{prelude::_embedded_hal_blocking_i2c_Write, PwmPin};
+use esp_idf_hal::{
+    delay::FreeRtos,
+    i2c::I2cError,
+    ledc::{LedcDriver, LedcTimerDriver},
+    peripheral::Peripheral,
+};
 use esp_idf_hal::{
     i2c::{config::Config as I2cConfig, I2cDriver, I2C0},
-    units::Hertz,
+    ledc::config::TimerConfig,
+    units::{FromValueType, Hertz},
 };
 use esp_idf_svc::{
     log::EspLogger,
@@ -106,6 +112,8 @@ static DISABLE_SNTP: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 // false: HTTPd is enabled
 static DISABLE_HTTPD: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
+///
+/// # Safety
 pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut timeval) {
     let naive_dt_opt = NaiveDateTime::from_timestamp_opt((*tv).tv_sec as i64, 0);
     let naive_dt = if let Some(value) = naive_dt_opt {
@@ -228,7 +236,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     let i2c0_peripherals = peripherals.i2c0;
     let mut config = I2cConfig::new();
-    let _ = config.baudrate(Hertz::from(400 as u32));
+    let _ = config.baudrate(Hertz::from(400_u32));
 
     let i2c0_driver = I2cDriver::new(
         i2c0_peripherals.i2c,
@@ -263,7 +271,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     let (mut wifi, wifi_notif) = services::wifi(
         peripherals.modem,
         sysloop.clone(),
-        Some(nvs_default_partition.clone()),
+        Some(nvs_default_partition),
         AuthMethod::default(),
     )?;
 
@@ -307,6 +315,51 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     // Mqtt
 
     // let (mqtt_topic_prefix, mqtt_client, mqtt_conn) = services::mqtt()?;
+
+    // PWM
+    println!("Setting up PWM output channels");
+
+    let config = TimerConfig::new().frequency(250.Hz().into());
+    let timer = Arc::new(LedcTimerDriver::new(peripherals.timer0.0, &config)?);
+
+    let channel0 = LedcDriver::new(
+        peripherals.ledc0.chan,
+        timer.clone(),
+        peripherals.ledc0.pin,
+        &config,
+    )?;
+    let channel1 = LedcDriver::new(
+        peripherals.ledc1.chan,
+        timer.clone(),
+        peripherals.ledc1.pin,
+        &config,
+    )?;
+    let channel2 = LedcDriver::new(
+        peripherals.ledc2.chan,
+        timer,
+        peripherals.ledc2.pin,
+        &config,
+    )?;
+
+    println!("Spawning PWM threads");
+
+    let thread0 = std::thread::Builder::new()
+        .stack_size(7000)
+        .spawn(move || cycle_duty(channel0, "PWM 0"))?;
+    let thread1 = std::thread::Builder::new()
+        .stack_size(7000)
+        .spawn(move || cycle_duty(channel1, "PWM 1"))?;
+    let thread2 = std::thread::Builder::new()
+        .stack_size(7000)
+        .spawn(move || cycle_duty(channel2, "PWM 2"))?;
+
+    println!("Waiting for PWM threads");
+
+    thread0.join().unwrap()?;
+    thread1.join().unwrap()?;
+    thread2.join().unwrap()?;
+
+    println!("Joined PWM threads");
 
     // High-prio tasks
 
@@ -430,6 +483,27 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     // low_prio_execution.join().unwrap();
 
     log::info!("Finished execution");
+
+    Ok(())
+}
+
+fn cycle_duty<P>(mut pwm: P, log_prefix: &str) -> Result<()>
+where
+    P: PwmPin<Duty = u32>,
+{
+    let max_duty = pwm.get_max_duty();
+    let duty_cycle = max_duty / 2;
+
+    pwm.set_duty(duty_cycle);
+    info!(
+        "PWM({}): max_duty: {} / set_duty: {}",
+        log_prefix, &max_duty, &duty_cycle
+    );
+    pwm.enable();
+
+    loop {
+        FreeRtos::delay_ms(1000);
+    }
 
     Ok(())
 }
