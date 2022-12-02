@@ -52,7 +52,7 @@ impl
         Gpio14,
         Gpio27,
         Gpio4,
-        SPI1,
+        SPI2,
         I2C0,
         TIMER0,
         CHANNEL0,
@@ -93,7 +93,7 @@ impl
                     dc: peripherals.pins.gpio2.into(),
                     rst: peripherals.pins.gpio19.into(),
                 },
-                spi: peripherals.spi1,
+                spi: peripherals.spi2,
                 sclk: peripherals.pins.gpio18.into(), // SCK
                 sdo: peripherals.pins.gpio23.into(),  // COPI
                 cs: Some(peripherals.pins.gpio5.into()),
