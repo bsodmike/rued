@@ -6,6 +6,7 @@ pub mod inspector;
 pub mod keepalive;
 pub mod mqtt;
 pub mod pulse_counter;
+pub mod pwm;
 pub mod quit;
 pub mod screen;
 pub mod spawn;

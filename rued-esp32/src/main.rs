@@ -341,16 +341,15 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         &config,
     )?;
 
-    let mut drivers = vec![channel0, channel1, channel2];
+    // let mut drivers = vec![channel0, channel1, channel2];
 
-    for mut pwm in drivers.into_iter() {
-        pwm.enable();
+    // for mut pwm in drivers.into_iter() {
+    //     let max_duty = pwm.get_max_duty();
+    //     let duty_cycle = max_duty / 2;
 
-        let max_duty = pwm.get_max_duty();
-        let duty_cycle = max_duty / 2;
-
-        pwm.set_duty(duty_cycle);
-    }
+    //     pwm.set_duty(duty_cycle);
+    //     pwm.enable();
+    // }
 
     // println!("Spawning PWM threads");
 
@@ -395,6 +394,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         )?,
         display,
         (wifi, wifi_notif),
+        (channel0, channel1, channel2),
     )?;
 
     // spawn::high_prio(

@@ -1,8 +1,8 @@
 use core::fmt::Debug;
 
 use embedded_graphics::pixelcolor::BinaryColor;
-use embedded_hal_0_2::adc;
 use embedded_hal_0_2::digital::v2::{InputPin, OutputPin};
+use embedded_hal_0_2::{adc, PwmPin};
 
 use embedded_svc::mqtt::client::asynch::{Client, Connection, Publish};
 use embedded_svc::wifi::Wifi as WifiTrait;
@@ -27,6 +27,11 @@ pub fn high_prio<'a, const C: usize, M, D>(
     button1_pin: impl InputPin<Error = impl Debug + 'a> + 'a,
     display: D,
     wifi: (EspWifi<'a>, impl Receiver<Data = WifiEvent> + 'a),
+    pwm: (
+        impl PwmPin<Duty = u32> + 'a,
+        impl PwmPin<Duty = u32> + 'a,
+        impl PwmPin<Duty = u32> + 'a,
+    ),
 ) -> Result<(), SpawnError>
 where
     M: Monitor + Default,
@@ -42,7 +47,8 @@ where
         .spawn_local_collect(super::keepalive::process(), tasks)?
         .spawn_local_collect(screen::process(), tasks)?
         .spawn_local_collect(screen::run_draw(display), tasks)?
-        .spawn_local_collect(super::wifi::process(wifi.0, wifi.1), tasks)?;
+        .spawn_local_collect(super::wifi::process(wifi.0, wifi.1), tasks)?
+        .spawn_local_collect(super::pwm::process(pwm), tasks)?;
 
     Ok(())
 }
