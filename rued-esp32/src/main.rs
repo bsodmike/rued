@@ -341,6 +341,17 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         &config,
     )?;
 
+    let mut drivers = vec![channel0, channel1, channel2];
+
+    for mut pwm in drivers.into_iter() {
+        pwm.enable();
+
+        let max_duty = pwm.get_max_duty();
+        let duty_cycle = max_duty / 2;
+
+        pwm.set_duty(duty_cycle);
+    }
+
     // println!("Spawning PWM threads");
 
     // let thread0 = std::thread::Builder::new()
