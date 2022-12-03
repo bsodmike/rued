@@ -289,43 +289,43 @@ async fn wait_change() -> ScreenState {
     })
 }
 
-fn draw_text<T>(target: &mut T, text: &str, top: bool) -> Result<(), T::Error>
-where
-    T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>
-        + Flushable<Color = crate::core::internal::screen::DisplayColor>,
-    // FIXME needed to call target.size()
-    // + OriginDimensions,
-    // + Flushable,
-    // T::Error: Debug,
-{
-    // Size { width, height } = target.size();
-    // let position = Point::new(width as i32 / 2, height as i32 / 2);
-    let mut position: Point;
-    if top {
-        position = Point::new(0, 0)
-    } else {
-        position = Point::new(0, 16)
-    }
+// fn draw_text<T>(target: &mut T, text: &str, top: bool) -> Result<(), T::Error>
+// where
+//     T: DrawTarget<Color = crate::core::internal::screen::DisplayColor>
+//         + Flushable<Color = crate::core::internal::screen::DisplayColor>,
+//     // FIXME needed to call target.size()
+//     // + OriginDimensions,
+//     // + Flushable,
+//     // T::Error: Debug,
+// {
+//     // Size { width, height } = target.size();
+//     // let position = Point::new(width as i32 / 2, height as i32 / 2);
+//     let mut position: Point;
+//     if top {
+//         position = Point::new(0, 0)
+//     } else {
+//         position = Point::new(0, 16)
+//     }
 
-    #[cfg(feature = "display-i2c")]
-    target.clear(BinaryColor::Off)?;
-    #[cfg(not(feature = "display-i2c"))]
-    target.clear(Color::Black)?;
+//     #[cfg(feature = "display-i2c")]
+//     target.clear(BinaryColor::Off)?;
+//     #[cfg(not(feature = "display-i2c"))]
+//     target.clear(Color::Black)?;
 
-    log::info!("DRAWING text: {}", &text);
-    util::text(
-        &FONT_9X15,
-        target,
-        position,
-        text,
-        DISPLAY_COLOR_WHITE,
-        None,
-    )?;
+//     log::info!("DRAWING text: {}", &text);
+//     util::text(
+//         &FONT_9X15,
+//         target,
+//         position,
+//         text,
+//         DISPLAY_COLOR_WHITE,
+//         None,
+//     )?;
 
-    target.flush()?;
+//     target.flush()?;
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 fn draw<D>(mut display: D, screen_state: ScreenState) -> Result<D, D::Error>
 where
@@ -338,21 +338,21 @@ where
     // let text = "> B1 Pressed!";
     // draw_text(&mut display, text, true)?;
 
-    let page_changed = screen_state.changeset.contains(DataSource::RemainingTime);
-    if page_changed {
-        match super::keepalive::STATE.get() {
-            RemainingTime::Indefinite => (),
-            RemainingTime::Duration(time_to_sleep) => {
-                log::warn!("--> Entering Deep-sleep in {}!!", time_to_sleep);
+    // let page_changed = screen_state.changeset.contains(DataSource::RemainingTime);
+    // if page_changed {
+    //     match super::keepalive::STATE.get() {
+    //         RemainingTime::Indefinite => (),
+    //         RemainingTime::Duration(time_to_sleep) => {
+    //             log::warn!("--> Entering Deep-sleep in {}!!", time_to_sleep);
 
-                draw_text(
-                    &mut display,
-                    format!("Deep-sleep in:\n{}", time_to_sleep).as_str(),
-                    true,
-                )?;
-            }
-        }
-    }
+    //             draw_text(
+    //                 &mut display,
+    //                 format!("Deep-sleep in:\n{}", time_to_sleep).as_str(),
+    //                 true,
+    //             )?;
+    //         }
+    //     }
+    // }
 
     let page_changed = screen_state.changeset.contains(DataSource::Page);
     if page_changed {

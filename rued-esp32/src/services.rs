@@ -280,20 +280,22 @@ pub fn display(
     if let Some(backlight) = peripherals.control.backlight {
         let mut backlight = PinDriver::output(backlight)?;
 
-        backlight.set_drive_strength(DriveStrength::I40mA)?;
+        // NOTE: use lowest drive strength as P-channel MOSFET used to drive
+        // the backlight https://www.sparkfun.com/products/16653
+        backlight.set_drive_strength(DriveStrength::I5mA)?;
         backlight.set_high()?;
 
         mem::forget(backlight); // TODO: For now
     }
 
     let baudrate = 26.MHz().into();
-    //let baudrate = 40.MHz().into();
+    // let baudrate = 40.MHz().into(); // Not supported on ESP32
 
     let spi = SpiDeviceDriver::new_single(
         peripherals.spi,
         peripherals.sclk,
         peripherals.sdo,
-        Option::<Gpio21>::None,
+        Option::<Gpio19>::None,
         Dma::Disabled,
         peripherals.cs,
         &SpiConfig::new().baudrate(baudrate),
@@ -315,8 +317,8 @@ pub fn display(
             mipidsi::Builder::st7789(display_interface_spi::SPIInterfaceNoCS::new(spi, dc));
 
         builder
-            .with_display_size(240, 320)
-            .with_invert_vertical_refresh(true)
+            .with_color_order(mipidsi::ColorOrder::Bgr)
+            .with_invert_colors(true)
             .with_orientation(mipidsi::Orientation::Portrait(true))
             .init(&mut delay::Ets, Some(rst))
             .unwrap()

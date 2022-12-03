@@ -225,29 +225,22 @@ impl Summary {
 
         let Size { width, .. } = bbox.size;
 
-        // let (status_font, status_height, status_padding) = if width <= 128 {
-        //     (profont::PROFONT_9_POINT, 12, 5)
-        // } else {
-        //     (profont::PROFONT_14_POINT, 20, 2)
-        // };
-
         let (status_font, status_height, status_padding) = if width <= 128 {
-            (mono_font::ascii::FONT_9X15, 12, 5)
+            (profont::PROFONT_9_POINT, 12, 5)
         } else {
-            (mono_font::ascii::FONT_9X18, 20, 2)
+            (profont::PROFONT_14_POINT, 20, 2)
         };
 
         if let Some(remaining_time) = remaining_time {
             let mut status_rt = shapes::Textbox {
                 text: "            ",
-                color: super::super::super::screen::DISPLAY_COLOR_YELLOW, // Color::Yellow
+                color: super::super::super::screen::DISPLAY_COLOR_YELLOW,
                 font: status_font,
                 padding: 1,
                 outline: 0,
                 strikethrough: false,
                 ..Default::default()
             };
-            let status_rt_size = status_rt.preferred_size();
 
             let mut ip = String::default();
             if let Some(inner) = ip_address {
@@ -270,6 +263,8 @@ impl Summary {
                     &text_buf
                 }
             };
+
+            let status_rt_size = status_rt.preferred_size();
 
             status_rt.draw(&mut target.cropped(&Rectangle::new(
                 bbox.top_left + Size::new(0, bbox.size.height - status_rt_size.height),

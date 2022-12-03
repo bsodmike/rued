@@ -185,7 +185,6 @@ pub mod util {
         });
 
         Text::with_text_style(text, position, character_style, text_style).draw(target)?;
-        // Text::with_baseline(text, position, character_style, text_style.baseline).draw(target)?;
 
         Ok(())
     }
