@@ -17,6 +17,17 @@ use crate::core::internal::wifi::WifiConnection;
 // use crate::valve::ValveState;
 // use crate::wm::WaterMeterState;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub struct MeterState {
+    pub edges_count: u64,
+}
+
+impl MeterState {
+    pub const fn new() -> Self {
+        Self { edges_count: 0 }
+    }
+}
+
 pub struct Summary;
 
 impl Summary {
@@ -42,7 +53,9 @@ impl Summary {
             bbox.size - Size::new(0, top_height + bottom_height + 5),
         );
 
-        // Self::draw_content(&mut target.cropped(&content_rect), valve_state, wm_state)?;
+        let meter_state = MeterState { edges_count: 88888 };
+
+        Self::draw_content(&mut target.cropped(&content_rect), Some(&meter_state))?;
 
         Ok(())
     }
@@ -154,64 +167,42 @@ impl Summary {
         Ok(status_height)
     }
 
-    // fn draw_content<D>(
-    //     target: &mut D,
-    //     valve_state: Option<&Option<ValveState>>,
-    //     wm_state: Option<&WaterMeterState>,
-    // ) -> Result<(), D::Error>
-    // where
-    //     D: DrawTarget<Color = Color>,
-    // {
-    //     let bbox = target.bounding_box();
+    fn draw_content<D>(target: &mut D, meter_state: Option<&MeterState>) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Color>,
+    {
+        let bbox = target.bounding_box();
 
-    //     let Size { width, .. } = bbox.size;
+        let Size { width, .. } = bbox.size;
 
-    //     let main_font = if width <= 128 {
-    //         profont::PROFONT_18_POINT
-    //     } else {
-    //         profont::PROFONT_24_POINT
-    //     };
+        let main_font = if width <= 128 {
+            profont::PROFONT_18_POINT
+        } else {
+            profont::PROFONT_24_POINT
+        };
 
-    //     let mut y_offs = bbox.top_left.y;
+        let mut y_offs = bbox.top_left.y;
 
-    //     let wm_shape = shapes::WaterMeterClassic::<8> {
-    //         edges_count: wm_state.map(|wm| wm.edges_count),
-    //         font: main_font,
-    //         ..Default::default()
-    //     };
+        let meter_shape = shapes::MeterClassic::<8> {
+            edges_count: meter_state.map(|m| m.edges_count),
+            font: main_font,
+            ..Default::default()
+        };
 
-    //     if wm_state.is_some() {
-    //         wm_shape.draw(&mut target.cropped(&Rectangle::new(
-    //             Point::new(
-    //                 ((width - wm_shape.preferred_size().width) / 2) as i32,
-    //                 y_offs,
-    //             ),
-    //             wm_shape.preferred_size(),
-    //         )))?;
-    //     }
+        if meter_state.is_some() {
+            meter_shape.draw(&mut target.cropped(&Rectangle::new(
+                Point::new(
+                    ((width - meter_shape.preferred_size().width) / 2) as i32,
+                    y_offs,
+                ),
+                meter_shape.preferred_size(),
+            )))?;
+        }
 
-    //     y_offs += (wm_shape.preferred_size().height + 5) as i32;
+        y_offs += (meter_shape.preferred_size().height + 5) as i32;
 
-    //     if valve_state.is_some() {
-    //         let main_height = bbox.bottom_right().unwrap().x - y_offs;
-
-    //         let valve_shape_size = Size::new(main_height as u32, main_height as u32);
-    //         // let valve_shape = shapes::Valve {
-    //         //     open_percentage: valve_state.and_then(|valve_state| {
-    //         //         valve_state.map(|valve_state| valve_state.open_percentage())
-    //         //     }),
-    //         //     font: main_font,
-    //         //     ..Default::default()
-    //         // };
-
-    //         // valve_shape.draw(&mut target.cropped(&Rectangle::new(
-    //         //     Point::new(bbox.top_left.x, y_offs),
-    //         //     valve_shape_size,
-    //         // )))?;
-    //     }
-
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     fn draw_bottom_status_line<D>(
         target: &mut D,

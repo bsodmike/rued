@@ -8,6 +8,7 @@ pub use textbox::*;
 // pub use valve::*;
 pub use wifi::*;
 // pub use wm::*;
+pub use meter::*;
 
 mod actions;
 mod battery;
@@ -15,6 +16,7 @@ mod textbox;
 // mod valve;
 mod wifi;
 // mod wm;
+mod meter;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum Color {

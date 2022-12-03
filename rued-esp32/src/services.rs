@@ -317,9 +317,11 @@ pub fn display(
             mipidsi::Builder::st7789(display_interface_spi::SPIInterfaceNoCS::new(spi, dc));
 
         builder
+            .with_display_size(240, 320)
+            .with_framebuffer_size(240, 320)
             .with_color_order(mipidsi::ColorOrder::Bgr)
             .with_invert_colors(true)
-            .with_orientation(mipidsi::Orientation::Portrait(true))
+            .with_orientation(mipidsi::Orientation::PortraitInverted(true))
             .init(&mut delay::Ets, Some(rst))
             .unwrap()
     };
