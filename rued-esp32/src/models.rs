@@ -6,6 +6,8 @@ use esp_idf_sys::timeval;
 use esp_idf_sys::timezone;
 use log::{debug, info, warn};
 use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, TIME_ARRAY_LENGTH};
+use serde::Deserialize;
+use serde::Serialize;
 use shared_bus::{BusManager, I2cProxy};
 use std::{env, error::Error as StdError, fmt, marker::PhantomData, ptr, sync::Mutex};
 
@@ -231,7 +233,7 @@ impl RTCReading {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct SystemTimeBuffer {
     pub date: u8,
     pub month: u8,

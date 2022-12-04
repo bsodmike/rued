@@ -239,8 +239,18 @@ impl Summary {
 
         if let Some(value) = current_time {
             match value {
-                RtcExternalState::UpdateScreen(text) => {
-                    write!(&mut text_buf, "T: {}", text).unwrap();
+                RtcExternalState::UpdateScreen(time_buffer) => {
+                    let text = format!(
+                        "{}-{:0>2}-{:0>2} {:0>2}:{:0>2}:{:0>2}",
+                        time_buffer.year,
+                        time_buffer.month,
+                        time_buffer.date,
+                        time_buffer.hours,
+                        time_buffer.minutes,
+                        time_buffer.seconds,
+                    );
+
+                    write!(&mut text_buf, "{}", text).unwrap();
                 }
                 _ => {
                     write!(&mut text_buf, "{}", "Updating...").unwrap();

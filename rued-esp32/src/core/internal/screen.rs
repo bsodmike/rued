@@ -172,6 +172,7 @@ pub(crate) static BUTTON2_PRESSED_NOTIF: Notification = Notification::new();
 pub(crate) static BUTTON3_PRESSED_NOTIF: Notification = Notification::new();
 pub(crate) static WIFI_STATE_NOTIF: Notification = Notification::new();
 pub(crate) static REMAINING_TIME_NOTIF: Notification = Notification::new();
+pub(crate) static EXT_RTC_NOTIF: Notification = Notification::new();
 
 static DRAW_REQUEST_NOTIF: Notification = Notification::new();
 
@@ -187,6 +188,7 @@ pub async fn process() {
             BUTTON3_PRESSED_NOTIF.wait(), // 2
             REMAINING_TIME_NOTIF.wait(),  // 3
             WIFI_STATE_NOTIF.wait(),      // 4
+            EXT_RTC_NOTIF.wait(),         // 5
         ])
         .await;
 
@@ -237,7 +239,10 @@ pub async fn process() {
                         screen_state.active_page = Page::Summary;
                         screen_state.changeset.insert(DataSource::Page);
                     }
-
+                    5 => {
+                        screen_state.active_page = Page::Summary;
+                        screen_state.changeset.insert(DataSource::Page);
+                    }
                     _ => unreachable!(),
                 }
             });
