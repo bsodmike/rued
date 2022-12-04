@@ -72,9 +72,9 @@ impl Wifi {
         Circle::with_center(center, self.outline * 2)
             .into_styled(PrimitiveStyle::with_fill(
                 if self.strength.map(|strength| strength > 10).unwrap_or(false) {
-                    super::super::super::screen::DISPLAY_COLOR_WHITE
+                    super::super::super::screen::DISPLAY_COLOR_YELLOW
                 } else {
-                    super::super::super::screen::DISPLAY_COLOR_GRAY
+                    super::super::super::screen::DISPLAY_COLOR_LIGHT_BLUE
                 },
             ))
             .draw(target)?;
@@ -82,7 +82,7 @@ impl Wifi {
         if self.strength.is_none() {
             Line::new(bbox.top_left, bbox.top_left + bbox.size - Point::new(1, 1))
                 .into_styled(PrimitiveStyle::with_stroke(
-                    super::super::super::screen::DISPLAY_COLOR_WHITE,
+                    super::super::super::screen::DISPLAY_COLOR_LIGHT_BLUE,
                     self.outline,
                 ))
                 .draw(target)?;
@@ -102,9 +102,9 @@ impl Wifi {
         T: DrawTarget<Color = super::super::super::screen::DisplayColor>,
     {
         let color = if strong_signal {
-            super::super::super::screen::DISPLAY_COLOR_WHITE
+            super::super::super::screen::DISPLAY_COLOR_YELLOW
         } else {
-            super::super::super::screen::DISPLAY_COLOR_GRAY
+            super::super::super::screen::DISPLAY_COLOR_LIGHT_BLUE
         };
 
         Arc::with_center(center, diameter, 45.0.deg(), 90.0.deg())
