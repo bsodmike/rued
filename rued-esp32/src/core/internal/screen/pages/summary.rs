@@ -1,4 +1,5 @@
 use core::{cmp::min, fmt::Write};
+use std::fmt::Display;
 
 use embedded_graphics::mono_font;
 use embedded_graphics::pixelcolor::BinaryColor;
@@ -28,6 +29,25 @@ impl MeterState {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct CurrentTime {
+    pub text: String,
+}
+
+impl CurrentTime {
+    pub fn new() -> Self {
+        Self {
+            text: String::from(""),
+        }
+    }
+}
+
+impl Display for CurrentTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.text)
+    }
+}
+
 pub struct Summary;
 
 impl Summary {
@@ -54,8 +74,15 @@ impl Summary {
         );
 
         let meter_state = MeterState { edges_count: 88888 };
+        let local_time = CurrentTime {
+            text: String::from("local time"),
+        };
 
-        Self::draw_content(&mut target.cropped(&content_rect), Some(&meter_state))?;
+        Self::draw_content(
+            &mut target.cropped(&content_rect),
+            Some(&meter_state),
+            Some(&local_time),
+        )?;
 
         Ok(())
     }
@@ -167,7 +194,11 @@ impl Summary {
         Ok(status_height)
     }
 
-    fn draw_content<D>(target: &mut D, meter_state: Option<&MeterState>) -> Result<(), D::Error>
+    fn draw_content<D>(
+        target: &mut D,
+        meter_state: Option<&MeterState>,
+        current_time: Option<&CurrentTime>,
+    ) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = Color>,
     {
@@ -200,6 +231,30 @@ impl Summary {
         }
 
         y_offs += (meter_shape.preferred_size().height + 5) as i32;
+
+        if current_time.is_some() {
+            let blank = CurrentTime::new();
+            let text = current_time.unwrap_or(&blank);
+
+            let mut text_buf = heapless::String::<32>::new();
+            write!(&mut text_buf, "T: {}", text).unwrap();
+
+            let text_row = shapes::Textbox {
+                text: &text_buf,
+                color: super::super::super::screen::DISPLAY_COLOR_WHITE,
+                font: profont::PROFONT_14_POINT,
+                padding: 1,
+                outline: 0,
+                strikethrough: false,
+                ..Default::default()
+            };
+
+            let text_row_size = text_row.preferred_size();
+            text_row.draw(&mut target.cropped(&Rectangle::new(
+                Point::new(((width - text_row_size.width) / 2) as i32, y_offs),
+                text_row_size,
+            )))?;
+        }
 
         Ok(())
     }
