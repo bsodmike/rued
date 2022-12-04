@@ -1,11 +1,18 @@
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike};
 use esp_idf_hal::i2c::{I2cDriver, I2cError};
+use esp_idf_sys::settimeofday;
+use esp_idf_sys::timeval;
+use esp_idf_sys::timezone;
 use log::{debug, info, warn};
 use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, TIME_ARRAY_LENGTH};
 use shared_bus::{BusManager, I2cProxy};
 use std::{env, error::Error as StdError, fmt, marker::PhantomData, ptr, sync::Mutex};
 
+use crate::CURRENT_YEAR;
+
+use self::rtc_external::get_system_time;
+use self::rtc_external::prelude::*;
 use self::rtc_external::Weekday;
 
 pub struct RTClock<'a, I2C> {
@@ -37,8 +44,16 @@ where
 
         Ok(Rv8803::new(bus)?)
     }
+}
 
-    pub fn update_time(&mut self) -> Result<RTCReading> {
+impl<'a, I2C> RtcExternal for RTClock<'a, I2C>
+where
+    I2C: embedded_hal_0_2::blocking::i2c::Write<Error = I2cError>
+        + embedded_hal_0_2::blocking::i2c::WriteRead<Error = I2cError>,
+{
+    type Reading = RTCReading;
+
+    fn update_time(&mut self) -> Result<Self::Reading> {
         let mut time = [0_u8; TIME_ARRAY_LENGTH];
 
         // Fetch time from RTC.
@@ -77,6 +92,102 @@ where
         Ok(reading)
     }
 
+    unsafe fn get_system_time_with_fallback(&mut self) -> Result<SystemTimeBuffer> {
+        let mut rtc = self.rtc()?;
+
+        let system_time = get_system_time()?;
+
+        // debug!(
+        //     "System time Year: ({} / {}) / Current Year {}",
+        //     &system_time.year,
+        //     &system_time.to_rfc3339()?,
+        //     CURRENT_YEAR
+        // );
+        if system_time.year >= CURRENT_YEAR {
+            // Update RTC clock from System time due to SNTP update
+
+            // FIXME: Disabled as this is done via the callback flag.
+            // update_rtc_from_local(rtc, &system_time)?;
+        } else {
+            // When SNTP is unavailable, this will be called once where the system
+            // clock will be updated from RTC and the conditional above (that compares the years), will prevent this from being called further.
+            //
+            // It's better to re-establish a valid SNTP update.
+            self.update_local_from_rtc(&system_time)?;
+        }
+
+        Ok(system_time)
+    }
+
+    unsafe fn update_local_from_rtc(&mut self, system_time: &SystemTimeBuffer) -> Result<bool> {
+        // This should be from the RTC clock
+
+        self.update_time()?;
+        let dt = self.datetime()?;
+
+        // If the System time has not been updated due to any SNTP failure,
+        // update the System time from the RTC clock.
+        let tz = timezone {
+            tz_minuteswest: 0,
+            tz_dsttime: 0,
+        };
+
+        let tv_sec = dt.timestamp() as i32;
+        let tv_usec = dt.timestamp_subsec_micros() as i32;
+        let tm = timeval { tv_sec, tv_usec };
+
+        settimeofday(&tm, &tz);
+        info!(
+            "Updated System Clock from RTC time: {} / sec: {}, usec: {}",
+            system_time.to_rfc3339()?,
+            tv_sec,
+            tv_usec
+        );
+        info!("timestamp: {}", dt.timestamp());
+
+        Ok(true)
+    }
+
+    fn update_rtc_from_local(&self, system_time: &SystemTimeBuffer) -> Result<bool> {
+        let mut rtc = self.rtc()?;
+        let weekday = system_time.weekday()?;
+
+        let resp = rtc.set_time(
+            system_time.seconds,
+            system_time.minutes,
+            system_time.hours,
+            weekday.value(),
+            system_time.date,
+            system_time.month,
+            system_time.year,
+        )?;
+
+        info!(
+            "Updated RTC Clock from local time: {}",
+            system_time.to_rfc3339()?
+        );
+
+        Ok(resp)
+    }
+
+    fn datetime(&self) -> Result<DateTime<Utc>> {
+        let datetime = if let Some(dt) = self.datetime {
+            dt
+        } else {
+            return Err(Error::msg(
+                "Unable to unwrap datetime, when attempting to return UNIX timestamp",
+            ));
+        };
+
+        Ok(datetime)
+    }
+}
+
+impl<'a, I2C> self::rtc_external::private::Sealed for RTClock<'a, I2C>
+where
+    I2C: embedded_hal_0_2::blocking::i2c::Write<Error = I2cError>
+        + embedded_hal_0_2::blocking::i2c::WriteRead<Error = I2cError>,
+{
     fn to_timestamp(&self) -> Result<i64> {
         let datetime = if let Some(dt) = self.datetime {
             dt
@@ -87,18 +198,6 @@ where
         };
 
         Ok(datetime.timestamp())
-    }
-
-    pub fn datetime(&self) -> Result<DateTime<Utc>> {
-        let datetime = if let Some(dt) = self.datetime {
-            dt
-        } else {
-            return Err(Error::msg(
-                "Unable to unwrap datetime, when attempting to return UNIX timestamp",
-            ));
-        };
-
-        Ok(datetime)
     }
 }
 
@@ -178,83 +277,36 @@ impl SystemTimeBuffer {
 }
 
 pub(crate) mod rtc_external {
+    pub(crate) mod prelude {
+        pub use super::RtcExternal;
+    }
+
     use super::*;
 
     use crate::UTC_OFFSET_CHRONO;
-    use crate::{CURRENT_YEAR, TIME_ARRAY_LENGTH};
     use chrono::{offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
-    use embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_Write;
-    use embedded_hal_0_2::prelude::_embedded_hal_blocking_i2c_WriteRead;
-    use esp_idf_sys::timezone;
-    use esp_idf_sys::{settimeofday, time_t, timeval};
+    use esp_idf_sys::time_t;
 
     type I2cDriverType<'a> = I2cDriver<'a>;
 
-    pub(crate) unsafe fn get_system_time_with_fallback<I2C>(
-        rtc_clock: &mut RTClock<I2C>,
-    ) -> Result<SystemTimeBuffer>
-    where
-        I2C: _embedded_hal_blocking_i2c_WriteRead<Error = I2cError>
-            + _embedded_hal_blocking_i2c_Write<Error = I2cError>,
-    {
-        let mut rtc = rtc_clock.rtc()?;
-        let system_time = get_system_time()?;
-
-        // debug!(
-        //     "System time Year: ({} / {}) / Current Year {}",
-        //     &system_time.year,
-        //     &system_time.to_rfc3339()?,
-        //     CURRENT_YEAR
-        // );
-        if system_time.year >= CURRENT_YEAR {
-            // Update RTC clock from System time due to SNTP update
-
-            // FIXME: Disabled as this is done via the callback flag.
-            // update_rtc_from_local(rtc, &system_time)?;
-        } else {
-            // When SNTP is unavailable, this will be called once where the system
-            // clock will be updated from RTC and the conditional above (that compares the years), will prevent this from being called further.
-            //
-            // It's better to re-establish a valid SNTP update.
-            update_local_from_rtc(&system_time, rtc_clock)?;
+    pub(crate) mod private {
+        use anyhow::Result;
+        pub trait Sealed {
+            fn to_timestamp(&self) -> Result<i64>;
         }
-
-        Ok(system_time)
     }
+    pub trait RtcExternal: private::Sealed {
+        type Reading;
 
-    pub(crate) unsafe fn update_local_from_rtc<I2C>(
-        system_time: &SystemTimeBuffer,
-        rtc_clock: &mut RTClock<I2C>,
-    ) -> Result<bool>
-    where
-        I2C: _embedded_hal_blocking_i2c_WriteRead<Error = I2cError>
-            + _embedded_hal_blocking_i2c_Write<Error = I2cError>,
-    {
-        // This should be from the RTC clock
-        rtc_clock.update_time()?;
-        let dt = rtc_clock.datetime()?;
+        unsafe fn get_system_time_with_fallback(&mut self) -> Result<SystemTimeBuffer>;
 
-        // If the System time has not been updated due to any SNTP failure,
-        // update the System time from the RTC clock.
-        let tz = timezone {
-            tz_minuteswest: 0,
-            tz_dsttime: 0,
-        };
+        unsafe fn update_local_from_rtc(&mut self, system_time: &SystemTimeBuffer) -> Result<bool>;
 
-        let tv_sec = dt.timestamp() as i32;
-        let tv_usec = dt.timestamp_subsec_micros() as i32;
-        let tm = timeval { tv_sec, tv_usec };
+        fn update_time(&mut self) -> Result<Self::Reading>;
 
-        settimeofday(&tm, &tz);
-        info!(
-            "Updated System Clock from RTC time: {} / sec: {}, usec: {}",
-            system_time.to_rfc3339()?,
-            tv_sec,
-            tv_usec
-        );
-        info!("timestamp: {}", dt.timestamp());
+        fn update_rtc_from_local(&self, system_time: &SystemTimeBuffer) -> Result<bool>;
 
-        Ok(true)
+        fn datetime(&self) -> Result<DateTime<Utc>>;
     }
 
     pub(crate) unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
@@ -283,35 +335,6 @@ pub(crate) mod rtc_external {
         };
 
         Ok(buf)
-    }
-
-    pub(crate) fn update_rtc_from_local<I2C>(
-        rtc_clock: &mut RTClock<I2C>,
-        latest_system_time: &SystemTimeBuffer,
-    ) -> Result<bool>
-    where
-        I2C: _embedded_hal_blocking_i2c_WriteRead<Error = I2cError>
-            + _embedded_hal_blocking_i2c_Write<Error = I2cError>,
-    {
-        let mut rtc = rtc_clock.rtc()?;
-        let weekday = latest_system_time.weekday()?;
-
-        let resp = rtc.set_time(
-            latest_system_time.seconds,
-            latest_system_time.minutes,
-            latest_system_time.hours,
-            weekday.value(),
-            latest_system_time.date,
-            latest_system_time.month,
-            latest_system_time.year,
-        )?;
-
-        info!(
-            "Updated RTC Clock from local time: {}",
-            latest_system_time.to_rfc3339()?
-        );
-
-        Ok(resp)
     }
 
     // RTC Extra

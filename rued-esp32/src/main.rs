@@ -82,12 +82,7 @@ use esp_idf_sys::esp;
 use crate::{
     core::internal::spawn,
     errors::*,
-    models::{
-        rtc_external::{
-            get_system_time_with_fallback, update_local_from_rtc, update_rtc_from_local,
-        },
-        RTClock, SystemTimeBuffer,
-    },
+    models::{ RTClock, SystemTimeBuffer},
 };
 
 mod core;
