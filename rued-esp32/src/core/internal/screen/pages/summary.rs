@@ -12,6 +12,7 @@ use embedded_graphics::{
 use gfx_xtra::draw_target::{DrawTargetExt2, RotateAngle};
 
 use crate::core::internal::battery::BatteryState;
+use crate::core::internal::external_rtc::RtcExternalState;
 use crate::core::internal::keepalive::RemainingTime;
 use crate::core::internal::screen::shapes::{self, BatteryChargedText, Color};
 use crate::core::internal::wifi::WifiConnection;
@@ -59,6 +60,7 @@ impl Summary {
         battery_state: Option<&BatteryState>,
         remaining_time_state: Option<&RemainingTime>,
         ip_addr: Option<&Option<WifiConnection>>,
+        ext_rtc: Option<&RtcExternalState>,
     ) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = super::super::super::screen::DisplayColor>,
@@ -81,7 +83,7 @@ impl Summary {
         Self::draw_content(
             &mut target.cropped(&content_rect),
             Some(&meter_state),
-            Some(&local_time),
+            ext_rtc,
         )?;
 
         Ok(())
@@ -197,7 +199,7 @@ impl Summary {
     fn draw_content<D>(
         target: &mut D,
         meter_state: Option<&MeterState>,
-        current_time: Option<&CurrentTime>,
+        current_time: Option<&RtcExternalState>,
     ) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = Color>,
@@ -232,29 +234,35 @@ impl Summary {
 
         y_offs += (meter_shape.preferred_size().height + 5) as i32;
 
-        if current_time.is_some() {
-            let blank = CurrentTime::new();
-            let text = current_time.unwrap_or(&blank);
+        let mut text_buf = heapless::String::<32>::new();
+        write!(&mut text_buf, "{}", "").unwrap();
 
-            let mut text_buf = heapless::String::<32>::new();
-            write!(&mut text_buf, "T: {}", text).unwrap();
-
-            let text_row = shapes::Textbox {
-                text: &text_buf,
-                color: super::super::super::screen::DISPLAY_COLOR_WHITE,
-                font: profont::PROFONT_14_POINT,
-                padding: 1,
-                outline: 0,
-                strikethrough: false,
-                ..Default::default()
-            };
-
-            let text_row_size = text_row.preferred_size();
-            text_row.draw(&mut target.cropped(&Rectangle::new(
-                Point::new(((width - text_row_size.width) / 2) as i32, y_offs),
-                text_row_size,
-            )))?;
+        if let Some(value) = current_time {
+            match value {
+                RtcExternalState::UpdateScreen(text) => {
+                    write!(&mut text_buf, "T: {}", text).unwrap();
+                }
+                _ => {
+                    write!(&mut text_buf, "{}", "Updating...").unwrap();
+                }
+            }
         }
+
+        let text_row = shapes::Textbox {
+            text: &text_buf,
+            color: super::super::super::screen::DISPLAY_COLOR_WHITE,
+            font: profont::PROFONT_14_POINT,
+            padding: 1,
+            outline: 0,
+            strikethrough: false,
+            ..Default::default()
+        };
+
+        let text_row_size = text_row.preferred_size();
+        text_row.draw(&mut target.cropped(&Rectangle::new(
+            Point::new(((width - text_row_size.width) / 2) as i32, y_offs),
+            text_row_size,
+        )))?;
 
         Ok(())
     }

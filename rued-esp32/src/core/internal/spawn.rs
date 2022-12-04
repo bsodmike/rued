@@ -16,6 +16,7 @@ use edge_executor::*;
 use channel_bridge::asynch::*;
 
 use crate::core::internal::{mqtt::MqttCommand, screen};
+use crate::models::rtc_external::RtcExternal;
 
 use super::button::{self, PressedLevel};
 use super::screen::Color;
@@ -32,6 +33,7 @@ pub fn high_prio<'a, const C: usize, M, D>(
         impl PwmPin<Duty = u32> + 'a,
         impl PwmPin<Duty = u32> + 'a,
     ),
+    rtc: impl RtcExternal + 'a,
 ) -> Result<(), SpawnError>
 where
     M: Monitor + Default,
@@ -48,6 +50,7 @@ where
         .spawn_local_collect(screen::process(), tasks)?
         .spawn_local_collect(screen::run_draw(display), tasks)?
         .spawn_local_collect(super::wifi::process(wifi.0, wifi.1), tasks)?
+        .spawn_local_collect(super::external_rtc::process(rtc), tasks)?
         .spawn_local_collect(super::pwm::process(pwm), tasks)?;
 
     Ok(())

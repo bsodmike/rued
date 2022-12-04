@@ -82,7 +82,7 @@ use esp_idf_sys::esp;
 use crate::{
     core::internal::spawn,
     errors::*,
-    models::{ RTClock, SystemTimeBuffer},
+    models::{RTClock, SystemTimeBuffer},
 };
 
 mod core;
@@ -390,6 +390,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         display,
         (wifi, wifi_notif),
         (channel0, channel1, channel2),
+        rtc_clock,
     )?;
 
     // spawn::high_prio(

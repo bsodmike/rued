@@ -154,7 +154,7 @@ impl ScreenState {
             .then(|| keepalive::STATE.get())
     }
 
-    pub fn wiif(&self) -> Option<Option<WifiConnection>> {
+    pub fn wifi(&self) -> Option<Option<WifiConnection>> {
         self.changed([DataSource::Wifi, DataSource::Page])
             .then(|| wifi::STATE.get())
     }
@@ -367,12 +367,13 @@ where
             // screen_state.wm().as_ref(),
             screen_state.battery().as_ref(),
             screen_state.remaining_time().as_ref(),
-            screen_state.wiif().as_ref(),
+            screen_state.wifi().as_ref(),
+            Some(super::external_rtc::STATE.get()).as_ref(),
         )?,
         Page::Battery => {
             Battery::draw(&mut display, page_changed, screen_state.battery().as_ref())?
         }
-        Page::Wifi => Wifi::draw(&mut display, page_changed, screen_state.wiif().as_ref())?,
+        Page::Wifi => Wifi::draw(&mut display, page_changed, screen_state.wifi().as_ref())?,
     }
 
     // if let Some((actions, action)) = screen_state.page_actions {
