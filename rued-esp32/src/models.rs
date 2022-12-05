@@ -311,13 +311,15 @@ pub(crate) mod rtc_external {
         fn datetime(&self) -> Result<DateTime<Utc>>;
     }
 
-    pub(crate) fn get_system_time() -> Result<SystemTimeBuffer> {
-        // let timer: *mut time_t = ptr::null_mut();
-        // let timestamp = esp_idf_sys::time(timer);
-        let system_time = esp_idf_svc::systime::EspSystemTime {};
-        let timestamp = esp_idf_svc::systime::EspSystemTime::now(&system_time);
+    pub(crate) unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
+        let timer: *mut time_t = ptr::null_mut();
+        let timestamp = esp_idf_sys::time(timer);
 
-        let naive_dt_opt = NaiveDateTime::from_timestamp_opt(timestamp.as_secs() as i64, 0);
+        // FIXME this causes a crash?
+        // let system_time = esp_idf_svc::systime::EspSystemTime {};
+        // let timestamp = esp_idf_svc::systime::EspSystemTime::now(&system_time);
+
+        let naive_dt_opt = NaiveDateTime::from_timestamp_opt(timestamp as i64, 0);
         let naivedatetime_utc = if let Some(value) = naive_dt_opt {
             value
         } else {
