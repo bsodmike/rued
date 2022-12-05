@@ -29,10 +29,15 @@ pub enum Color {
     Green,
     Yellow,
     White,
+    Orange,
+    DarkOrange,
 }
 
 impl Color {
-    pub fn into_rgb<C: RgbColor, F: Fn(u8, u8, u8) -> C>(self, converter: F) -> C {
+    pub fn into_rgb<C, F: Fn(u8, u8, u8) -> C>(self, converter: F) -> C
+    where
+        C: RgbColor,
+    {
         match self {
             Self::Black => C::BLACK,
             Self::Red => C::RED,
@@ -43,6 +48,8 @@ impl Color {
             Self::Green => C::GREEN,
             Self::Yellow => C::YELLOW,
             Self::White => C::WHITE,
+            Self::Orange => converter(255, 165, 0),
+            Self::DarkOrange => converter(255, 140, 0),
         }
     }
 

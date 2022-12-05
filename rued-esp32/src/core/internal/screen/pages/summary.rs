@@ -240,7 +240,7 @@ impl Summary {
         if let Some(value) = current_time {
             match value {
                 RtcExternalState::UpdateScreen(time_buffer) => {
-                    let text = format!(
+                    let formatted = format!(
                         "{}-{:0>2}-{:0>2} {:0>2}:{:0>2}:{:0>2}",
                         time_buffer.year,
                         time_buffer.month,
@@ -250,7 +250,9 @@ impl Summary {
                         time_buffer.seconds,
                     );
 
-                    write!(&mut text_buf, "{}", text).unwrap();
+                    // let formatted = time_buffer.to_s().expect("formatted time as String");
+                    write!(&mut text_buf, "{}", formatted)
+                        .expect("Writing of String into text buffer");
                 }
                 _ => {
                     write!(&mut text_buf, "{}", "Updating...").unwrap();
@@ -260,8 +262,8 @@ impl Summary {
 
         let text_row = shapes::Textbox {
             text: &text_buf,
-            color: super::super::super::screen::DISPLAY_COLOR_WHITE,
-            font: profont::PROFONT_14_POINT,
+            color: Color::White,
+            font: profont::PROFONT_18_POINT,
             padding: 1,
             outline: 0,
             strikethrough: false,
