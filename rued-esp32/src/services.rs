@@ -5,7 +5,7 @@ use std::fmt::Write;
 
 extern crate alloc;
 
-use edge_frame::assets::serve::AssetMetadata;
+// use edge_frame::assets::serve::AssetMetadata;
 
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_time::Duration;
@@ -42,14 +42,13 @@ use esp_idf_sys::{esp, esp_restart, EspError};
 
 use gfx_xtra::draw_target::{Flushable, OwnedDrawTargetExt};
 
-use edge_frame::assets;
-
 use edge_executor::*;
 use once_cell::sync::Lazy;
 
 use crate::core::internal::mqtt::{MessageParser, MqttCommand};
 use crate::core::internal::pulse_counter::PulseCounter;
 use crate::core::internal::pulse_counter::PulseWakeup;
+use crate::core::internal::ws;
 
 use crate::core::internal::screen::Color;
 // use ruwm::button::PressedLevel;
@@ -409,39 +408,20 @@ pub fn wifi<'d>(
     ))
 }
 
-// pub fn httpd() -> Result<(EspHttpServer, impl Acceptor), InitError> {
-//     let (ws_processor, ws_acceptor) =
-//         EspHttpWsProcessor::<{ ws::WS_MAX_CONNECTIONS }, { ws::WS_MAX_FRAME_LEN }>::new(());
+pub fn httpd() -> Result<(EspHttpServer, impl Acceptor), InitError> {
+    let (ws_processor, ws_acceptor) =
+        EspHttpWsProcessor::<{ ws::WS_MAX_CONNECTIONS }, { ws::WS_MAX_FRAME_LEN }>::new(());
 
-//     let ws_processor = Mutex::<EspRawMutex, _>::new(RefCell::new(ws_processor));
+    let ws_processor = Mutex::<EspRawMutex, _>::new(RefCell::new(ws_processor));
 
-//     let mut httpd = EspHttpServer::new(&Default::default()).unwrap();
+    let mut httpd = EspHttpServer::new(&Default::default()).unwrap();
 
-//     // FIXME
+    httpd.ws_handler("/ws", move |connection| {
+        ws_processor.lock(|ws_processor| ws_processor.borrow_mut().process(connection))
+    })?;
 
-//     // let mut assets = ASSETS
-//     //     .iter()
-//     //     .filter(|asset| !asset.0.is_empty())
-//     //     .collect::<heapless::Vec<_, { assets::MAX_ASSETS }>>();
-
-//     // assets.sort_by_key(|asset| AssetMetadata::derive(asset.0).uri);
-
-//     // for asset in assets.iter().rev() {
-//     //     let asset = **asset;
-
-//     //     let metadata = AssetMetadata::derive(asset.0);
-
-//     //     httpd.fn_handler(metadata.uri, Method::Get, move |req| {
-//     //         assets::serve::serve(req, asset)
-//     //     })?;
-//     // }
-
-//     // httpd.ws_handler("/ws", move |connection| {
-//     //     ws_processor.lock(|ws_processor| ws_processor.borrow_mut().process(connection))
-//     // })?;
-
-//     Ok((httpd, ws_acceptor))
-// }
+    Ok((httpd, ws_acceptor))
+}
 
 pub fn mqtt() -> Result<
     (

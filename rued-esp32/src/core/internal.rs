@@ -12,4 +12,6 @@ pub mod quit;
 pub mod screen;
 pub mod spawn;
 pub mod state;
+pub mod web;
 pub mod wifi;
+pub mod ws;

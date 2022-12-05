@@ -305,7 +305,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Httpd
 
-    // let (_httpd, ws_acceptor) = services::httpd()?;
+    let (_httpd, ws_acceptor) = services::httpd()?;
 
     // Mqtt
 
@@ -389,6 +389,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         )?,
         display,
         (wifi, wifi_notif),
+        ws_acceptor,
         (channel0, channel1, channel2),
         rtc_clock,
     )?;

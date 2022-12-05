@@ -20,6 +20,7 @@ use crate::models::rtc_external::RtcExternal;
 
 use super::button::{self, PressedLevel};
 use super::screen::Color;
+use super::web::{self, WebEvent, WebRequest};
 use super::{battery, mqtt, wifi};
 
 pub fn high_prio<'a, const C: usize, M, D>(
@@ -28,6 +29,7 @@ pub fn high_prio<'a, const C: usize, M, D>(
     button1_pin: impl InputPin<Error = impl Debug + 'a> + 'a,
     display: D,
     wifi: (EspWifi<'a>, impl Receiver<Data = WifiEvent> + 'a),
+    acceptor: impl Acceptor + 'a,
     pwm: (
         impl PwmPin<Duty = u32> + 'a,
         impl PwmPin<Duty = u32> + 'a,
@@ -51,7 +53,8 @@ where
         .spawn_local_collect(screen::run_draw(display), tasks)?
         .spawn_local_collect(super::wifi::process(wifi.0, wifi.1), tasks)?
         .spawn_local_collect(super::external_rtc::process(rtc), tasks)?
-        .spawn_local_collect(super::pwm::process(pwm), tasks)?;
+        .spawn_local_collect(super::pwm::process(pwm), tasks)?
+        .spawn_local_collect(super::ws::process(acceptor), tasks)?;
 
     Ok(())
 }
@@ -165,6 +168,19 @@ where
     M: Monitor + Default,
 {
     executor.spawn_local_collect(mqtt::receive(mqtt_conn), tasks)?;
+
+    Ok(())
+}
+
+pub fn ws<'a, const C: usize, M>(
+    executor: &mut Executor<'a, C, M, Local>,
+    tasks: &mut heapless::Vec<Task<()>, C>,
+    acceptor: impl Acceptor + 'a,
+) -> Result<(), SpawnError>
+where
+    M: Monitor + Default,
+{
+    executor.spawn_local_collect(super::ws::process(acceptor), tasks)?;
 
     Ok(())
 }
