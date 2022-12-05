@@ -1,6 +1,6 @@
 #![feature(const_btree_new)]
-#![allow(dead_code, unused_variables)]
 #![feature(type_alias_impl_trait)]
+#![allow(dead_code, unused_variables)]
 
 extern crate alloc;
 
@@ -11,6 +11,7 @@ use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use peripherals::{ButtonsPeripherals, PulseCounterPeripherals};
 use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, Rv8803Bus, TIME_ARRAY_LENGTH};
+use serde::{Deserialize, Serialize};
 use shared_bus::{BusManager, I2cProxy};
 use std::{
     env,
@@ -58,7 +59,7 @@ use esp_idf_svc::{
 };
 
 #[cfg(feature = "nvs")]
-use embassy_sync::blocking_mutex::Mutex;
+use embassy_sync::blocking_mutex::Mutex as EmbassyMutex;
 use embassy_time::Duration;
 
 #[cfg(feature = "nvs")]
@@ -74,10 +75,6 @@ use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 
 use esp_idf_sys::esp;
-
-// use ruwm::button;
-// use ruwm::spawn;
-// use ruwm::wm::WaterMeterState;
 
 use crate::{
     core::internal::spawn,
@@ -101,11 +98,11 @@ const SNTP_RETRY_COUNT: u32 = 1_000_000;
 static UPDATE_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 static FALLBACK_TO_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
-// false: SNTP is enabled
-static DISABLE_SNTP: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+// // false: SNTP is enabled
+// static DISABLE_SNTP: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
-// false: HTTPd is enabled
-static DISABLE_HTTPD: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+// // false: HTTPd is enabled
+// static DISABLE_HTTPD: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 ///
 /// # Safety
@@ -230,7 +227,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     // Configure I2C0
 
     let i2c0_peripherals = peripherals.i2c0;
-    let mut config = I2cConfig::new();
+    let config = I2cConfig::new();
     let _ = config.baudrate(Hertz::from(400_u32));
 
     let i2c0_driver = I2cDriver::new(
@@ -253,6 +250,24 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     let nvs_default_partition = EspDefaultNvsPartition::take()?;
     let sysloop = EspSystemEventLoop::take()?;
 
+    // Storage
+
+    #[cfg(feature = "nvs")]
+    let (nvs_default_state, storage) = {
+        let storage = services::storage(nvs_default_partition.clone())?;
+
+        if let Some(nvs_default_state) = storage
+            .lock(|storage| storage.borrow().get::<NvsDataState>("nvs-default-state"))
+            .unwrap()
+        {
+            (nvs_default_state, storage)
+        } else {
+            log::warn!("No `nvs-default-state` found in NVS, assuming new device");
+
+            (Default::default(), storage)
+        }
+    };
+
     // Pulse counter
 
     #[cfg(feature = "ulp")]
@@ -263,7 +278,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Wifi
 
-    let (mut wifi, wifi_notif) = services::wifi(
+    let (wifi, wifi_notif) = services::wifi(
         peripherals.modem,
         sysloop.clone(),
         Some(nvs_default_partition),
@@ -300,8 +315,8 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // RTC module (External)
 
-    let mut rtc_clock: RTClock<I2cProxy<Mutex<I2cDriver>>> = RTClock::new(i2c0_bus_manager)?;
-    let mut rtc = rtc_clock.rtc()?;
+    let rtc_clock: RTClock<I2cProxy<Mutex<I2cDriver>>> = RTClock::new(i2c0_bus_manager)?;
+    let rtc = rtc_clock.rtc()?;
 
     // Httpd
 
@@ -392,6 +407,10 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         ws_acceptor,
         (channel0, channel1, channel2),
         rtc_clock,
+        move |_new_state| {
+            #[cfg(feature = "nvs")]
+            flash_default_state(storage, _new_state);
+        },
     )?;
 
     // spawn::high_prio(
@@ -514,6 +533,32 @@ where
     }
 
     Ok(())
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct NvsDataState {
+    pub id: u64,
+    pub text: [u8; 32],
+}
+
+#[cfg(feature = "nvs")]
+fn flash_default_state<S>(
+    storage: &'static EmbassyMutex<
+        impl embassy_sync::blocking_mutex::raw::RawMutex,
+        ::core::cell::RefCell<S>,
+    >,
+    new_state: NvsDataState,
+) where
+    S: Storage,
+{
+    core::internal::error::log_err!(storage.lock(|storage| {
+        let old_state = storage.borrow().get("nvs-default-state")?;
+        if old_state != Some(new_state) {
+            storage.borrow_mut().set("nvs-default-state", &new_state)?;
+        }
+
+        Ok::<_, S::Error>(())
+    }));
 }
 
 fn mark_wakeup_pins(

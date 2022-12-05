@@ -65,7 +65,6 @@ pub async fn process<'a>(mut rtc: impl RtcExternal + 'a) {
             match result {
                 Either3::Second(command) => match command {
                     RtcExternalCommand::Pending => {}
-                    _ => unreachable!(),
                 },
                 _ => unreachable!(),
             }

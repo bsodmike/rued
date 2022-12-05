@@ -43,7 +43,7 @@ pub async fn process() {
 
         {
             STATE.lock(|inspector_state| {
-                let mut inspector_state = inspector_state.borrow_mut();
+                let inspector_state = inspector_state.borrow_mut();
 
                 match index {
                     0 => {

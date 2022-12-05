@@ -95,8 +95,7 @@ where
     }
 
     unsafe fn get_system_time_with_fallback(&mut self) -> Result<SystemTimeBuffer> {
-        let mut rtc = self.rtc()?;
-
+        let rtc = self.rtc()?;
         let system_time = get_system_time()?;
 
         // debug!(

@@ -36,6 +36,7 @@ pub fn high_prio<'a, const C: usize, M, D>(
         impl PwmPin<Duty = u32> + 'a,
     ),
     rtc: impl RtcExternal + 'a,
+    nvs_default_state: impl FnMut(crate::NvsDataState) + 'a,
 ) -> Result<(), SpawnError>
 where
     M: Monitor + Default,

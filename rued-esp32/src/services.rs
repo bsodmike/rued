@@ -105,31 +105,31 @@ const WIFI_START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2
 // #[cfg_attr(feature = "rtc-mem", link_section = ".rtc.data.rtc_memory")]
 // pub static mut RTC_MEMORY: RtcMemory = RtcMemory::new();
 
-pub fn valve_pins(
-    peripherals: ValvePeripherals,
-    wakeup_reason: WakeupReason,
-) -> Result<
-    (
-        impl EHOutputPin<Error = impl Debug>,
-        impl EHOutputPin<Error = impl Debug>,
-        impl EHOutputPin<Error = impl Debug>,
-    ),
-    EspError,
-> {
-    let mut power = PinDriver::input_output(peripherals.power)?;
-    let mut open = PinDriver::input_output(peripherals.open)?;
-    let mut close = PinDriver::input_output(peripherals.close)?;
+// pub fn valve_pins(
+//     peripherals: ValvePeripherals,
+//     wakeup_reason: WakeupReason,
+// ) -> Result<
+//     (
+//         impl EHOutputPin<Error = impl Debug>,
+//         impl EHOutputPin<Error = impl Debug>,
+//         impl EHOutputPin<Error = impl Debug>,
+//     ),
+//     EspError,
+// > {
+//     let mut power = PinDriver::input_output(peripherals.power)?;
+//     let mut open = PinDriver::input_output(peripherals.open)?;
+//     let mut close = PinDriver::input_output(peripherals.close)?;
 
-    power.set_pull(Pull::Floating)?;
-    open.set_pull(Pull::Floating)?;
-    close.set_pull(Pull::Floating)?;
+//     power.set_pull(Pull::Floating)?;
+//     open.set_pull(Pull::Floating)?;
+//     close.set_pull(Pull::Floating)?;
 
-    if wakeup_reason == WakeupReason::ULP {
-        // valve::emergency_close(&mut power, &mut open, &mut close, &mut FreeRtos);
-    }
+//     if wakeup_reason == WakeupReason::ULP {
+//         // valve::emergency_close(&mut power, &mut open, &mut close, &mut FreeRtos);
+//     }
 
-    Ok((power, open, close))
-}
+//     Ok((power, open, close))
+// }
 
 #[cfg(feature = "nvs")]
 pub fn storage(
@@ -178,7 +178,7 @@ pub fn storage(
 
     let storage = &*STORAGE.init(Mutex::new(RefCell::new(
         embedded_svc::storage::StorageImpl::new(
-            esp_idf_svc::nvs::EspNvs::new(partition, "WM", true)?,
+            esp_idf_svc::nvs::EspNvs::new(partition, "DEFAULT", true)?,
             PostcardSerDe,
         ),
     )));

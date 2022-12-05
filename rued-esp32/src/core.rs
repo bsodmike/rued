@@ -1,4 +1,4 @@
-use crate::{DISABLE_HTTPD, DISABLE_SNTP, FALLBACK_TO_RTC, UPDATE_RTC};
+use crate::{FALLBACK_TO_RTC, UPDATE_RTC};
 use log::{info, warn};
 
 pub mod internal;
@@ -25,7 +25,7 @@ pub fn get_update_rtc_flag() -> bool {
     let mut resp = false;
 
     let lock = UPDATE_RTC.try_lock();
-    if let Ok(mut mutex) = lock {
+    if let Ok(mutex) = lock {
         let value = *mutex;
         resp = value.clone();
 
@@ -63,64 +63,64 @@ pub fn get_fallback_to_rtc_flag() -> bool {
     value
 }
 
-// DISABLE_SNTP
+// // DISABLE_SNTP
 
-pub fn disable_sntp() {
-    let mut flag = DISABLE_SNTP
-        .lock()
-        .expect("Could not lock DISABLE_SNTP mutex, when attempting to enable flag");
-    *flag = true;
-}
+// pub fn disable_sntp() {
+//     let mut flag = DISABLE_SNTP
+//         .lock()
+//         .expect("Could not lock DISABLE_SNTP mutex, when attempting to enable flag");
+//     *flag = true;
+// }
 
-pub fn enable_sntp() {
-    let mut flag = DISABLE_SNTP
-        .lock()
-        .expect("Could not lock DISABLE_SNTP mutex, when attempting to disable flag");
-    *flag = false;
-}
+// pub fn enable_sntp() {
+//     let mut flag = DISABLE_SNTP
+//         .lock()
+//         .expect("Could not lock DISABLE_SNTP mutex, when attempting to disable flag");
+//     *flag = false;
+// }
 
-/// Returns the value of the `DISABLE_SNTP` flag.
-///
-/// - false: SNTP is enabled.
-/// - true: SNTP is disabled.
-pub fn get_disable_sntp_flag() -> bool {
-    let flag = DISABLE_SNTP
-        .lock()
-        .expect("Could not lock DISABLE_SNTP mutex, when attempting to read flag value");
+// /// Returns the value of the `DISABLE_SNTP` flag.
+// ///
+// /// - false: SNTP is enabled.
+// /// - true: SNTP is disabled.
+// pub fn get_disable_sntp_flag() -> bool {
+//     let flag = DISABLE_SNTP
+//         .lock()
+//         .expect("Could not lock DISABLE_SNTP mutex, when attempting to read flag value");
 
-    let value = *flag;
-    std::mem::drop(flag);
+//     let value = *flag;
+//     std::mem::drop(flag);
 
-    value
-}
+//     value
+// }
 
-// DISABLE_HTTPD
+// // DISABLE_HTTPD
 
-pub fn disable_httpd() {
-    let mut flag = DISABLE_HTTPD
-        .lock()
-        .expect("Could not lock DISABLE_HTTPD mutex, when attempting to enable flag");
-    *flag = true;
-}
+// pub fn disable_httpd() {
+//     let mut flag = DISABLE_HTTPD
+//         .lock()
+//         .expect("Could not lock DISABLE_HTTPD mutex, when attempting to enable flag");
+//     *flag = true;
+// }
 
-pub fn enable_httpd() {
-    let mut flag = DISABLE_HTTPD
-        .lock()
-        .expect("Could not lock DISABLE_HTTPD mutex, when attempting to disable flag");
-    *flag = false;
-}
+// pub fn enable_httpd() {
+//     let mut flag = DISABLE_HTTPD
+//         .lock()
+//         .expect("Could not lock DISABLE_HTTPD mutex, when attempting to disable flag");
+//     *flag = false;
+// }
 
-/// Returns the value of the `DISABLE_HTTPD` flag.
-///
-/// - false: HTTPD is enabled.
-/// - true: HTTPD is disabled.
-pub fn get_disable_httpd_flag() -> bool {
-    let flag = DISABLE_HTTPD
-        .lock()
-        .expect("Could not lock DISABLE_HTTPD mutex, when attempting to read flag value");
+// /// Returns the value of the `DISABLE_HTTPD` flag.
+// ///
+// /// - false: HTTPD is enabled.
+// /// - true: HTTPD is disabled.
+// pub fn get_disable_httpd_flag() -> bool {
+//     let flag = DISABLE_HTTPD
+//         .lock()
+//         .expect("Could not lock DISABLE_HTTPD mutex, when attempting to read flag value");
 
-    let value = *flag;
-    std::mem::drop(flag);
+//     let value = *flag;
+//     std::mem::drop(flag);
 
-    value
-}
+//     value
+// }
