@@ -1,4 +1,4 @@
-use crate::core::internal;
+use crate::core::internal::{self, pwm::DEFAULT_DUTY_CYCLE};
 use anyhow::Result;
 use embedded_svc::http::Method;
 use http::status::StatusCode;
@@ -10,7 +10,7 @@ use esp_idf_svc::http::{server::EspHttpConnection, server::EspHttpServer};
 pub fn configure_handlers(httpd: &mut EspHttpServer) -> Result<()> {
     httpd.fn_handler("/health", Method::Get, move |request| {
         request
-            .into_response(200, Some("OK"), &[])
+            .into_response(StatusCode::OK.as_u16(), Some(StatusCode::OK.as_str()), &[])
             .expect("Response for /health");
 
         Ok(())
@@ -44,7 +44,7 @@ pub fn configure_handlers(httpd: &mut EspHttpServer) -> Result<()> {
             let mut body = String::from_utf8(buffer.to_vec())?;
             body = body.replace("\0", "");
 
-            let mut json: serde_json::Value;
+            let json: serde_json::Value;
             match serde_json::from_str(&body) {
                 Ok(value) => json = value,
                 Err(error) => {
@@ -55,7 +55,7 @@ pub fn configure_handlers(httpd: &mut EspHttpServer) -> Result<()> {
             };
             log::info!("json: {:?}", json);
 
-            let mut duty_cycle = 50;
+            let mut duty_cycle = DEFAULT_DUTY_CYCLE;
             if let Some(value) = json["pwm"]["duty_cycle"].as_u64() {
                 duty_cycle = value as u32;
             }
@@ -67,7 +67,7 @@ pub fn configure_handlers(httpd: &mut EspHttpServer) -> Result<()> {
             let json = json!({
                 "code": 200,
                 "success": true,
-                "body": json
+                "processed_command": json
             });
             let text = json.to_string();
 

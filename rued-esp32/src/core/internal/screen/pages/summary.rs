@@ -14,6 +14,7 @@ use gfx_xtra::draw_target::{DrawTargetExt2, RotateAngle};
 use crate::core::internal::battery::BatteryState;
 use crate::core::internal::external_rtc::RtcExternalState;
 use crate::core::internal::keepalive::RemainingTime;
+use crate::core::internal::pwm::PwmCommand;
 use crate::core::internal::screen::shapes::{self, BatteryChargedText, Color};
 use crate::core::internal::wifi::WifiConnection;
 // use crate::valve::ValveState;
@@ -61,6 +62,7 @@ impl Summary {
         remaining_time_state: Option<&RemainingTime>,
         ip_addr: Option<&Option<WifiConnection>>,
         ext_rtc: Option<&RtcExternalState>,
+        pwm: Option<&PwmCommand>,
     ) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = super::super::super::screen::DisplayColor>,
@@ -84,6 +86,7 @@ impl Summary {
             &mut target.cropped(&content_rect),
             Some(&meter_state),
             ext_rtc,
+            pwm,
         )?;
 
         Ok(())
@@ -200,6 +203,7 @@ impl Summary {
         target: &mut D,
         meter_state: Option<&MeterState>,
         current_time: Option<&RtcExternalState>,
+        pwm: Option<&PwmCommand>,
     ) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = Color>,
@@ -250,6 +254,7 @@ impl Summary {
                         time_buffer.seconds,
                     );
 
+                    // FIXME
                     // let formatted = time_buffer.to_s().expect("formatted time as String");
                     write!(&mut text_buf, "{}", formatted)
                         .expect("Writing of String into text buffer");
@@ -263,6 +268,42 @@ impl Summary {
         let text_row = shapes::Textbox {
             text: &text_buf,
             color: Color::White,
+            font: profont::PROFONT_18_POINT,
+            padding: 1,
+            outline: 0,
+            strikethrough: false,
+            ..Default::default()
+        };
+
+        let text_row_size = text_row.preferred_size();
+        text_row.draw(&mut target.cropped(&Rectangle::new(
+            Point::new(((width - text_row_size.width) / 2) as i32, y_offs),
+            text_row_size,
+        )))?;
+
+        // PWM Duty-cycle
+        y_offs += (text_row.preferred_size().height + 20) as i32;
+
+        let mut text_buf = heapless::String::<32>::new();
+        write!(&mut text_buf, "{}", "").unwrap();
+
+        if let Some(value) = pwm {
+            match value {
+                PwmCommand::SetDutyCycle(duty_cycle) => {
+                    let formatted = format!("PWM Duty-cycle: {:0>2}%", duty_cycle);
+
+                    write!(&mut text_buf, "{}", formatted)
+                        .expect("Writing of String into text buffer for PWM Duty-cycle");
+                }
+                _ => {
+                    write!(&mut text_buf, "{}", "Updating...").unwrap();
+                }
+            }
+        }
+
+        let text_row = shapes::Textbox {
+            text: &text_buf,
+            color: Color::Red,
             font: profont::PROFONT_18_POINT,
             padding: 1,
             outline: 0,
@@ -300,7 +341,7 @@ impl Summary {
         if let Some(remaining_time) = remaining_time {
             let mut status_rt = shapes::Textbox {
                 text: "            ",
-                color: super::super::super::screen::DISPLAY_COLOR_YELLOW,
+                color: Color::DarkOrange,
                 font: status_font,
                 padding: 1,
                 outline: 0,
@@ -308,7 +349,7 @@ impl Summary {
                 ..Default::default()
             };
 
-            let mut ip = String::default();
+            let mut ip = String::from("connecting...");
             if let Some(inner) = ip_address {
                 if let Some(conn) = inner {
                     ip = conn.ip();

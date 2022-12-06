@@ -173,6 +173,7 @@ pub(crate) static BUTTON3_PRESSED_NOTIF: Notification = Notification::new();
 pub(crate) static WIFI_STATE_NOTIF: Notification = Notification::new();
 pub(crate) static REMAINING_TIME_NOTIF: Notification = Notification::new();
 pub(crate) static EXT_RTC_NOTIF: Notification = Notification::new();
+pub(crate) static PWM_CHANGE_NOTIF: Notification = Notification::new();
 
 static DRAW_REQUEST_NOTIF: Notification = Notification::new();
 
@@ -189,6 +190,7 @@ pub async fn process() {
             REMAINING_TIME_NOTIF.wait(),  // 3
             WIFI_STATE_NOTIF.wait(),      // 4
             EXT_RTC_NOTIF.wait(),         // 5
+            PWM_CHANGE_NOTIF.wait(),      // 6
         ])
         .await;
 
@@ -241,6 +243,10 @@ pub async fn process() {
                     }
                     5 => {
                         // Redraw Summary page to update time info
+                        screen_state.changeset.insert(DataSource::Page);
+                    }
+                    6 => {
+                        // Redraw Summary page to update PWM info
                         screen_state.changeset.insert(DataSource::Page);
                     }
                     _ => unreachable!(),
@@ -314,6 +320,7 @@ where
             screen_state.remaining_time().as_ref(),
             screen_state.wifi().as_ref(),
             Some(super::external_rtc::STATE.get()).as_ref(),
+            Some(super::pwm::STATE.get()).as_ref(),
         )?,
         Page::Battery => {
             Battery::draw(&mut display, page_changed, screen_state.battery().as_ref())?

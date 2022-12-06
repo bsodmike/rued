@@ -346,7 +346,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     // PWM
     println!("Setting up PWM output channels");
 
-    let config = TimerConfig::new().frequency(250.Hz().into());
+    let config = TimerConfig::new().frequency(500.Hz().into());
     let timer = Arc::new(LedcTimerDriver::new(peripherals.timer0.0, &config)?);
 
     let channel0 = LedcDriver::new(
