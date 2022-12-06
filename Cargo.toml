@@ -1,49 +1,54 @@
-[package]
-name = "rust-esp32-blinky"
-version = "0.1.0"
-authors = ["Michael de Silva <michael@mwdesilva.com>"]
-edition = "2021"
+[workspace]
 resolver = "2"
 
+members = [
+    "rued-esp32",
+]
+
+# exclude = []
+
+[patch.crates-io]
+embedded-hal = { git = "https://github.com/rust-embedded/embedded-hal" }
+# embedded-svc = { git = "https://github.com/esp-rs/embedded-svc" }
+# esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal" }
+# esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc" }
+# edge-frame = { git = "https://github.com/ivmarkov/edge-frame" }
+# embedded-io = { git = "https://github.com/ivmarkov/embedded-io" }
+shared-bus = { git = "https://github.com/taks/shared-bus", branch = "embedded-hal-1.0.0-alpha.9" }
+
+#socket2 = { git = "https://github.com/esp-rs-compat/socket2" }
+#polling = { git = "https://github.com/esp-rs-compat/polling" }
+#embedded-svc = { path = "../embedded-svc" }
+#esp-idf-sys = { path = "../esp-idf-sys" }
+#esp-idf-hal = { path = "../esp-idf-hal" }
+#esp-idf-svc = { path = "../esp-idf-svc" }
+#edge-frame = { path = "../edge-frame/edge-frame" }
+#edge-executor = { path = "../edge-executor" }
+# embedded-svc = { git = "https://github.com/esp-rs/embedded-svc" }
+# esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal" }
+# esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc" }
+# edge-frame = { git = "https://github.com/ivmarkov/edge-frame" }
+# embedded-io = { git = "https://github.com/ivmarkov/embedded-io" }
+
+#[patch.'https://github.com/esp-rs/embedded-svc']
+#embedded-svc = { path = "../embedded-svc" }
+
+#[patch.'https://github.com/esp-rs/esp-idf-hal']
+#esp-idf-hal = { path = "../esp-idf-hal" }
+
+#[patch.'https://github.com/esp-rs/esp-idf-svc']
+#esp-idf-svc = { path = "../esp-idf-svc" }
+
+#[patch.'https://github.com/ivmarkov/edge-frame']
+#edge-frame = { path = "../edge-frame/edge-frame" }
+
+#[patch.'https://github.com/ivmarkov/embassy']
+#embassy-time = { path = "../embassy/embassy-time" }
+
 [profile.release]
+debug = true
 opt-level = "s"
 
 [profile.dev]
-debug = true # Symbols are nice and they don't increase the size on Flash
+debug = true
 opt-level = "z"
-
-[features]
-pio = ["esp-idf-sys/pio"]
-default = []
-# default = ["wifi", "sntp"]
-httpd_server_enabled = ["wifi", "sntp", "httpd_server"]
-
-wifi = []
-sntp = []
-httpd_server = []
-
-[dependencies]
-anyhow = "1"
-log = "0.4.17"
-esp-idf-sys = { version = "0.31.9", features = ["binstart"] }
-esp-idf-hal = "0.38.1"
-esp-idf-svc = { version = "0.42.5", features = ["experimental", "std"] }
-embedded-hal = "0.2.7"
-embedded-svc = { version = "0.22.3", features = ["experimental", "std"] }
-ssd1306 = "0.7.0"
-embedded-graphics = "0.7"
-display-interface = "0.4.1"
-serde = "1.0.147"
-serde_json = "1.0.87"
-heapless = { version = "0.7.16", default-features = false }
-cstr_core = "0.2.6"
-uncased = { version = "0.9.7" }
-shared-bus = "0.2.4"
-once_cell = "1.16.0"
-
-# time = { version = "0.3.17", features = ["macros"] }
-chrono = { version = "0.4.23", default-features = false, features = ["clock", "std", "wasmbind"] } 
-
-[build-dependencies]
-embuild = "0.30"
-anyhow = "1"
