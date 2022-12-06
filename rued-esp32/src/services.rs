@@ -1,7 +1,6 @@
 use core::cell::RefCell;
 use core::fmt::Debug;
 use core::mem;
-use std::fmt::Write;
 
 extern crate alloc;
 
@@ -10,7 +9,6 @@ extern crate alloc;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_time::Duration;
 
-use embedded_graphics::mono_font::iso_8859_9::FONT_9X15;
 use embedded_hal_0_2::digital::v2::OutputPin as EHOutputPin;
 
 use embedded_svc::http::server::Method;

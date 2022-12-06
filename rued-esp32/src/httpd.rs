@@ -58,6 +58,16 @@ pub fn configure_handlers(httpd: &mut EspHttpServer) -> Result<()> {
             let mut duty_cycle = DEFAULT_DUTY_CYCLE;
             if let Some(value) = json["pwm"]["duty_cycle"].as_u64() {
                 duty_cycle = value as u32;
+
+                if duty_cycle > 100 {
+                    respond_err(
+                        conn_mut,
+                        StatusCode::BAD_REQUEST,
+                        "Duty-cycle percentage must be less than or equal to 100%",
+                    )?;
+
+                    return Ok(());
+                }
             }
 
             // NOTE: Signal change of PWM duty-cycle

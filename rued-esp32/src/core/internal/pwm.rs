@@ -77,13 +77,13 @@ pub async fn process<'a>(
                         if percentage > 100 {
                             log::warn!("PWM duty-cycle cannot exceed 100%");
                             return;
+                        } else {
+                            set_duty(&mut pwm0, percentage);
+                            set_duty(&mut pwm1, percentage);
+                            set_duty(&mut pwm2, percentage);
+
+                            STATE.update(future);
                         }
-
-                        set_duty(&mut pwm0, percentage);
-                        set_duty(&mut pwm1, percentage);
-                        set_duty(&mut pwm2, percentage);
-
-                        STATE.update(future);
                     }
                     PwmCommand::Initialised => {}
                 },
