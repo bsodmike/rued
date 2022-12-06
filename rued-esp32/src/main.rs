@@ -12,11 +12,14 @@ use once_cell::sync::Lazy;
 use peripherals::{ButtonsPeripherals, PulseCounterPeripherals};
 use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, Rv8803Bus, TIME_ARRAY_LENGTH};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use shared_bus::{BusManager, I2cProxy};
 use std::{
     env,
     error::Error as StdError,
-    fmt, ptr,
+    fmt,
+    fmt::Write,
+    ptr,
     sync::{
         mpsc::{self, Receiver, Sender},
         Arc, Mutex,
@@ -51,7 +54,14 @@ use esp_idf_sys::{
     timezone, wifi_ps_type_t_WIFI_PS_NONE,
 }; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
-use embedded_svc::wifi::{self, AuthMethod, ClientConfiguration, Wifi};
+use embedded_svc::{
+    http::{
+        server::{Connection, Io, Request, Response},
+        Method, Query,
+    },
+    io::Read,
+    wifi::{self, AuthMethod, ClientConfiguration, Wifi},
+};
 use esp_idf_hal::modem::Modem;
 use esp_idf_svc::{
     netif::IpEvent,
@@ -85,7 +95,6 @@ use crate::{
 mod core;
 mod display;
 mod errors;
-mod http;
 mod http_client;
 mod http_server;
 pub(crate) mod models;
@@ -315,12 +324,63 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // RTC module (External)
 
-    let rtc_clock: RTClock<I2cProxy<Mutex<I2cDriver>>> = RTClock::new(i2c0_bus_manager)?;
-    let rtc = rtc_clock.rtc()?;
+    let rtc_clock: Option<RTClock<I2cProxy<Mutex<I2cDriver>>>>;
+    #[cfg(feature = "external-rtc")]
+    {
+        rtc_clock = Some(RTClock::new(i2c0_bus_manager)?);
+    }
+    #[cfg(not(feature = "external-rtc"))]
+    {
+        rtc_clock = None;
+    }
 
     // Httpd
 
-    let (_httpd, ws_acceptor) = services::httpd()?;
+    let (mut httpd, ws_acceptor) = services::httpd()?;
+    httpd.fn_handler("/health", Method::Get, move |request| {
+        request
+            .into_response(200, Some("OK"), &[])
+            .expect("Response for /health");
+
+        Ok(())
+    })?;
+
+    httpd.fn_handler("/pwm", Method::Post, move |mut request| {
+        const BUFFER_SIZE: usize = 1024;
+        let (conn, conn_mut) = request.split();
+        let uri = conn.uri();
+        // let _conn_raw = conn_mut.raw_connection()?;
+
+        let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
+
+        if let Some(ct) = conn.header("Content-Type") {
+            log::info! {"Content-Type: {}", ct};
+        }
+        log::info! {"Uri: {}", uri};
+
+        // FIXME
+        // And one more: even if you passed a big-enough buffer to read, you have no warranty that all of the input will be read in a single pass. Mentioning this as you might stumble on that next. :) Basically you have to read in a loop, until read returns you 0 bytes read (with a non-empty buffer, that is). STD had something like read_fully or whatever and a bunch of utilities for working with Vec. You can transform the native embedded-io Read into STD Read to use those. But read_fully is also dangerous, as then malicious folks can crash your firmware with out of mem
+        let body_size = conn_mut.read(&mut buffer)?;
+        // log::info!("Body buffer: {:?}", &buffer);
+        if body_size > 0 {
+            let body = String::from_utf8(buffer.to_vec())?;
+            log::info!("Body: {}", body);
+        }
+
+        // Response
+        let json = json!({
+            "code": 200,
+            "success": true,
+            "body": "test"
+        });
+        let text = json.to_string();
+
+        conn_mut.initiate_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
+
+        conn_mut.write(text.as_bytes())?;
+
+        Ok(())
+    })?;
 
     // Mqtt
 
@@ -351,36 +411,6 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         &config,
     )?;
 
-    // let mut drivers = vec![channel0, channel1, channel2];
-
-    // for mut pwm in drivers.into_iter() {
-    //     let max_duty = pwm.get_max_duty();
-    //     let duty_cycle = max_duty / 2;
-
-    //     pwm.set_duty(duty_cycle);
-    //     pwm.enable();
-    // }
-
-    // println!("Spawning PWM threads");
-
-    // let thread0 = std::thread::Builder::new()
-    //     .stack_size(7000)
-    //     .spawn(move || cycle_duty(channel0, "PWM 0"))?;
-    // let thread1 = std::thread::Builder::new()
-    //     .stack_size(7000)
-    //     .spawn(move || cycle_duty(channel1, "PWM 1"))?;
-    // let thread2 = std::thread::Builder::new()
-    //     .stack_size(7000)
-    //     .spawn(move || cycle_duty(channel2, "PWM 2"))?;
-
-    // println!("Waiting for PWM threads");
-
-    // thread0.join().unwrap()?;
-    // thread1.join().unwrap()?;
-    // thread2.join().unwrap()?;
-
-    // println!("Joined PWM threads");
-
     // High-prio tasks
 
     #[cfg(feature = "display-i2c")]
@@ -404,6 +434,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         )?,
         display,
         (wifi, wifi_notif),
+        &mut httpd,
         ws_acceptor,
         (channel0, channel1, channel2),
         rtc_clock,
@@ -412,27 +443,6 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
             flash_default_state(storage, _new_state);
         },
     )?;
-
-    // spawn::high_prio(
-    //     &mut high_prio_executor,
-    //     &mut high_prio_tasks,
-    //     AdcDriver::new(peripherals.battery.adc, &AdcConfig::new().calibration(true))?,
-    //     AdcChannelDriver::<_, Atten0dB<_>>::new(peripherals.battery.voltage)?,
-    //     PinDriver::input(peripherals.battery.power)?,
-    //     false,
-    //     services::button(
-    //         peripherals.buttons.button1,
-    //         &core::internal::button::BUTTON1_PIN_EDGE,
-    //     )?,
-    //     services::button(
-    //         peripherals.buttons.button2,
-    //         &core::internal::button::BUTTON2_PIN_EDGE,
-    //     )?,
-    //     services::button(
-    //         peripherals.buttons.button3,
-    //         &core::internal::button::BUTTON3_PIN_EDGE,
-    //     )?,
-    // )?;
 
     // Mid-prio tasks
 
@@ -510,27 +520,6 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     // low_prio_execution.join().unwrap();
 
     log::info!("Finished execution");
-
-    Ok(())
-}
-
-fn cycle_duty<P>(mut pwm: P, log_prefix: &str) -> Result<()>
-where
-    P: PwmPin<Duty = u32>,
-{
-    let max_duty = pwm.get_max_duty();
-    let duty_cycle = max_duty / 2;
-
-    pwm.set_duty(duty_cycle);
-    pwm.enable();
-
-    for cycle in 0..60 {
-        info!(
-            "[{}] PWM({}): max_duty: {} / set_duty: {}",
-            cycle, log_prefix, &max_duty, &duty_cycle
-        );
-        FreeRtos::delay_ms(1000);
-    }
 
     Ok(())
 }

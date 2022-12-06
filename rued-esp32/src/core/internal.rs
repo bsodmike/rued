@@ -3,6 +3,7 @@ pub mod button;
 pub mod dto;
 pub mod error;
 pub mod external_rtc;
+pub mod httpd;
 pub mod inspector;
 pub mod keepalive;
 pub mod mqtt;

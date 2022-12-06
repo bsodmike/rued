@@ -7,6 +7,8 @@ use embedded_hal_0_2::{adc, PwmPin};
 use embedded_svc::mqtt::client::asynch::{Client, Connection, Publish};
 use embedded_svc::wifi::Wifi as WifiTrait;
 use embedded_svc::ws::asynch::server::Acceptor;
+use esp_idf_svc::handle::RawHandle;
+use esp_idf_svc::http::server::EspHttpServer;
 use esp_idf_svc::wifi::{EspWifi, WifiEvent};
 
 use gfx_xtra::draw_target::Flushable;
@@ -29,13 +31,14 @@ pub fn high_prio<'a, const C: usize, M, D>(
     button1_pin: impl InputPin<Error = impl Debug + 'a> + 'a,
     display: D,
     wifi: (EspWifi<'a>, impl Receiver<Data = WifiEvent> + 'a),
+    httpd: &'a mut EspHttpServer,
     acceptor: impl Acceptor + 'a,
     pwm: (
         impl PwmPin<Duty = u32> + 'a,
         impl PwmPin<Duty = u32> + 'a,
         impl PwmPin<Duty = u32> + 'a,
     ),
-    rtc: impl RtcExternal + 'a,
+    rtc: Option<impl RtcExternal + 'a>,
     nvs_default_state: impl FnMut(crate::NvsDataState) + 'a,
 ) -> Result<(), SpawnError>
 where
@@ -53,9 +56,13 @@ where
         .spawn_local_collect(screen::process(), tasks)?
         .spawn_local_collect(screen::run_draw(display), tasks)?
         .spawn_local_collect(super::wifi::process(wifi.0, wifi.1), tasks)?
-        .spawn_local_collect(super::external_rtc::process(rtc), tasks)?
+        .spawn_local_collect(super::httpd::process(httpd), tasks)?
         .spawn_local_collect(super::pwm::process(pwm), tasks)?
         .spawn_local_collect(super::ws::process(acceptor), tasks)?;
+
+    if let Some(rtc) = rtc {
+        executor.spawn_local_collect(super::external_rtc::process(rtc), tasks)?;
+    };
 
     Ok(())
 }
