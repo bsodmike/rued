@@ -48,7 +48,7 @@ static_cell = { version = "1" }
 edge-frame = { version = "0.4", default-features = false, features = ["dto"], git = "https://github.com/ivmarkov/edge-frame" }
 edge-executor = { version = "0.3", optional = true }
 channel-bridge = { version = "0.1", git = "https://github.com/ivmarkov/channel-bridge", default-features = false, features = ["notification", "nightly", "embedded-svc"] }
-# ruwm = { git = "https://github.com/ivmarkov/ruwm" } 
+http = "0.2"
 
 # time = { version = "0.3.17", features = ["macros"] }
 chrono = { version = "0.4.23", default-features = false, features = ["clock", "std", "wasmbind"] } 

@@ -96,7 +96,7 @@ mod core;
 mod display;
 mod errors;
 mod http_client;
-mod http_server;
+mod httpd;
 pub(crate) mod models;
 mod peripherals;
 mod services;
@@ -337,50 +337,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     // Httpd
 
     let (mut httpd, ws_acceptor) = services::httpd()?;
-    httpd.fn_handler("/health", Method::Get, move |request| {
-        request
-            .into_response(200, Some("OK"), &[])
-            .expect("Response for /health");
-
-        Ok(())
-    })?;
-
-    httpd.fn_handler("/pwm", Method::Post, move |mut request| {
-        const BUFFER_SIZE: usize = 1024;
-        let (conn, conn_mut) = request.split();
-        let uri = conn.uri();
-        // let _conn_raw = conn_mut.raw_connection()?;
-
-        let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
-
-        if let Some(ct) = conn.header("Content-Type") {
-            log::info! {"Content-Type: {}", ct};
-        }
-        log::info! {"Uri: {}", uri};
-
-        // FIXME
-        // And one more: even if you passed a big-enough buffer to read, you have no warranty that all of the input will be read in a single pass. Mentioning this as you might stumble on that next. :) Basically you have to read in a loop, until read returns you 0 bytes read (with a non-empty buffer, that is). STD had something like read_fully or whatever and a bunch of utilities for working with Vec. You can transform the native embedded-io Read into STD Read to use those. But read_fully is also dangerous, as then malicious folks can crash your firmware with out of mem
-        let body_size = conn_mut.read(&mut buffer)?;
-        // log::info!("Body buffer: {:?}", &buffer);
-        if body_size > 0 {
-            let body = String::from_utf8(buffer.to_vec())?;
-            log::info!("Body: {}", body);
-        }
-
-        // Response
-        let json = json!({
-            "code": 200,
-            "success": true,
-            "body": "test"
-        });
-        let text = json.to_string();
-
-        conn_mut.initiate_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
-
-        conn_mut.write(text.as_bytes())?;
-
-        Ok(())
-    })?;
+    httpd::configure_handlers(&mut httpd)?;
 
     // Mqtt
 

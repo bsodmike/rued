@@ -60,12 +60,12 @@ pub async fn process<'a>(
         {
             match index {
                 0 => match future {
-                    PwmCommand::SetDutyCycle(divisor) => {
-                        log::info!("PwmCommand::SetDutyCycle: divisor={}", divisor);
+                    PwmCommand::SetDutyCycle(percentage) => {
+                        log::info!("PwmCommand::SetDutyCycle: {}", percentage);
 
-                        set_duty(&mut pwm0, divisor);
-                        set_duty(&mut pwm1, divisor);
-                        set_duty(&mut pwm2, divisor);
+                        set_duty(&mut pwm0, percentage);
+                        set_duty(&mut pwm1, percentage);
+                        set_duty(&mut pwm2, percentage);
                     }
                 },
                 _ => unreachable!(),
