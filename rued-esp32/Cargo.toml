@@ -40,7 +40,7 @@ critical-section = "1.1"
 embedded-hal = { git = "https://github.com/rust-embedded/embedded-hal" }
 embedded-hal-0-2 = { package = "embedded-hal", version = "0.2.7", features = ["unproven"] }
 embedded-svc = { version = "0.23", features = ["nightly", "experimental"] }
-esp-idf-sys = { version = "0.31.11", features = ["binstart"] }
+esp-idf-sys = { version = "0.31.12", features = ["binstart"] }
 esp-idf-svc = { version = "0.43.4", features = ["nightly", "experimental", "embassy-time-isr-queue"] }
 esp-idf-hal = { version = "0.39.3", features = ["edge-executor", "embassy-sync", "critical-section"] }
 embassy-futures = { version = "0.1" }
