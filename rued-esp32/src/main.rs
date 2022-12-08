@@ -369,6 +369,12 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         &config,
     )?;
 
+    // SD/MMC Card
+
+    // FIXME
+    // let block_device = embedded_sdmmc::SdMmcSpi::new(esp_idf_hal::spi::SPI2, sdmmc_cs);
+    // let mut cont = embedded_sdmmc::Controller::new();
+
     // High-prio tasks
 
     #[cfg(feature = "display-i2c")]
