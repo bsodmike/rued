@@ -39,7 +39,7 @@ pub fn high_prio<'a, const C: usize, M, D>(
         impl PwmPin<Duty = u32> + 'a,
     ),
     rtc: Option<impl RtcExternal + 'a>,
-    nvs_default_state: impl FnMut(crate::NvsDataState) + 'a,
+    pwm_flash: impl FnMut(crate::NvsDataState) + 'a,
 ) -> Result<(), SpawnError>
 where
     M: Monitor + Default,
@@ -58,7 +58,8 @@ where
         .spawn_local_collect(super::wifi::process(wifi.0, wifi.1), tasks)?
         .spawn_local_collect(super::httpd::process(httpd), tasks)?
         .spawn_local_collect(super::pwm::process(pwm), tasks)?
-        .spawn_local_collect(super::ws::process(acceptor), tasks)?;
+        .spawn_local_collect(super::ws::process(acceptor), tasks)?
+        .spawn_local_collect(super::pwm::flash(pwm_flash), tasks)?;
 
     if let Some(rtc) = rtc {
         executor.spawn_local_collect(super::external_rtc::process(rtc), tasks)?;

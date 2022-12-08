@@ -17,6 +17,8 @@ use embedded_svc::executor::asynch::Unblocker;
 
 use channel_bridge::notification::Notification;
 
+use crate::NvsDataState;
+
 use super::battery::{self, BatteryState};
 use super::keepalive::{self, RemainingTime};
 use super::state::State;
@@ -41,11 +43,19 @@ impl PwmState {
 }
 
 pub(crate) static BUTTON1_PRESSED_NOTIF: Notification = Notification::new();
+static STATE_PERSIST_NOTIFY: Notification = Notification::new();
+static STATE_FLASH_NOTIFY: Notification = Notification::new();
+
+pub const FLASH_WRITE_CYCLE: usize = 20;
 
 pub static STATE: State<PwmCommand> = State::new(
-    "PWM COMMAND",
+    "PWM",
     PwmCommand::Initialised,
-    &[&super::screen::PWM_CHANGE_NOTIF],
+    &[
+        &super::screen::PWM_CHANGE_NOTIF,
+        &STATE_PERSIST_NOTIFY,
+        &STATE_FLASH_NOTIFY,
+    ],
 );
 
 pub(crate) static COMMAND: Signal<CriticalSectionRawMutex, PwmCommand> = Signal::new();
@@ -104,4 +114,44 @@ fn set_duty<'a>(pwm: &mut (impl PwmPin<Duty = u32> + 'a), duty_cycle: u32) {
     pwm.set_duty(duty.round() as u32);
 
     pwm.enable();
+}
+
+fn persistable(state: &mut PwmCommand) -> NvsDataState {
+    match state {
+        PwmCommand::Initialised => NvsDataState::default(),
+        PwmCommand::SetDutyCycle(percentage) => NvsDataState {
+            pwm_duty_cycle: *percentage,
+            ..Default::default()
+        },
+    }
+}
+
+pub async fn persist(mut persister: impl FnMut(NvsDataState)) {
+    loop {
+        STATE_PERSIST_NOTIFY.wait().await;
+
+        persister(persistable(&mut STATE.get()));
+    }
+}
+
+/// Only performs flashing once every number of `FLASH_WRITE_CYCLE`s.
+pub async fn flash(mut flasher: impl FnMut(NvsDataState)) {
+    let mut cycle = 0;
+
+    loop {
+        STATE_FLASH_NOTIFY.wait().await;
+
+        if cycle == 0 {
+            let data = persistable(&mut STATE.get());
+
+            log::info!("[PWM]: Flashing {:?}", &data);
+            flasher(data);
+        }
+
+        cycle += 1;
+
+        if cycle >= FLASH_WRITE_CYCLE {
+            cycle = 0;
+        }
+    }
 }
