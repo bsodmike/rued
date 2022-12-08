@@ -394,7 +394,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     };
 
     #[cfg(not(feature = "display-i2c"))]
-    let display = { services::display(peripherals.display).unwrap() };
+    let (display, spi_bus) = { services::display(peripherals.display).unwrap() };
 
     let mut high_prio_executor = EspExecutor::<16, _>::new();
     let mut high_prio_tasks = heapless::Vec::<_, 16>::new();
