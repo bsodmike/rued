@@ -8,7 +8,6 @@ target = "xtensa-esp32-espidf"
 [target.xtensa-esp32-espidf]
 linker = "ldproxy"
 rustflags = ["--cfg", "espidf_time64", "--cfg", "esp32"]
-# rustflags = ["--cfg", "espidf_time64", "--cfg", "esp32", "--cfg", "esp_idf_esp_https_server_enable"]
 # rustflags = ["--cfg", "soc=\"esp32\""]
 
 [target.xtensa-esp32s2-espidf]
@@ -35,6 +34,7 @@ build-std = ["std", "panic_abort"]
 
 [env]
 CARGO_WORKSPACE_DIR = { value = "", relative = true }
+LIBCLANG_PATH = "/home/mdesilva/.espressif/tools/xtensa-esp32-elf-clang/esp-15.0.0-20221014-x86_64-unknown-linux-gnu/esp-clang/lib"
 # Uncomment this to build against ESP-IDF master (currently unreleased ESP IDF 5.1)
 #ESP_IDF_VERSION = "master"
 # Don't forget to uncomment also the `rustflags` parameter in your "target" section above
@@ -52,3 +52,5 @@ ESP_IDF_VERSION = "release/v5.0"
 # is by running "cargo pio espidf menuconfig" (that is, if using the pio builder)
 #ESP_IDF_SDKCONFIG = "sdkconfig.release;sdkconfig.debug"
 ESP_IDF_SDKCONFIG_DEFAULTS = "sdkconfig.defaults;sdkconfig.defaults.esp32;sdkconfig.defaults.esp32s2"
+
+esp_idf_tools_install_dir = "global"

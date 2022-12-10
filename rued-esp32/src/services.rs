@@ -82,6 +82,9 @@ const WIFI_SSID: &str = env!("WIFI_SSID");
 const WIFI_PSK: &str = env!("WIFI_PSK");
 const WIFI_START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
+const TLS_SERVER_CERT: &str = env!("TLS_SERVER_CERT");
+const TLS_SERVER_PRIVATE_KEY: &str = env!("TLS_SERVER_PRIVATE_KEY");
+
 // const ASSETS: assets::serve::Assets = edge_frame::assets!("RUWM_WEB");
 
 // #[derive(Default)]
@@ -420,6 +423,11 @@ pub fn httpd() -> Result<(EspHttpServer, impl Acceptor), InitError> {
         EspHttpWsProcessor::<{ ws::WS_MAX_CONNECTIONS }, { ws::WS_MAX_FRAME_LEN }>::new(());
 
     let ws_processor = Mutex::<EspRawMutex, _>::new(RefCell::new(ws_processor));
+
+    let mut config = esp_idf_svc::http::server::Configuration::default();
+    // config.server_certificate = "";
+
+    //tls::X509
 
     let mut httpd = EspHttpServer::new(&Default::default()).unwrap();
 

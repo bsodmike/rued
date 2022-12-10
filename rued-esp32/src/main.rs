@@ -172,8 +172,7 @@ const MQTT_MAX_TOPIC_LEN: usize = 64;
 
 // Make sure that the firmware will contain
 // up-to-date build time and package info coming from the binary crate
-// FIXME
-// esp_idf_sys::esp_app_desc!();
+esp_idf_sys::esp_app_desc!();
 
 fn main() -> Result<(), InitError> {
     esp_idf_hal::task::critical_section::link();
