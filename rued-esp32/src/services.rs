@@ -34,6 +34,7 @@ use esp_idf_svc::http::server::EspHttpServer;
 use esp_idf_svc::mqtt::client::{EspMqttClient, MqttClientConfiguration};
 use esp_idf_svc::netif::IpEvent;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
+use esp_idf_svc::tls;
 use esp_idf_svc::wifi::{EspWifi, WifiEvent, WifiWait};
 
 use esp_idf_sys::{esp, esp_restart, EspError};
@@ -81,9 +82,6 @@ use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
 const WIFI_SSID: &str = env!("WIFI_SSID");
 const WIFI_PSK: &str = env!("WIFI_PSK");
 const WIFI_START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
-
-const TLS_SERVER_CERT: &str = env!("TLS_SERVER_CERT");
-const TLS_SERVER_PRIVATE_KEY: &str = env!("TLS_SERVER_PRIVATE_KEY");
 
 // const ASSETS: assets::serve::Assets = edge_frame::assets!("RUWM_WEB");
 
@@ -424,12 +422,18 @@ pub fn httpd() -> Result<(EspHttpServer, impl Acceptor), InitError> {
 
     let ws_processor = Mutex::<EspRawMutex, _>::new(RefCell::new(ws_processor));
 
+    let server_certificate = tls::X509::pem_until_nul(include_bytes!(
+        "/home/mdesilva/esp/openssl-generate-rs/output/cert.pem"
+    ));
+    let server_private_key = tls::X509::pem_until_nul(include_bytes!(
+        "/home/mdesilva/esp/openssl-generate-rs/output/cert_key.pem"
+    ));
+
     let mut config = esp_idf_svc::http::server::Configuration::default();
-    // config.server_certificate = "";
+    config.server_certificate = Some(server_certificate);
+    config.private_key = Some(server_private_key);
 
-    //tls::X509
-
-    let mut httpd = EspHttpServer::new(&Default::default()).unwrap();
+    let mut httpd = EspHttpServer::new(&config).unwrap();
 
     httpd.ws_handler("/ws", move |connection| {
         ws_processor.lock(|ws_processor| ws_processor.borrow_mut().process(connection))
