@@ -27,7 +27,7 @@ where
     {
         let req = Request::wrap(connection);
 
-        info!("Middleware called with uri: {}", req.uri());
+        info!("DefaultMiddleware called with uri: {}", req.uri());
 
         let connection = req.release();
 
@@ -63,97 +63,160 @@ where
     }
 }
 
+#[derive(Copy, Clone)]
+pub struct SimpleMiddleware {}
+
+impl<C> Middleware<C> for SimpleMiddleware
+where
+    C: Connection,
+{
+    fn handle<'a, H>(&'a self, connection: &'a mut C, handler: &'a H) -> HandlerResult
+    where
+        H: Handler<C>,
+    {
+        let req = Request::wrap(connection);
+
+        info!("SimpleMiddleware called with uri: {}", req.uri());
+        let connection = req.release();
+
+        handler.handle(connection);
+
+        Ok(())
+    }
+
+    fn compose<H>(self, handler: H) -> CompositeHandler<Self, H>
+    where
+        H: Handler<C>,
+        Self: Sized,
+    {
+        CompositeHandler::new(self, handler)
+    }
+}
+
 pub fn configure_handlers<'a>(httpd: &mut EspHttpServer) -> Result<()> {
     httpd.handler(
         "/health",
         Method::Get,
-        DefaultMiddleware {}.compose(fn_handler(|request| {
-            request
-                .into_response(StatusCode::OK.as_u16(), Some(StatusCode::OK.as_str()), &[])
-                .expect("Response for /health");
+        DefaultMiddleware {}.compose(
+            //
+            fn_handler(|request| {
+                request
+                    .into_response(StatusCode::OK.as_u16(), Some(StatusCode::OK.as_str()), &[])
+                    .expect("Response for /health");
 
-            Ok(())
-        })),
+                Ok(())
+            }),
+        ),
+    )?;
+
+    httpd.handler(
+        "/nested-middleware",
+        Method::Get,
+        DefaultMiddleware {}.compose(
+            //
+            SimpleMiddleware {}.compose(
+                //
+                fn_handler(|request| {
+                    request
+                        .into_response(StatusCode::OK.as_u16(), Some(StatusCode::OK.as_str()), &[])
+                        .expect("Response for /nested-middleware");
+
+                    Ok(())
+                }),
+            ),
+        ),
     )?;
 
     httpd.handler(
         "/pwm",
         Method::Post,
-        DefaultMiddleware {}.compose(fn_handler(|mut request| {
-            let (conn, conn_mut) = request.split();
+        DefaultMiddleware {}.compose(
+            //
+            fn_handler(|mut request| {
+                let (conn, conn_mut) = request.split();
 
-            const BUFFER_SIZE: usize = 1024;
-            let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
+                const BUFFER_SIZE: usize = 1024;
+                let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
 
-            let uri = conn.uri();
-            log::info! {"Uri: {}", uri};
+                let uri = conn.uri();
+                log::info! {"Uri: {}", uri};
 
-            if let Some(ct) = conn.header("Content-Type") {
-                log::info! {"Content-Type: {}", ct};
-            } else {
-                respond_err(
-                    conn_mut,
-                    StatusCode::BAD_REQUEST,
-                    "Content-Type header is required",
-                )?;
+                if let Some(ct) = conn.header("Content-Type") {
+                    log::info! {"Content-Type: {}", ct};
+                } else {
+                    respond_err(
+                        conn_mut,
+                        StatusCode::BAD_REQUEST,
+                        "Content-Type header is required",
+                    )?;
 
-                return Ok(());
-            }
-
-            // FIXME
-            // And one more: even if you passed a big-enough buffer to read, you have no warranty that all of the input will be read in a single pass. Mentioning this as you might stumble on that next. :) Basically you have to read in a loop, until read returns you 0 bytes read (with a non-empty buffer, that is). STD had something like read_fully or whatever and a bunch of utilities for working with Vec. You can transform the native embedded-io Read into STD Read to use those. But read_fully is also dangerous, as then malicious folks can crash your firmware with out of mem
-            let body_size = conn_mut.read(&mut buffer)?;
-            if body_size > 0 {
-                let mut body = String::from_utf8(buffer.to_vec())?;
-                body = body.replace("\0", "");
-
-                let json: serde_json::Value;
-                match serde_json::from_str(&body) {
-                    Ok(value) => json = value,
-                    Err(error) => {
-                        respond_err(conn_mut, StatusCode::BAD_REQUEST, "Body must be valid JSON")?;
-
-                        return Ok(());
-                    }
-                };
-                log::info!("json: {:?}", json);
-
-                let mut duty_cycle = DEFAULT_DUTY_CYCLE;
-                if let Some(value) = json["pwm"]["duty_cycle"].as_u64() {
-                    duty_cycle = value as u32;
-
-                    if duty_cycle > 100 {
-                        respond_err(
-                            conn_mut,
-                            StatusCode::BAD_REQUEST,
-                            "Duty-cycle percentage must be less than or equal to 100%",
-                        )?;
-
-                        return Ok(());
-                    }
+                    return Ok(());
                 }
 
-                // NOTE: Signal change of PWM duty-cycle
-                internal::pwm::COMMAND.signal(internal::pwm::PwmCommand::SetDutyCycle(duty_cycle));
+                // FIXME
+                // And one more: even if you passed a big-enough buffer to read, you have no warranty that all of the input will be read in a single pass. Mentioning this as you might stumble on that next. :) Basically you have to read in a loop, until read returns you 0 bytes read (with a non-empty buffer, that is). STD had something like read_fully or whatever and a bunch of utilities for working with Vec. You can transform the native embedded-io Read into STD Read to use those. But read_fully is also dangerous, as then malicious folks can crash your firmware with out of mem
+                let body_size = conn_mut.read(&mut buffer)?;
+                if body_size > 0 {
+                    let mut body = String::from_utf8(buffer.to_vec())?;
+                    body = body.replace("\0", "");
 
-                // Response
-                let json = json!({
-                    "code": 200,
-                    "success": true,
-                    "processed_command": json
-                });
-                let text = json.to_string();
+                    let json: serde_json::Value;
+                    match serde_json::from_str(&body) {
+                        Ok(value) => json = value,
+                        Err(error) => {
+                            respond_err(
+                                conn_mut,
+                                StatusCode::BAD_REQUEST,
+                                "Body must be valid JSON",
+                            )?;
 
-                let status = Some(StatusCode::OK.as_str());
-                conn_mut.initiate_response(200, status, &[("Content-Type", "application/json")])?;
+                            return Ok(());
+                        }
+                    };
+                    log::info!("json: {:?}", json);
 
-                conn_mut.write(text.as_bytes())?;
-            } else {
-                respond_err(conn_mut, StatusCode::BAD_REQUEST, "Body is missing")?;
-            }
+                    let mut duty_cycle = DEFAULT_DUTY_CYCLE;
+                    if let Some(value) = json["pwm"]["duty_cycle"].as_u64() {
+                        duty_cycle = value as u32;
 
-            Ok(())
-        })),
+                        if duty_cycle > 100 {
+                            respond_err(
+                                conn_mut,
+                                StatusCode::BAD_REQUEST,
+                                "Duty-cycle percentage must be less than or equal to 100%",
+                            )?;
+
+                            return Ok(());
+                        }
+                    }
+
+                    // NOTE: Signal change of PWM duty-cycle
+                    internal::pwm::COMMAND
+                        .signal(internal::pwm::PwmCommand::SetDutyCycle(duty_cycle));
+
+                    // Response
+                    let json = json!({
+                        "code": 200,
+                        "success": true,
+                        "processed_command": json
+                    });
+                    let text = json.to_string();
+
+                    let status = Some(StatusCode::OK.as_str());
+                    conn_mut.initiate_response(
+                        200,
+                        status,
+                        &[("Content-Type", "application/json")],
+                    )?;
+
+                    conn_mut.write(text.as_bytes())?;
+                } else {
+                    respond_err(conn_mut, StatusCode::BAD_REQUEST, "Body is missing")?;
+                }
+
+                Ok(())
+            }),
+        ),
     )?;
 
     Ok(())
