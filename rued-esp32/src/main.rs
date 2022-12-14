@@ -157,17 +157,6 @@ pub enum SysLoopMsg {
 }
 
 static LOGGER: EspLogger = EspLogger;
-
-fn wifi_connect() -> Result<()> {
-    info!("Connect requested");
-
-    unsafe { esp!(esp_wifi_connect())? }
-
-    info!("Connecting");
-
-    Ok(())
-}
-
 const SLEEP_TIME: Duration = Duration::from_secs(5);
 const MQTT_MAX_TOPIC_LEN: usize = 64;
 
@@ -230,7 +219,7 @@ fn sleep() -> Result<(), InitError> {
         esp_idf_sys::esp_deep_sleep_start();
     }
 
-    Ok(())
+    // unreachable
 }
 
 fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {

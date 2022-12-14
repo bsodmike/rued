@@ -1,97 +1,13 @@
 use crate::core::internal::{self, pwm::DEFAULT_DUTY_CYCLE};
 use anyhow::Result;
 use http::status::StatusCode;
-use log::info;
 use serde_json::json;
 
-use embedded_svc::{
-    http::{
-        headers::content_type,
-        server::{CompositeHandler, Connection, Handler, HandlerResult, Middleware, Request},
-        Method, Query,
-    },
-    io::Write,
-};
+use embedded_svc::http::{server::Middleware, Method};
 use esp_idf_svc::http::server::{fn_handler, EspHttpConnection, EspHttpServer};
+use middleware::DefaultMiddleware;
 
-#[derive(Copy, Clone)]
-pub struct DefaultMiddleware {}
-
-impl<C> Middleware<C> for DefaultMiddleware
-where
-    C: Connection,
-{
-    fn handle<'a, H>(&'a self, connection: &'a mut C, handler: &'a H) -> HandlerResult
-    where
-        H: Handler<C>,
-    {
-        let req = Request::wrap(connection);
-
-        info!("DefaultMiddleware called with uri: {}", req.uri());
-
-        let connection = req.release();
-
-        if let Err(error) = handler.handle(connection) {
-            if !connection.is_response_initiated() {
-                let mut resp = Request::wrap(connection).into_response(
-                    500,
-                    Some("Internal Error"),
-                    &[content_type("application/json")],
-                )?;
-
-                let json = json!({
-                    "code": 500,
-                    "success": false,
-                    "error": &error.to_string()
-                });
-                write!(resp, "{}", json.to_string())?;
-            } else {
-                // Nothing can be done as the error happened after the response was initiated, propagate further
-                return Err(error);
-            }
-        }
-
-        Ok(())
-    }
-
-    fn compose<H>(self, handler: H) -> CompositeHandler<Self, H>
-    where
-        H: Handler<C>,
-        Self: Sized,
-    {
-        CompositeHandler::new(self, handler)
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct SimpleMiddleware {}
-
-impl<C> Middleware<C> for SimpleMiddleware
-where
-    C: Connection,
-{
-    fn handle<'a, H>(&'a self, connection: &'a mut C, handler: &'a H) -> HandlerResult
-    where
-        H: Handler<C>,
-    {
-        let req = Request::wrap(connection);
-
-        info!("SimpleMiddleware called with uri: {}", req.uri());
-        let connection = req.release();
-
-        handler.handle(connection);
-
-        Ok(())
-    }
-
-    fn compose<H>(self, handler: H) -> CompositeHandler<Self, H>
-    where
-        H: Handler<C>,
-        Self: Sized,
-    {
-        CompositeHandler::new(self, handler)
-    }
-}
+mod middleware;
 
 pub fn configure_handlers<'a>(httpd: &mut EspHttpServer) -> Result<()> {
     httpd.handler(
@@ -106,24 +22,6 @@ pub fn configure_handlers<'a>(httpd: &mut EspHttpServer) -> Result<()> {
 
                 Ok(())
             }),
-        ),
-    )?;
-
-    httpd.handler(
-        "/nested-middleware",
-        Method::Get,
-        DefaultMiddleware {}.compose(
-            //
-            SimpleMiddleware {}.compose(
-                //
-                fn_handler(|request| {
-                    request
-                        .into_response(StatusCode::OK.as_u16(), Some(StatusCode::OK.as_str()), &[])
-                        .expect("Response for /nested-middleware");
-
-                    Ok(())
-                }),
-            ),
         ),
     )?;
 
