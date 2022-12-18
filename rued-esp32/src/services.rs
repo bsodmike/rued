@@ -34,6 +34,7 @@ use esp_idf_svc::http::server::EspHttpServer;
 use esp_idf_svc::mqtt::client::{EspMqttClient, MqttClientConfiguration};
 use esp_idf_svc::netif::IpEvent;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
+use esp_idf_svc::tls;
 use esp_idf_svc::wifi::{EspWifi, WifiEvent, WifiWait};
 
 use esp_idf_sys::{esp, esp_restart, EspError};
@@ -42,6 +43,7 @@ use gfx_xtra::draw_target::{Flushable, OwnedDrawTargetExt};
 
 use edge_executor::*;
 use once_cell::sync::Lazy;
+use shared_bus::BusManager;
 
 use crate::core::internal::mqtt::{MessageParser, MqttCommand};
 use crate::core::internal::pulse_counter::PulseCounter;
@@ -273,7 +275,13 @@ pub fn display(
 #[cfg(not(feature = "display-i2c"))]
 pub fn display(
     peripherals: DisplaySpiPeripherals<impl Peripheral<P = impl SpiAnyPins + 'static> + 'static>,
-) -> Result<impl Flushable<Color = Color, Error = impl Debug + 'static> + 'static, InitError> {
+) -> Result<
+    (
+        impl Flushable<Color = Color, Error = impl Debug + 'static> + 'static,
+        Option<&'static BusManager<std::sync::Mutex<SpiDeviceDriver<'static, SpiDriver<'static>>>>>,
+    ),
+    InitError,
+> {
     if let Some(backlight) = peripherals.control.backlight {
         let mut backlight = PinDriver::output(backlight)?;
 
@@ -297,6 +305,8 @@ pub fn display(
         peripherals.cs,
         &SpiConfig::new().baudrate(baudrate),
     )?;
+
+    // let spi_bus = shared_bus::new_std!(SpiDeviceDriver<SpiDriver> = spi);
 
     let dc = PinDriver::output(peripherals.control.dc)?;
 
@@ -356,7 +366,7 @@ pub fn display(
 
     let display = display.owned_color_converted().owned_noop_flushing();
 
-    Ok(display)
+    Ok((display, None))
 }
 
 pub fn wifi<'d>(
@@ -412,7 +422,18 @@ pub fn httpd() -> Result<(EspHttpServer, impl Acceptor), InitError> {
 
     let ws_processor = Mutex::<EspRawMutex, _>::new(RefCell::new(ws_processor));
 
-    let mut httpd = EspHttpServer::new(&Default::default()).unwrap();
+    let server_certificate = tls::X509::pem_until_nul(include_bytes!(
+        "/home/mdesilva/esp/openssl-generate-rs/output/cert.pem"
+    ));
+    let server_private_key = tls::X509::pem_until_nul(include_bytes!(
+        "/home/mdesilva/esp/openssl-generate-rs/output/cert_key.pem"
+    ));
+
+    let mut config = esp_idf_svc::http::server::Configuration::default();
+    config.server_certificate = Some(server_certificate);
+    config.private_key = Some(server_private_key);
+
+    let mut httpd = EspHttpServer::new(&config).unwrap();
 
     httpd.ws_handler("/ws", move |connection| {
         ws_processor.lock(|ws_processor| ws_processor.borrow_mut().process(connection))

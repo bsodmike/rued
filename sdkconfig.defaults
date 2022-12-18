@@ -26,6 +26,9 @@ CONFIG_ESP_TASK_WDT=n
 # Enable HTTP server websockets (necessary for web UI)
 CONFIG_HTTPD_WS_SUPPORT=y
 
+# Enable TLS
+CONFIG_ESP_HTTPS_SERVER_ENABLE=y
+
 # This is 10 by default. 16 is the maximum
 CONFIG_LWIP_MAX_SOCKETS=16
 

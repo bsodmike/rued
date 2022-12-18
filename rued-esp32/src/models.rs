@@ -133,7 +133,7 @@ where
             tz_dsttime: 0,
         };
 
-        let tv_sec = dt.timestamp() as i32;
+        let tv_sec = dt.timestamp();
         let tv_usec = dt.timestamp_subsec_micros() as i32;
         let tm = timeval { tv_sec, tv_usec };
 

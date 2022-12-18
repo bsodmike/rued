@@ -7,6 +7,7 @@ extern crate alloc;
 // use ::core::time::Duration;
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
+use http::StatusCode;
 use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use peripherals::{ButtonsPeripherals, PulseCounterPeripherals};
@@ -15,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use shared_bus::{BusManager, I2cProxy};
 use std::{
+    cell::RefCell,
     env,
     error::Error as StdError,
     fmt,
@@ -68,6 +70,7 @@ use esp_idf_svc::{
     wifi::{EspWifi, WifiEvent, WifiWait},
 };
 
+use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(feature = "nvs")]
 use embassy_sync::blocking_mutex::Mutex as EmbassyMutex;
 use embassy_time::Duration;
@@ -87,7 +90,7 @@ use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_sys::esp;
 
 use crate::{
-    core::internal::spawn,
+    core::internal::{pwm, spawn},
     errors::*,
     models::{RTClock, SystemTimeBuffer},
 };
@@ -109,9 +112,6 @@ static FALLBACK_TO_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 // // false: SNTP is enabled
 // static DISABLE_SNTP: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
-
-// // false: HTTPd is enabled
-// static DISABLE_HTTPD: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 ///
 /// # Safety
@@ -154,17 +154,6 @@ pub enum SysLoopMsg {
 }
 
 static LOGGER: EspLogger = EspLogger;
-
-fn wifi_connect() -> Result<()> {
-    info!("Connect requested");
-
-    unsafe { esp!(esp_wifi_connect())? }
-
-    info!("Connecting");
-
-    Ok(())
-}
-
 const SLEEP_TIME: Duration = Duration::from_secs(5);
 const MQTT_MAX_TOPIC_LEN: usize = 64;
 
@@ -227,7 +216,7 @@ fn sleep() -> Result<(), InitError> {
         esp_idf_sys::esp_deep_sleep_start();
     }
 
-    Ok(())
+    // unreachable
 }
 
 fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
@@ -262,20 +251,21 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     // Storage
 
     #[cfg(feature = "nvs")]
-    let (nvs_default_state, storage) = {
+    let (nvs_default_state, storage): (NvsDataState, &EmbassyMutex<_, RefCell<_>>) = {
         let storage = services::storage(nvs_default_partition.clone())?;
 
         if let Some(nvs_default_state) = storage
-            .lock(|storage| storage.borrow().get::<NvsDataState>("nvs-default-state"))
+            .lock(|storage| storage.borrow().get::<NvsDataState>("nvs-state"))
             .unwrap()
         {
             (nvs_default_state, storage)
         } else {
-            log::warn!("No `nvs-default-state` found in NVS, assuming new device");
+            log::warn!("No `nvs-state` found in NVS, assuming new device");
 
             (Default::default(), storage)
         }
     };
+    log::info!("NVS: Reading at bootup {:?}", nvs_default_state);
 
     // Pulse counter
 
@@ -318,6 +308,12 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     let _ip_event_sub = sysloop.subscribe(move |event: &IpEvent| match event {
         IpEvent::DhcpIpAssigned(_) => {
             core::internal::wifi::COMMAND.signal(core::internal::wifi::WifiCommand::DhcpIpAssigned);
+
+            // NOTE: Update PWM Duty-cycle from value stored in NVS.
+            let duty_cycle = nvs_default_state.pwm_duty_cycle;
+            if duty_cycle > 0 && duty_cycle <= 100 {
+                pwm::COMMAND.signal(pwm::PwmCommand::SetDutyCycle(duty_cycle));
+            }
         }
         _ => info!("Received other IPEvent"),
     })?;
@@ -368,6 +364,12 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         &config,
     )?;
 
+    // SD/MMC Card
+
+    // FIXME
+    // let block_device = embedded_sdmmc::SdMmcSpi::new(esp_idf_hal::spi::SPI2, sdmmc_cs);
+    // let mut cont = embedded_sdmmc::Controller::new();
+
     // High-prio tasks
 
     #[cfg(feature = "display-i2c")]
@@ -378,7 +380,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     };
 
     #[cfg(not(feature = "display-i2c"))]
-    let display = { services::display(peripherals.display).unwrap() };
+    let (display, spi_bus) = { services::display(peripherals.display).unwrap() };
 
     let mut high_prio_executor = EspExecutor::<16, _>::new();
     let mut high_prio_tasks = heapless::Vec::<_, 16>::new();
@@ -483,8 +485,8 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct NvsDataState {
-    pub id: u64,
-    pub text: [u8; 32],
+    pub pwm_duty_cycle: u32,
+    // pub text: [u8; 32],
 }
 
 #[cfg(feature = "nvs")]
@@ -498,9 +500,9 @@ fn flash_default_state<S>(
     S: Storage,
 {
     core::internal::error::log_err!(storage.lock(|storage| {
-        let old_state = storage.borrow().get("nvs-default-state")?;
+        let old_state = storage.borrow().get("nvs-state")?;
         if old_state != Some(new_state) {
-            storage.borrow_mut().set("nvs-default-state", &new_state)?;
+            storage.borrow_mut().set("nvs-state", &new_state)?;
         }
 
         Ok::<_, S::Error>(())

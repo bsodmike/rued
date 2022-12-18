@@ -28,7 +28,7 @@ With any IoT 'stack', there are some rudimentary basics; this repo is an attempt
 ## Quick setup
 
 - Install rustup, preferrably in linux.  Using an x86 CPU will help a great deal. Attempts on an [Apple M1 Max failed terribly](https://desilva.io/posts/rust-for-embedded-is-better-on-x86) for me.
-- Build your ESP toolchain by following: https://github.com/esp-rs/rust-build
+- Build your ESP toolchain by following: https://github.com/esp-rs/rust-build or _even better_ use `espup`.
 - Run `cargo +esp build --release`
 - Use the following:
 
@@ -39,6 +39,28 @@ scp 10.0.3.70:/home/mdesilva/esp/rued/target/xtensa-esp32-espidf/release/rued-es
 // monitor for stack-traces
 scp 10.0.3.70:/home/mdesilva/esp/rued/target/xtensa-esp32-espidf/release/rued-esp32 . && espflash monitor --baud 115200 --elf rued-esp32
 // You will need to restart the chip
+```
+
+### VSCode
+
+Add the following to settings for `rust-analyzer`
+```javascript
+{
+    "rust-analyzer.server.extraEnv": {"LIBCLANG_PATH": "/home/mdesilva/.espressif/tools/xtensa-esp32-elf-clang/esp-15.0.0-20221014-x86_64-unknown-linux-gnu/esp-clang/lib/"},
+}
+```
+
+### Upgrading to ESP-IDF 5 (and beyond)
+```
+espup install --esp-idf-version 5.0
+export LIBCLANG_PATH=$HOME/.espressif/tools/xtensa-esp32-elf-clang/esp-15.0.0-20221014-x86_64-unknown-linux-gnu/esp-clang/lib/
+
+# cd into your app root
+cargo clean
+rm -rf .embuild
+cargo build --release
+
+# check for `~/.espressif/esp-idf/release-v5.0`
 ```
 
 
