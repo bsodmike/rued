@@ -93,34 +93,3 @@ pub fn get_fallback_to_rtc_flag() -> bool {
 
 //     value
 // }
-
-// // DISABLE_HTTPD
-
-// pub fn disable_httpd() {
-//     let mut flag = DISABLE_HTTPD
-//         .lock()
-//         .expect("Could not lock DISABLE_HTTPD mutex, when attempting to enable flag");
-//     *flag = true;
-// }
-
-// pub fn enable_httpd() {
-//     let mut flag = DISABLE_HTTPD
-//         .lock()
-//         .expect("Could not lock DISABLE_HTTPD mutex, when attempting to disable flag");
-//     *flag = false;
-// }
-
-// /// Returns the value of the `DISABLE_HTTPD` flag.
-// ///
-// /// - false: HTTPD is enabled.
-// /// - true: HTTPD is disabled.
-// pub fn get_disable_httpd_flag() -> bool {
-//     let flag = DISABLE_HTTPD
-//         .lock()
-//         .expect("Could not lock DISABLE_HTTPD mutex, when attempting to read flag value");
-
-//     let value = *flag;
-//     std::mem::drop(flag);
-
-//     value
-// }
