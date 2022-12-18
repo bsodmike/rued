@@ -81,6 +81,8 @@ use embedded_svc::storage::Storage;
 use esp_idf_hal::adc::*;
 use esp_idf_hal::gpio::*;
 use esp_idf_hal::reset::WakeupReason;
+use esp_idf_hal::spi::config::Duplex;
+use esp_idf_hal::spi::*;
 use esp_idf_hal::task::executor::EspExecutor;
 use esp_idf_hal::task::thread::ThreadSpawnConfiguration;
 
@@ -366,9 +368,32 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // SD/MMC Card
 
-    // FIXME
-    // let block_device = embedded_sdmmc::SdMmcSpi::new(esp_idf_hal::spi::SPI2, sdmmc_cs);
-    // let mut cont = embedded_sdmmc::Controller::new();
+    // NOTE: Arc/Mutex are not required here, but tested here as these may be shifted
+    // into the executor
+    let spi_driver = std::sync::Arc::new(Mutex::new(
+        SpiDriver::new(
+            peripherals.spi2.spi,
+            peripherals.spi2.sclk,      // SCK
+            peripherals.spi2.sdo,       // MOSI
+            Some(peripherals.spi2.sdi), // MISO
+            Dma::Disabled,
+        )
+        .unwrap(),
+    ));
+
+    let mut spi_config = SpiConfig::new();
+    spi_config.duplex = Duplex::Full;
+    let _ = spi_config.baudrate(24.MHz().into());
+    // let baudrate = 40.MHz().into(); // Not supported on ESP32
+
+    let binding = spi_driver.clone();
+    let spi_driver = &*binding.lock().unwrap();
+
+    let spi = SpiDeviceDriver::new(spi_driver, Option::<Gpio12>::None, &spi_config)?;
+
+    let cs_periph = peripherals.spi2.cs.expect("Expect SPI CS pin");
+    let sdmmc_cs = PinDriver::output(cs_periph)?;
+    let mut sdmmc_spi = embedded_sdmmc::SdMmcSpi::new(spi, sdmmc_cs);
 
     // High-prio tasks
 
@@ -380,7 +405,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     };
 
     #[cfg(not(feature = "display-i2c"))]
-    let (display, spi_bus) = { services::display(peripherals.display).unwrap() };
+    let (display, spi_bus) = { services::display(peripherals.display, peripherals.spi1).unwrap() };
 
     let mut high_prio_executor = EspExecutor::<16, _>::new();
     let mut high_prio_tasks = heapless::Vec::<_, 16>::new();

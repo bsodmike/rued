@@ -20,7 +20,8 @@ pub struct SystemPeripherals<
     B1,
     B2,
     B3,
-    SPI,
+    SPI_CHAN1,
+    SPI_CHAN2,
     I2C,
     TIMER,
     CHAN0,
@@ -31,10 +32,12 @@ pub struct SystemPeripherals<
     CHAN2PIN,
 > {
     pub pulse_counter: PulseCounterPeripherals<P>,
-    pub valve: ValvePeripherals,
+    // pub valve: ValvePeripherals,
     pub battery: BatteryPeripherals<ADC, V>,
     pub buttons: ButtonsPeripherals<B1, B2, B3>,
-    pub display: DisplaySpiPeripherals<SPI>,
+    pub display: DisplayPeripherals,
+    pub spi1: SpiPeripherals<SPI_CHAN1>,
+    pub spi2: SpiPeripherals<SPI_CHAN2>,
     pub i2c0: I2c0Peripherals<I2C>,
     pub timer0: LedcTimer<TIMER>,
     pub ledc0: LedcPwmDriver<CHAN0, CHAN0PIN>,
@@ -53,6 +56,7 @@ impl
         Gpio32,
         Gpio36,
         SPI2,
+        SPI3,
         I2C0,
         TIMER0,
         CHANNEL0,
@@ -66,17 +70,35 @@ impl
     pub fn take() -> Self {
         let peripherals = Peripherals::take().unwrap();
 
+        let spi1 = SpiPeripherals {
+            spi: peripherals.spi2,
+            sclk: peripherals.pins.gpio18.into(), // SCK
+            sdo: peripherals.pins.gpio23.into(),  // COPI
+            // NOTE: Display does not need a valid SDI pin; therefore
+            // settings this to an unused GPIO.
+            sdi: peripherals.pins.gpio10.into(), // dummy (SDI is not needed)
+            cs: Some(peripherals.pins.gpio5.into()), // CS
+        };
+
+        let spi2 = SpiPeripherals {
+            spi: peripherals.spi3,
+            sclk: peripherals.pins.gpio17.into(),     // -
+            sdo: peripherals.pins.gpio26.into(),      // -
+            sdi: peripherals.pins.gpio19.into(),      // CIPO
+            cs: Some(peripherals.pins.gpio12.into()), // -
+        };
+
         SystemPeripherals {
             pulse_counter: PulseCounterPeripherals {
                 pulse: peripherals.pins.gpio33,
                 #[cfg(feature = "ulp")]
                 ulp: peripherals.ulp,
             },
-            valve: ValvePeripherals {
-                power: peripherals.pins.gpio17.into(),
-                open: peripherals.pins.gpio26.into(),
-                close: peripherals.pins.gpio12.into(),
-            },
+            // valve: ValvePeripherals {
+            //     power: peripherals.pins.gpio17.into(),
+            //     open: peripherals.pins.gpio26.into(),
+            //     close: peripherals.pins.gpio12.into(),
+            // },
             battery: BatteryPeripherals {
                 power: peripherals.pins.gpio35.into(), // A1
                 voltage: peripherals.pins.gpio2,
@@ -87,17 +109,15 @@ impl
                 button2: peripherals.pins.gpio32, //
                 button3: peripherals.pins.gpio36, // G5
             },
-            display: DisplaySpiPeripherals {
+            display: DisplayPeripherals {
                 control: DisplayControlPeripherals {
                     backlight: Some(peripherals.pins.gpio16.into()), // G4
                     dc: peripherals.pins.gpio27.into(),              // D1
                     rst: peripherals.pins.gpio4.into(),              // I2C_INT
                 },
-                spi: peripherals.spi2,
-                sclk: peripherals.pins.gpio18.into(),    // SCK
-                sdo: peripherals.pins.gpio23.into(),     // COPI
-                cs: Some(peripherals.pins.gpio5.into()), // CS
             },
+            spi1, // SPI2
+            spi2, // SPI3
             modem: peripherals.modem,
             i2c0: I2c0Peripherals {
                 i2c: peripherals.i2c0,
@@ -147,7 +167,7 @@ impl SystemPeripherals<Gpio1, ADC1, Gpio9, Gpio2, Gpio4, Gpio12, SPI2> {
                 button2: peripherals.pins.gpio4,
                 button3: peripherals.pins.gpio12,
             },
-            display: DisplaySpiPeripherals {
+            display: Spi1Peripherals {
                 control: DisplayControlPeripherals {
                     backlight: Some(peripherals.pins.gpio15.into()),
                     dc: peripherals.pins.gpio18.into(),
@@ -187,7 +207,7 @@ impl SystemPeripherals<Gpio1, ADC1, Gpio0, Gpio2, Gpio3, Gpio4, SPI2> {
                 button2: peripherals.pins.gpio3,
                 button3: peripherals.pins.gpio4,
             },
-            display: DisplaySpiPeripherals {
+            display: Spi1Peripherals {
                 control: DisplayControlPeripherals {
                     backlight: Some(peripherals.pins.gpio9.into()),
                     dc: peripherals.pins.gpio10.into(),
@@ -233,11 +253,15 @@ pub struct DisplayControlPeripherals {
     pub rst: AnyOutputPin,
 }
 
-pub struct DisplaySpiPeripherals<SPI> {
+pub struct DisplayPeripherals {
     pub control: DisplayControlPeripherals,
+}
+
+pub struct SpiPeripherals<SPI> {
     pub spi: SPI,
     pub sclk: AnyOutputPin,
     pub sdo: AnyOutputPin,
+    pub sdi: AnyIOPin,
     pub cs: Option<AnyOutputPin>,
 }
 
