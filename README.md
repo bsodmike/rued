@@ -13,17 +13,23 @@ With any IoT 'stack', there are some rudimentary basics; this repo is an attempt
 
 | Done? | Feature | Notes |
 |-----|---|---|
-| [ ] | Wifi | *Currently unstable; needs a reboot on first flash. |
+| [X] | RTOS: High priority executor |  |
+| [X] | Wifi |  |
 | [ ] | SNTP |  |
-| [ ] | Httpd server | Handlers can be customised |
-| [ ] | Httpd server: JSON responses | Also implemented for default ESP error, if the request `Content-Type` is also JSON. |
+| [X] | Httpd server with TLS |  |
+| [X] | Httpd server Middleware | Added to provide JSON responses for matching `Content-Type` headers|
 | [ ] | SNTP fallback to RTC |  |
-| [ ] | I2C | Added on a per-sensor basis |
-| [ ] | Display | Needs testing |
-| [ ] | RTOS | Working across multiple threads. |
+| [X] | I2C | |
+| [T] | Display: I2C | **Requires further testing.|
+| [X] | Display: SPI | ili9342 fully tested. |
 
-- [P]: pending.
 
+Legend:
+```
+[P]: Pending
+[T]: Requires further testing.
+[X]: Done
+```
 
 ## Quick setup
 
@@ -34,10 +40,10 @@ With any IoT 'stack', there are some rudimentary basics; this repo is an attempt
 
 ```
 // flash
-scp 10.0.3.70:/home/mdesilva/esp/rued/target/xtensa-esp32-espidf/release/rued-esp32 . && espflash flash --baud 920000 --monitor rued-esp32
+scp 10.0.3.70:~/esp/rued/target/xtensa-esp32-espidf/release/rued-esp32 . && espflash flash --baud 920000 --monitor rued-esp32
 
 // monitor for stack-traces
-scp 10.0.3.70:/home/mdesilva/esp/rued/target/xtensa-esp32-espidf/release/rued-esp32 . && espflash monitor --baud 115200 --elf rued-esp32
+scp 10.0.3.70:~/esp/rued/target/xtensa-esp32-espidf/release/rued-esp32 . && espflash monitor --baud 115200 --elf rued-esp32
 // You will need to restart the chip
 ```
 
@@ -63,8 +69,6 @@ cargo build --release
 # check for `~/.espressif/esp-idf/release-v5.0`
 ```
 
+## Semantic Versioning (SemVer)
 
-## Features
-
-
-## Httpd Server
+This project [implements SemVer](https://semver.org/). Please pay attension to _Major_ version changes as these largely include backwards incompatible changes introduced to the public API.
