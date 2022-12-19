@@ -294,9 +294,7 @@ pub fn display<'a>(
     let spi = SpiDeviceDriver::new(
         spi_bus_peripherals.driver,
         spi_bus_peripherals.cs,
-        &SpiConfig::default()
-            .duplex(Duplex::Full)
-            .baudrate(40.MHz().into()),
+        &SpiConfig::default().baudrate(40.MHz().into()),
     )?;
 
     let dc = PinDriver::output(peripherals.control.dc)?;

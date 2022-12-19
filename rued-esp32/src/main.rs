@@ -388,9 +388,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     let sdmmc_spi = SpiDeviceDriver::new(
         driver,
         Option::<Gpio27>::None,
-        &SpiConfig::default()
-            .duplex(Duplex::Full)
-            .baudrate(40.MHz().into()),
+        &SpiConfig::default().baudrate(40.MHz().into()),
     )?;
     let sdmmc_cs = PinDriver::output(peripherals.sd_card.cs)?;
     let sdmmc_spi = embedded_sdmmc::SdMmcSpi::new(sdmmc_spi, sdmmc_cs);
