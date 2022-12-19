@@ -65,7 +65,9 @@ use crate::core::internal::screen::Color;
 
 use channel_bridge::{asynch::pubsub, asynch::*, notification::Notification};
 
-use crate::peripherals::{I2c0Peripherals, PulseCounterPeripherals, ValvePeripherals};
+use crate::peripherals::{
+    I2c0Peripherals, PulseCounterPeripherals, SpiBusPeripherals, ValvePeripherals,
+};
 use crate::{errors::*, peripherals};
 
 // Display
@@ -276,7 +278,7 @@ pub fn display(
 #[cfg(not(feature = "display-i2c"))]
 pub fn display<'a>(
     peripherals: peripherals::DisplayPeripherals,
-    spi_peripherals: peripherals::SpiPeripherals<SPI2>,
+    spi_bus_peripherals: SpiBusPeripherals,
 ) -> Result<
     (
         impl Flushable<Color = Color, Error = impl Debug + 'static> + 'static,
@@ -300,13 +302,9 @@ pub fn display<'a>(
     let _ = spi_config.baudrate(24.MHz().into());
     // let baudrate = 40.MHz().into(); // Not supported on ESP32
 
-    let spi = SpiDeviceDriver::new_single(
-        spi_peripherals.spi,
-        spi_peripherals.sclk, // SCK
-        spi_peripherals.sdo,  // MOSI
-        Option::<Gpio10>::None,
-        Dma::Disabled,
-        spi_peripherals.cs,
+    let spi = SpiDeviceDriver::new(
+        spi_bus_peripherals.driver,
+        spi_bus_peripherals.cs,
         &spi_config,
     )?;
 

@@ -21,6 +21,7 @@ use std::{
     error::Error as StdError,
     fmt,
     fmt::Write,
+    ops::Deref,
     ptr,
     sync::{
         mpsc::{self, Receiver, Sender},
@@ -368,32 +369,16 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // SD/MMC Card
 
-    // NOTE: Arc/Mutex are not required here, but tested here as these may be shifted
-    // into the executor
-    let spi_driver = std::sync::Arc::new(Mutex::new(
-        SpiDriver::new(
-            peripherals.spi2.spi,
-            peripherals.spi2.sclk,      // SCK
-            peripherals.spi2.sdo,       // MOSI
-            Some(peripherals.spi2.sdi), // MISO
-            Dma::Disabled,
-        )
-        .unwrap(),
-    ));
+    let driver: Arc<SpiDriver<'static>> = peripherals.spi1.driver.clone();
 
     let mut spi_config = SpiConfig::new();
     spi_config.duplex = Duplex::Full;
     let _ = spi_config.baudrate(24.MHz().into());
     // let baudrate = 40.MHz().into(); // Not supported on ESP32
 
-    let binding = spi_driver.clone();
-    let spi_driver = &*binding.lock().unwrap();
-
-    let spi = SpiDeviceDriver::new(spi_driver, Option::<Gpio12>::None, &spi_config)?;
-
-    let cs_periph = peripherals.spi2.cs.expect("Expect SPI CS pin");
-    let sdmmc_cs = PinDriver::output(cs_periph)?;
-    let mut sdmmc_spi = embedded_sdmmc::SdMmcSpi::new(spi, sdmmc_cs);
+    let sdmmc_spi = SpiDeviceDriver::new(driver, Option::<Gpio27>::None, &spi_config)?;
+    let sdmmc_cs = PinDriver::output(peripherals.sd_card.cs)?;
+    let sdmmc_spi = embedded_sdmmc::SdMmcSpi::new(sdmmc_spi, sdmmc_cs);
 
     // High-prio tasks
 

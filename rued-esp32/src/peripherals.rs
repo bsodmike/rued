@@ -20,8 +20,6 @@ pub struct SystemPeripherals<
     B1,
     B2,
     B3,
-    SPI_CHAN1,
-    SPI_CHAN2,
     I2C,
     TIMER,
     CHAN0,
@@ -32,12 +30,12 @@ pub struct SystemPeripherals<
     CHAN2PIN,
 > {
     pub pulse_counter: PulseCounterPeripherals<P>,
-    // pub valve: ValvePeripherals,
+    pub valve: ValvePeripherals,
     pub battery: BatteryPeripherals<ADC, V>,
     pub buttons: ButtonsPeripherals<B1, B2, B3>,
     pub display: DisplayPeripherals,
-    pub spi1: SpiPeripherals<SPI_CHAN1>,
-    pub spi2: SpiPeripherals<SPI_CHAN2>,
+    pub spi1: SpiBusPeripherals,
+    pub sd_card: SdCardPeripherals,
     pub i2c0: I2c0Peripherals<I2C>,
     pub timer0: LedcTimer<TIMER>,
     pub ledc0: LedcPwmDriver<CHAN0, CHAN0PIN>,
@@ -52,11 +50,9 @@ impl
         Gpio33,
         ADC1,
         Gpio2,
-        Gpio14,
         Gpio32,
+        Gpio0,
         Gpio36,
-        SPI2,
-        SPI3,
         I2C0,
         TIMER0,
         CHANNEL0,
@@ -72,20 +68,26 @@ impl
 
         let spi1 = SpiPeripherals {
             spi: peripherals.spi2,
-            sclk: peripherals.pins.gpio18.into(), // SCK
-            sdo: peripherals.pins.gpio23.into(),  // COPI
-            // NOTE: Display does not need a valid SDI pin; therefore
-            // settings this to an unused GPIO.
-            sdi: peripherals.pins.gpio10.into(), // dummy (SDI is not needed)
+            sclk: peripherals.pins.gpio18.into(),    // SCK
+            sdo: peripherals.pins.gpio23.into(),     // COPI
+            sdi: peripherals.pins.gpio19.into(),     // CIPO
             cs: Some(peripherals.pins.gpio5.into()), // CS
         };
 
-        let spi2 = SpiPeripherals {
-            spi: peripherals.spi3,
-            sclk: peripherals.pins.gpio17.into(),     // -
-            sdo: peripherals.pins.gpio26.into(),      // -
-            sdi: peripherals.pins.gpio19.into(),      // CIPO
-            cs: Some(peripherals.pins.gpio12.into()), // -
+        let driver = std::sync::Arc::new(
+            SpiDriver::new(
+                spi1.spi,
+                spi1.sclk,      // SCK
+                spi1.sdo,       // MOSI
+                Some(spi1.sdi), // MISO / NOTE: Default value
+                Dma::Disabled,
+            )
+            .unwrap(),
+        );
+
+        let spi1 = SpiBusPeripherals {
+            driver,
+            cs: spi1.cs,
         };
 
         SystemPeripherals {
@@ -94,30 +96,32 @@ impl
                 #[cfg(feature = "ulp")]
                 ulp: peripherals.ulp,
             },
-            // valve: ValvePeripherals {
-            //     power: peripherals.pins.gpio17.into(),
-            //     open: peripherals.pins.gpio26.into(),
-            //     close: peripherals.pins.gpio12.into(),
-            // },
+            valve: ValvePeripherals {
+                power: peripherals.pins.gpio17.into(),
+                open: peripherals.pins.gpio26.into(),
+                close: peripherals.pins.gpio12.into(),
+            },
             battery: BatteryPeripherals {
                 power: peripherals.pins.gpio35.into(), // A1
                 voltage: peripherals.pins.gpio2,
                 adc: peripherals.adc1,
             },
             buttons: ButtonsPeripherals {
-                button1: peripherals.pins.gpio14, // D0
-                button2: peripherals.pins.gpio32, //
-                button3: peripherals.pins.gpio36, // G5
+                button1: peripherals.pins.gpio32, // G5
+                button2: peripherals.pins.gpio0,  //
+                button3: peripherals.pins.gpio36, //
             },
             display: DisplayPeripherals {
                 control: DisplayControlPeripherals {
                     backlight: Some(peripherals.pins.gpio16.into()), // G4
-                    dc: peripherals.pins.gpio27.into(),              // D1
+                    dc: peripherals.pins.gpio14.into(),              // D0
                     rst: peripherals.pins.gpio4.into(),              // I2C_INT
                 },
             },
             spi1, // SPI2
-            spi2, // SPI3
+            sd_card: SdCardPeripherals {
+                cs: peripherals.pins.gpio27.into(), // D1
+            },
             modem: peripherals.modem,
             i2c0: I2c0Peripherals {
                 i2c: peripherals.i2c0,
@@ -263,6 +267,15 @@ pub struct SpiPeripherals<SPI> {
     pub sdo: AnyOutputPin,
     pub sdi: AnyIOPin,
     pub cs: Option<AnyOutputPin>,
+}
+
+pub struct SpiBusPeripherals {
+    pub driver: std::sync::Arc<SpiDriver<'static>>,
+    pub cs: Option<AnyOutputPin>,
+}
+
+pub struct SdCardPeripherals {
+    pub cs: AnyOutputPin,
 }
 
 pub struct I2c0Peripherals<I2C> {
