@@ -385,11 +385,13 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     let driver: Arc<SpiDriver<'static>> = peripherals.spi1.driver.clone();
 
-    let mut spi_config = SpiConfig::new();
-    spi_config.duplex = Duplex::Full;
-    let _ = spi_config.baudrate(40.MHz().into());
-
-    let sdmmc_spi = SpiDeviceDriver::new(driver, Option::<Gpio27>::None, &spi_config)?;
+    let sdmmc_spi = SpiDeviceDriver::new(
+        driver,
+        Option::<Gpio27>::None,
+        &SpiConfig::default()
+            .duplex(Duplex::Full)
+            .baudrate(40.MHz().into()),
+    )?;
     let sdmmc_cs = PinDriver::output(peripherals.sd_card.cs)?;
     let sdmmc_spi = embedded_sdmmc::SdMmcSpi::new(sdmmc_spi, sdmmc_cs);
 

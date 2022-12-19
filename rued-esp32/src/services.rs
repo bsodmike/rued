@@ -291,14 +291,12 @@ pub fn display<'a>(
         mem::forget(backlight); // TODO: For now
     }
 
-    let mut spi_config = SpiConfig::new();
-    spi_config.duplex = Duplex::Full;
-    let _ = spi_config.baudrate(40.MHz().into());
-
     let spi = SpiDeviceDriver::new(
         spi_bus_peripherals.driver,
         spi_bus_peripherals.cs,
-        &spi_config,
+        &SpiConfig::default()
+            .duplex(Duplex::Full)
+            .baudrate(40.MHz().into()),
     )?;
 
     let dc = PinDriver::output(peripherals.control.dc)?;
