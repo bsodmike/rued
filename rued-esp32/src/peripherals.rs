@@ -45,6 +45,10 @@ pub struct SystemPeripherals<
 }
 
 #[cfg(esp32)]
+#[cfg(any(
+    feature = "micromod-qwiic-carrier-single",
+    feature = "micromod-main-board-single"
+))]
 impl
     SystemPeripherals<
         Gpio33,
@@ -145,84 +149,109 @@ impl
     }
 }
 
-#[cfg(any(esp32s2, esp32s3))]
-impl SystemPeripherals<Gpio1, ADC1, Gpio9, Gpio2, Gpio4, Gpio12, SPI2> {
+#[cfg(esp32)]
+#[cfg(any(feature = "micromod-data-logging-carrier",))]
+impl
+    SystemPeripherals<
+        Gpio33,
+        ADC1,
+        Gpio2,
+        Gpio32,
+        Gpio0,
+        Gpio36,
+        I2C0,
+        TIMER0,
+        CHANNEL0,
+        CHANNEL1,
+        CHANNEL2,
+        Gpio13,
+        Gpio27,
+        Gpio25,
+    >
+{
     pub fn take() -> Self {
         let peripherals = Peripherals::take().unwrap();
 
+        let spi1 = SpiPeripherals {
+            spi: peripherals.spi2,
+            sclk: peripherals.pins.gpio18.into(),     // SCK
+            sdo: peripherals.pins.gpio23.into(),      // COPI
+            sdi: peripherals.pins.gpio19.into(),      // CIPO
+            cs: Some(peripherals.pins.gpio15.into()), // HEADER_CS / G0-Processor
+        };
+
+        let driver = std::sync::Arc::new(
+            SpiDriver::new(
+                spi1.spi,
+                spi1.sclk,      // SCK
+                spi1.sdo,       // MOSI
+                Some(spi1.sdi), // MISO / NOTE: Default value
+                Dma::Disabled,
+            )
+            .unwrap(),
+        );
+
+        let spi1 = SpiBusPeripherals {
+            driver,
+            cs: spi1.cs,
+        };
+
+        // needs to be pulled up high
+        // gpio13, // PWM0-Processor
+        // gpio27, // D1
+        // gpio25, // G1-Processor
+
         SystemPeripherals {
             pulse_counter: PulseCounterPeripherals {
-                pulse: peripherals.pins.gpio1,
+                pulse: peripherals.pins.gpio33,
                 #[cfg(feature = "ulp")]
                 ulp: peripherals.ulp,
             },
             valve: ValvePeripherals {
-                power: peripherals.pins.gpio3.into(),
-                open: peripherals.pins.gpio6.into(),
-                close: peripherals.pins.gpio7.into(),
+                power: peripherals.pins.gpio17.into(),
+                open: peripherals.pins.gpio26.into(),
+                close: peripherals.pins.gpio12.into(),
             },
             battery: BatteryPeripherals {
-                power: peripherals.pins.gpio8.into(),
-                voltage: peripherals.pins.gpio9,
+                power: peripherals.pins.gpio35.into(), // A1
+                voltage: peripherals.pins.gpio2,
                 adc: peripherals.adc1,
             },
             buttons: ButtonsPeripherals {
-                button1: peripherals.pins.gpio2,
-                button2: peripherals.pins.gpio4,
-                button3: peripherals.pins.gpio12,
+                button1: peripherals.pins.gpio32, // G5
+                button2: peripherals.pins.gpio0,  //
+                button3: peripherals.pins.gpio36, //
             },
-            display: Spi1Peripherals {
+            display: DisplayPeripherals {
                 control: DisplayControlPeripherals {
-                    backlight: Some(peripherals.pins.gpio15.into()),
-                    dc: peripherals.pins.gpio18.into(),
-                    rst: peripherals.pins.gpio19.into(),
+                    backlight: Some(peripherals.pins.gpio16.into()), // G4
+                    dc: peripherals.pins.gpio14.into(),              // D0
+                    rst: peripherals.pins.gpio4.into(),              // I2C_INT
                 },
-                spi: peripherals.spi2,
-                sclk: peripherals.pins.gpio14.into(),
-                sdo: peripherals.pins.gpio13.into(),
-                cs: Some(peripherals.pins.gpio5.into()),
+            },
+            spi1, // SPI2
+            sd_card: SdCardPeripherals {
+                cs: peripherals.pins.gpio5.into(), // SPI_CS
             },
             modem: peripherals.modem,
-        }
-    }
-}
-
-#[cfg(not(any(esp32, esp32s2, esp32s3)))]
-impl SystemPeripherals<Gpio1, ADC1, Gpio0, Gpio2, Gpio3, Gpio4, SPI2> {
-    pub fn take() -> Self {
-        let peripherals = Peripherals::take().unwrap();
-
-        SystemPeripherals {
-            pulse_counter: PulseCounterPeripherals {
-                pulse: peripherals.pins.gpio1,
+            i2c0: I2c0Peripherals {
+                i2c: peripherals.i2c0,
+                sda: peripherals.pins.gpio21.into(),
+                scl: peripherals.pins.gpio22.into(),
             },
-            valve: ValvePeripherals {
-                power: peripherals.pins.gpio6.into(),
-                open: peripherals.pins.gpio7.into(),
-                close: peripherals.pins.gpio8.into(),
+            timer0: LedcTimer(peripherals.ledc.timer0),
+            ledc0: LedcPwmDriver {
+                chan: peripherals.ledc.channel0,
+                pin: peripherals.pins.gpio13, // PWM0-Processor
             },
-            battery: BatteryPeripherals {
-                power: peripherals.pins.gpio5.into(),
-                voltage: peripherals.pins.gpio0,
-                adc: peripherals.adc1,
+            ledc1: LedcPwmDriver {
+                chan: peripherals.ledc.channel1,
+                pin: peripherals.pins.gpio27, // D1
             },
-            buttons: ButtonsPeripherals {
-                button1: peripherals.pins.gpio2,
-                button2: peripherals.pins.gpio3,
-                button3: peripherals.pins.gpio4,
+            ledc2: LedcPwmDriver {
+                chan: peripherals.ledc.channel2,
+                pin: peripherals.pins.gpio25, // G1-Processor
             },
-            display: Spi1Peripherals {
-                control: DisplayControlPeripherals {
-                    backlight: Some(peripherals.pins.gpio9.into()),
-                    dc: peripherals.pins.gpio10.into(),
-                    rst: peripherals.pins.gpio18.into(),
-                },
-                spi: peripherals.spi2,
-                sclk: peripherals.pins.gpio15.into(),
-                sdo: peripherals.pins.gpio16.into(),
-                cs: Some(peripherals.pins.gpio14.into()),
-            },
-            modem: peripherals.modem,
         }
     }
 }

@@ -343,29 +343,43 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     // let (mqtt_topic_prefix, mqtt_client, mqtt_conn) = services::mqtt()?;
 
     // PWM
-    println!("Setting up PWM output channels");
 
-    let config = TimerConfig::new().frequency(500.Hz().into());
-    let timer = Arc::new(LedcTimerDriver::new(peripherals.timer0.0, &config)?);
+    #[cfg(not(feature = "micromod-data-logging-carrier",))]
+    let pwm = {
+        log::info!("Setting up PWM output channels");
 
-    let channel0 = LedcDriver::new(
-        peripherals.ledc0.chan,
-        timer.clone(),
-        peripherals.ledc0.pin,
-        &config,
-    )?;
-    let channel1 = LedcDriver::new(
-        peripherals.ledc1.chan,
-        timer.clone(),
-        peripherals.ledc1.pin,
-        &config,
-    )?;
-    let channel2 = LedcDriver::new(
-        peripherals.ledc2.chan,
-        timer,
-        peripherals.ledc2.pin,
-        &config,
-    )?;
+        let config = TimerConfig::new().frequency(500.Hz().into());
+        let timer = Arc::new(LedcTimerDriver::new(peripherals.timer0.0, &config)?);
+
+        let channel0 = LedcDriver::new(
+            peripherals.ledc0.chan,
+            timer.clone(),
+            peripherals.ledc0.pin,
+            &config,
+        )?;
+        let channel1 = LedcDriver::new(
+            peripherals.ledc1.chan,
+            timer.clone(),
+            peripherals.ledc1.pin,
+            &config,
+        )?;
+        let channel2 = LedcDriver::new(
+            peripherals.ledc2.chan,
+            timer,
+            peripherals.ledc2.pin,
+            &config,
+        )?;
+
+        Some((channel0, channel1, channel2))
+    };
+
+    #[cfg(feature = "micromod-data-logging-carrier")]
+    let pwm = {
+        log::warn!("PWM output disabled for MicroMod Data Logging Carrier Board!");
+        let value: Option<(LedcDriver, LedcDriver, LedcDriver)> = None;
+
+        value
+    };
 
     // SD/MMC Card
 
@@ -405,7 +419,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         (wifi, wifi_notif),
         &mut httpd,
         ws_acceptor,
-        (channel0, channel1, channel2),
+        pwm,
         rtc_clock,
         move |_new_state| {
             #[cfg(feature = "nvs")]
