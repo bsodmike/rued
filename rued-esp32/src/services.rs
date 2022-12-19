@@ -279,13 +279,7 @@ pub fn display(
 pub fn display<'a>(
     peripherals: peripherals::DisplayPeripherals,
     spi_bus_peripherals: SpiBusPeripherals,
-) -> Result<
-    (
-        impl Flushable<Color = Color, Error = impl Debug + 'static> + 'static,
-        Option<&'static BusManager<std::sync::Mutex<SpiDeviceDriver<'static, SpiDriver<'static>>>>>,
-    ),
-    InitError,
-> {
+) -> Result<impl Flushable<Color = Color, Error = impl Debug + 'static> + 'static, InitError> {
     if let Some(backlight) = peripherals.control.backlight {
         let mut backlight = PinDriver::output(backlight)?;
 
@@ -299,8 +293,7 @@ pub fn display<'a>(
 
     let mut spi_config = SpiConfig::new();
     spi_config.duplex = Duplex::Full;
-    let _ = spi_config.baudrate(24.MHz().into());
-    // let baudrate = 40.MHz().into(); // Not supported on ESP32
+    let _ = spi_config.baudrate(40.MHz().into());
 
     let spi = SpiDeviceDriver::new(
         spi_bus_peripherals.driver,
@@ -366,7 +359,7 @@ pub fn display<'a>(
 
     let display = display.owned_color_converted().owned_noop_flushing();
 
-    Ok((display, None))
+    Ok(display)
 }
 
 pub fn wifi<'d>(

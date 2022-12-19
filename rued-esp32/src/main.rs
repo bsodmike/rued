@@ -387,8 +387,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     let mut spi_config = SpiConfig::new();
     spi_config.duplex = Duplex::Full;
-    let _ = spi_config.baudrate(24.MHz().into());
-    // let baudrate = 40.MHz().into(); // Not supported on ESP32
+    let _ = spi_config.baudrate(40.MHz().into());
 
     let sdmmc_spi = SpiDeviceDriver::new(driver, Option::<Gpio27>::None, &spi_config)?;
     let sdmmc_cs = PinDriver::output(peripherals.sd_card.cs)?;
@@ -404,7 +403,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     };
 
     #[cfg(not(feature = "display-i2c"))]
-    let (display, spi_bus) = { services::display(peripherals.display, peripherals.spi1).unwrap() };
+    let display = { services::display(peripherals.display, peripherals.spi1).unwrap() };
 
     let mut high_prio_executor = EspExecutor::<16, _>::new();
     let mut high_prio_tasks = heapless::Vec::<_, 16>::new();
