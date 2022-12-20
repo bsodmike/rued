@@ -14,6 +14,12 @@ use esp_idf_hal::units::Hertz;
 use shared_bus::{BusManager, NullMutex};
 
 pub const SPI_BUS_FREQ: u32 = 26;
+
+#[cfg(esp32)]
+#[cfg(any(
+    feature = "micromod-qwiic-carrier-single",
+    feature = "micromod-main-board-single"
+))]
 pub struct SystemPeripherals<
     P,
     ADC,
@@ -152,24 +158,21 @@ impl
 
 #[cfg(esp32)]
 #[cfg(any(feature = "micromod-data-logging-carrier",))]
-impl
-    SystemPeripherals<
-        Gpio33,
-        ADC1,
-        Gpio2,
-        Gpio32,
-        Gpio0,
-        Gpio36,
-        I2C0,
-        TIMER0,
-        CHANNEL0,
-        CHANNEL1,
-        CHANNEL2,
-        Gpio13,
-        Gpio27,
-        Gpio25,
-    >
-{
+pub struct SystemPeripherals<P, ADC, V, B1, B2, B3, I2C> {
+    pub pulse_counter: PulseCounterPeripherals<P>,
+    pub valve: ValvePeripherals,
+    pub battery: BatteryPeripherals<ADC, V>,
+    pub buttons: ButtonsPeripherals<B1, B2, B3>,
+    pub display: DisplayPeripherals,
+    pub spi1: SpiBusPeripherals,
+    pub sd_card: SdCardPeripherals,
+    pub i2c0: I2c0Peripherals<I2C>,
+    pub modem: Modem,
+}
+
+#[cfg(esp32)]
+#[cfg(any(feature = "micromod-data-logging-carrier",))]
+impl SystemPeripherals<Gpio33, ADC1, Gpio34, Gpio27, Gpio13, Gpio12, I2C0> {
     pub fn take() -> Self {
         let peripherals = Peripherals::take().unwrap();
 
@@ -197,9 +200,6 @@ impl
             cs: spi1.cs,
         };
 
-        // needs to be pulled up high
-        // gpio13, // PWM0-Processor
-        // gpio27, // D1
         // gpio25, // G1-Processor
 
         SystemPeripherals {
@@ -211,17 +211,17 @@ impl
             valve: ValvePeripherals {
                 power: peripherals.pins.gpio17.into(),
                 open: peripherals.pins.gpio26.into(),
-                close: peripherals.pins.gpio12.into(),
+                close: peripherals.pins.gpio10.into(),
             },
             battery: BatteryPeripherals {
                 power: peripherals.pins.gpio35.into(), // A1
-                voltage: peripherals.pins.gpio2,
+                voltage: peripherals.pins.gpio34,      // A0
                 adc: peripherals.adc1,
             },
             buttons: ButtonsPeripherals {
-                button1: peripherals.pins.gpio32, // G5
-                button2: peripherals.pins.gpio0,  //
-                button3: peripherals.pins.gpio36, //
+                button1: peripherals.pins.gpio27, // D1
+                button2: peripherals.pins.gpio13, // PWM0-Processor
+                button3: peripherals.pins.gpio12, // PWM1-Processor
             },
             display: DisplayPeripherals {
                 control: DisplayControlPeripherals {
@@ -239,19 +239,6 @@ impl
                 i2c: peripherals.i2c0,
                 sda: peripherals.pins.gpio21.into(),
                 scl: peripherals.pins.gpio22.into(),
-            },
-            timer0: LedcTimer(peripherals.ledc.timer0),
-            ledc0: LedcPwmDriver {
-                chan: peripherals.ledc.channel0,
-                pin: peripherals.pins.gpio13, // PWM0-Processor
-            },
-            ledc1: LedcPwmDriver {
-                chan: peripherals.ledc.channel1,
-                pin: peripherals.pins.gpio27, // D1
-            },
-            ledc2: LedcPwmDriver {
-                chan: peripherals.ledc.channel2,
-                pin: peripherals.pins.gpio25, // G1-Processor
             },
         }
     }
