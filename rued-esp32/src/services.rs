@@ -66,7 +66,7 @@ use crate::core::internal::screen::Color;
 use channel_bridge::{asynch::pubsub, asynch::*, notification::Notification};
 
 use crate::peripherals::{
-    I2c0Peripherals, PulseCounterPeripherals, SpiBusPeripherals, ValvePeripherals,
+    I2c0Peripherals, PulseCounterPeripherals, SpiBusPeripherals, ValvePeripherals, SPI_BUS_FREQ,
 };
 use crate::{errors::*, peripherals};
 
@@ -294,7 +294,7 @@ pub fn display<'a>(
     let spi = SpiDeviceDriver::new(
         spi_bus_peripherals.driver,
         spi_bus_peripherals.cs,
-        &SpiConfig::default().baudrate(40.MHz().into()),
+        &SpiConfig::default().baudrate(SPI_BUS_FREQ.MHz().into()),
     )?;
 
     let dc = PinDriver::output(peripherals.control.dc)?;

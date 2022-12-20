@@ -10,7 +10,7 @@ use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, T
 use http::StatusCode;
 use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
-use peripherals::{ButtonsPeripherals, PulseCounterPeripherals};
+use peripherals::{ButtonsPeripherals, PulseCounterPeripherals, SPI_BUS_FREQ};
 use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, Rv8803Bus, TIME_ARRAY_LENGTH};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -344,7 +344,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // PWM
 
-    #[cfg(not(feature = "micromod-data-logging-carrier",))]
+    #[cfg(feature = "pwm")]
     let pwm = {
         log::info!("Setting up PWM output channels");
 
@@ -373,9 +373,9 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         Some((channel0, channel1, channel2))
     };
 
-    #[cfg(feature = "micromod-data-logging-carrier")]
+    #[cfg(not(feature = "pwm"))]
     let pwm = {
-        log::warn!("PWM output disabled for MicroMod Data Logging Carrier Board!");
+        log::warn!("PWM output disabled.");
         let value: Option<(LedcDriver, LedcDriver, LedcDriver)> = None;
 
         value
@@ -388,7 +388,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     let sdmmc_spi = SpiDeviceDriver::new(
         driver,
         Option::<Gpio27>::None,
-        &SpiConfig::default().baudrate(40.MHz().into()),
+        &SpiConfig::default().baudrate(SPI_BUS_FREQ.MHz().into()),
     )?;
     let sdmmc_cs = PinDriver::output(peripherals.sd_card.cs)?;
     let sdmmc_spi = embedded_sdmmc::SdMmcSpi::new(sdmmc_spi, sdmmc_cs);

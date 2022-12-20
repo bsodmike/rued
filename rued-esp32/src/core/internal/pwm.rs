@@ -69,15 +69,19 @@ pub async fn process<'a>(
         impl PwmPin<Duty = u32> + 'a,
     )>,
 ) {
-    let (mut pwm0, mut pwm1, mut pwm2) = pwm.expect("Unwraps pwm channels");
+    #[cfg(feature = "pwm")]
+    {
+        let (mut pwm0, mut pwm1, mut pwm2) = pwm.expect("Unwraps pwm channels");
 
-    set_duty(&mut pwm0, DEFAULT_DUTY_CYCLE);
-    set_duty(&mut pwm1, DEFAULT_DUTY_CYCLE);
-    set_duty(&mut pwm2, DEFAULT_DUTY_CYCLE);
+        set_duty(&mut pwm0, DEFAULT_DUTY_CYCLE);
+        set_duty(&mut pwm1, DEFAULT_DUTY_CYCLE);
+        set_duty(&mut pwm2, DEFAULT_DUTY_CYCLE);
+    }
 
     loop {
         let (future, index) = select_array([COMMAND.wait()]).await;
 
+        #[cfg(feature = "pwm")]
         {
             match index {
                 0 => match future {
