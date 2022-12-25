@@ -139,12 +139,11 @@ where
 
         settimeofday(&tm, &tz);
         info!(
-            "Updated System Clock from RTC time: {} / sec: {}, usec: {}",
+            "Updated System Clock from RTC time: {} / Timestamp: {} sec, {} usec",
             system_time.to_rfc3339()?,
             tv_sec,
-            tv_usec
+            tv_usec,
         );
-        info!("timestamp: {}", dt.timestamp());
 
         Ok(true)
     }
@@ -312,13 +311,22 @@ pub(crate) mod rtc_external {
 
     pub(crate) unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
         let timer: *mut time_t = ptr::null_mut();
-        let timestamp = esp_idf_sys::time(timer);
+        let mut timestamp = esp_idf_sys::time(timer);
+
+        // NOTE: Handle system time providing a wierdly large value,
+        // > Friday, 1 January 2100 00:00:00
+        // FIXME this should trigger an NTP update.
+        if timestamp > 4102444800 {
+            log::warn!("System timestamp: {}. This has now been reset to Thursday, 1 January 1970 00:00:00.", timestamp);
+
+            timestamp = 0;
+        }
 
         // FIXME this causes a crash?
         // let system_time = esp_idf_svc::systime::EspSystemTime {};
-        // let timestamp = esp_idf_svc::systime::EspSystemTime::now(&system_time);
+        // let timestamp = esp_idf_svc::systime::EspSystemTime::now(&system_time).as_secs();
 
-        let naive_dt_opt = NaiveDateTime::from_timestamp_opt(timestamp as i64, 0);
+        let naive_dt_opt = NaiveDateTime::from_timestamp_opt(timestamp, 0);
         let naivedatetime_utc = if let Some(value) = naive_dt_opt {
             value
         } else {

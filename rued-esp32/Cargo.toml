@@ -16,15 +16,21 @@ opt-level = "z"
 pio = ["esp-idf-sys/pio"]
 default = ["edge-executor", "system", "experimental"] # Note that edge-executor requires alloc
 # system = ["display-i2c"]
-system = ["display-spi", "nvs", "external-rtc"]
+system = ["display-spi", "nvs", "external-rtc", "board"]
 
 external-rtc = []
 nvs = []
+pwm = []
 display-i2c = ["profont", "ssd1306", "display-binary-color"]
 display-binary-color = []
 
 display-spi = ["profont", "ili9342"]
 ili9342 = ["profont", "mipidsi"]
+
+board = ["micromod-data-logging-carrier"]
+micromod-qwiic-carrier-single = []
+micromod-main-board-single = []
+micromod-data-logging-carrier = []
 
 experimental = ["esp-idf-svc/experimental", "embedded-svc/experimental"]
 

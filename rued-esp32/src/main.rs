@@ -10,7 +10,7 @@ use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, T
 use http::StatusCode;
 use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
-use peripherals::{ButtonsPeripherals, PulseCounterPeripherals};
+use peripherals::{ButtonsPeripherals, PulseCounterPeripherals, SPI_BUS_FREQ};
 use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, Rv8803Bus, TIME_ARRAY_LENGTH};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -21,6 +21,7 @@ use std::{
     error::Error as StdError,
     fmt,
     fmt::Write,
+    ops::Deref,
     ptr,
     sync::{
         mpsc::{self, Receiver, Sender},
@@ -81,6 +82,8 @@ use embedded_svc::storage::Storage;
 use esp_idf_hal::adc::*;
 use esp_idf_hal::gpio::*;
 use esp_idf_hal::reset::WakeupReason;
+use esp_idf_hal::spi::config::Duplex;
+use esp_idf_hal::spi::*;
 use esp_idf_hal::task::executor::EspExecutor;
 use esp_idf_hal::task::thread::ThreadSpawnConfiguration;
 
@@ -340,35 +343,55 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     // let (mqtt_topic_prefix, mqtt_client, mqtt_conn) = services::mqtt()?;
 
     // PWM
-    println!("Setting up PWM output channels");
 
-    let config = TimerConfig::new().frequency(500.Hz().into());
-    let timer = Arc::new(LedcTimerDriver::new(peripherals.timer0.0, &config)?);
+    #[cfg(feature = "pwm")]
+    let pwm = {
+        log::info!("Setting up PWM output channels");
 
-    let channel0 = LedcDriver::new(
-        peripherals.ledc0.chan,
-        timer.clone(),
-        peripherals.ledc0.pin,
-        &config,
-    )?;
-    let channel1 = LedcDriver::new(
-        peripherals.ledc1.chan,
-        timer.clone(),
-        peripherals.ledc1.pin,
-        &config,
-    )?;
-    let channel2 = LedcDriver::new(
-        peripherals.ledc2.chan,
-        timer,
-        peripherals.ledc2.pin,
-        &config,
-    )?;
+        let config = TimerConfig::new().frequency(500.Hz().into());
+        let timer = Arc::new(LedcTimerDriver::new(peripherals.timer0.0, &config)?);
+
+        let channel0 = LedcDriver::new(
+            peripherals.ledc0.chan,
+            timer.clone(),
+            peripherals.ledc0.pin,
+            &config,
+        )?;
+        let channel1 = LedcDriver::new(
+            peripherals.ledc1.chan,
+            timer.clone(),
+            peripherals.ledc1.pin,
+            &config,
+        )?;
+        let channel2 = LedcDriver::new(
+            peripherals.ledc2.chan,
+            timer,
+            peripherals.ledc2.pin,
+            &config,
+        )?;
+
+        Some((channel0, channel1, channel2))
+    };
+
+    #[cfg(not(feature = "pwm"))]
+    let pwm = {
+        log::warn!("PWM output disabled.");
+        let value: Option<(LedcDriver, LedcDriver, LedcDriver)> = None;
+
+        value
+    };
 
     // SD/MMC Card
 
-    // FIXME
-    // let block_device = embedded_sdmmc::SdMmcSpi::new(esp_idf_hal::spi::SPI2, sdmmc_cs);
-    // let mut cont = embedded_sdmmc::Controller::new();
+    let driver: Arc<SpiDriver<'static>> = peripherals.spi1.driver.clone();
+
+    let sdmmc_spi = SpiDeviceDriver::new(
+        driver,
+        Option::<Gpio27>::None,
+        &SpiConfig::default().baudrate(SPI_BUS_FREQ.MHz().into()),
+    )?;
+    let sdmmc_cs = PinDriver::output(peripherals.sd_card.cs)?;
+    let sdmmc_spi = embedded_sdmmc::SdMmcSpi::new(sdmmc_spi, sdmmc_cs);
 
     // High-prio tasks
 
@@ -380,7 +403,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     };
 
     #[cfg(not(feature = "display-i2c"))]
-    let (display, spi_bus) = { services::display(peripherals.display).unwrap() };
+    let display = { services::display(peripherals.display, peripherals.spi1).unwrap() };
 
     let mut high_prio_executor = EspExecutor::<16, _>::new();
     let mut high_prio_tasks = heapless::Vec::<_, 16>::new();
@@ -395,7 +418,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         (wifi, wifi_notif),
         &mut httpd,
         ws_acceptor,
-        (channel0, channel1, channel2),
+        pwm,
         rtc_clock,
         move |_new_state| {
             #[cfg(feature = "nvs")]

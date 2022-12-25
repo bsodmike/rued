@@ -33,11 +33,11 @@ pub fn high_prio<'a, const C: usize, M, D>(
     wifi: (EspWifi<'a>, impl Receiver<Data = WifiEvent> + 'a),
     httpd: &'a mut EspHttpServer,
     acceptor: impl Acceptor + 'a,
-    pwm: (
+    pwm: Option<(
         impl PwmPin<Duty = u32> + 'a,
         impl PwmPin<Duty = u32> + 'a,
         impl PwmPin<Duty = u32> + 'a,
-    ),
+    )>,
     rtc: Option<impl RtcExternal + 'a>,
     pwm_flash: impl FnMut(crate::NvsDataState) + 'a,
 ) -> Result<(), SpawnError>

@@ -1,6 +1,7 @@
 use core::cell::RefCell;
 use core::fmt::Debug;
 use core::mem;
+use std::sync::Arc;
 
 extern crate alloc;
 
@@ -9,6 +10,7 @@ extern crate alloc;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_time::Duration;
 
+use embedded_hal::spi::SpiDevice;
 use embedded_hal_0_2::digital::v2::OutputPin as EHOutputPin;
 
 use embedded_svc::http::server::Method;
@@ -25,6 +27,7 @@ use esp_idf_hal::modem::WifiModemPeripheral;
 use esp_idf_hal::peripheral::Peripheral;
 use esp_idf_hal::prelude::*;
 use esp_idf_hal::reset::WakeupReason;
+use esp_idf_hal::spi::config::Duplex;
 use esp_idf_hal::spi::*;
 use esp_idf_hal::task::embassy_sync::EspRawMutex;
 
@@ -63,7 +66,7 @@ use crate::core::internal::screen::Color;
 use channel_bridge::{asynch::pubsub, asynch::*, notification::Notification};
 
 use crate::peripherals::{
-    DisplaySpiPeripherals, I2c0Peripherals, PulseCounterPeripherals, ValvePeripherals,
+    I2c0Peripherals, PulseCounterPeripherals, SpiBusPeripherals, ValvePeripherals, SPI_BUS_FREQ,
 };
 use crate::{errors::*, peripherals};
 
@@ -273,15 +276,10 @@ pub fn display(
 }
 
 #[cfg(not(feature = "display-i2c"))]
-pub fn display(
-    peripherals: DisplaySpiPeripherals<impl Peripheral<P = impl SpiAnyPins + 'static> + 'static>,
-) -> Result<
-    (
-        impl Flushable<Color = Color, Error = impl Debug + 'static> + 'static,
-        Option<&'static BusManager<std::sync::Mutex<SpiDeviceDriver<'static, SpiDriver<'static>>>>>,
-    ),
-    InitError,
-> {
+pub fn display<'a>(
+    peripherals: peripherals::DisplayPeripherals,
+    spi_bus_peripherals: SpiBusPeripherals,
+) -> Result<impl Flushable<Color = Color, Error = impl Debug + 'static> + 'static, InitError> {
     if let Some(backlight) = peripherals.control.backlight {
         let mut backlight = PinDriver::output(backlight)?;
 
@@ -293,20 +291,11 @@ pub fn display(
         mem::forget(backlight); // TODO: For now
     }
 
-    let baudrate = 26.MHz().into();
-    // let baudrate = 40.MHz().into(); // Not supported on ESP32
-
-    let spi = SpiDeviceDriver::new_single(
-        peripherals.spi,
-        peripherals.sclk,
-        peripherals.sdo,
-        Option::<Gpio19>::None,
-        Dma::Disabled,
-        peripherals.cs,
-        &SpiConfig::new().baudrate(baudrate),
+    let spi = SpiDeviceDriver::new(
+        spi_bus_peripherals.driver,
+        spi_bus_peripherals.cs,
+        &SpiConfig::default().baudrate(SPI_BUS_FREQ.MHz().into()),
     )?;
-
-    // let spi_bus = shared_bus::new_std!(SpiDeviceDriver<SpiDriver> = spi);
 
     let dc = PinDriver::output(peripherals.control.dc)?;
 
@@ -366,7 +355,7 @@ pub fn display(
 
     let display = display.owned_color_converted().owned_noop_flushing();
 
-    Ok((display, None))
+    Ok(display)
 }
 
 pub fn wifi<'d>(
