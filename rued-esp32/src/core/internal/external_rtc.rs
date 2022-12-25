@@ -19,7 +19,7 @@ use embedded_svc::executor::asynch::Unblocker;
 use channel_bridge::notification::Notification;
 
 use crate::models::rtc_external::RtcExternal;
-use crate::models::SystemTimeBuffer;
+use crate::models::{SntpSyncStatus, SystemTimeBuffer};
 
 use super::battery::{self, BatteryState};
 use super::keepalive::{self, RemainingTime};
@@ -34,7 +34,7 @@ pub enum RtcExternalCommand {
 #[derive(Clone, PartialEq, Debug)]
 pub enum RtcExternalState {
     Initial,
-    UpdateScreen(SystemTimeBuffer),
+    UpdateScreen((SystemTimeBuffer, Option<SntpSyncStatus>)),
 }
 
 pub(crate) static NOTIF: Notification = Notification::new();
@@ -74,7 +74,18 @@ pub async fn process<'a>(mut rtc: impl RtcExternal + 'a) {
                             rtc.update_rtc_from_local(&system_time)
                                 .expect("update_rtc_from_local");
 
-                            log::info!("[RTC EXTERNAL]: SNTP Sync Callback: Update RTC from local time / {}", &system_time.to_rfc3339().expect("Unwrap local time as rfc3339"));
+                            let timestamp = &system_time
+                                .to_rfc3339()
+                                .expect("Unwrap local time as rfc3339");
+                            log::info!("[RTC EXTERNAL]: SNTP Sync Callback: Update RTC from local time / {}", &timestamp);
+
+                            STATE.update(RtcExternalState::UpdateScreen((
+                                system_time,
+                                Some(SntpSyncStatus {
+                                    synced: true,
+                                    last_synced: timestamp.to_string(),
+                                }),
+                            )));
                         },
                     }
                 }
@@ -85,7 +96,7 @@ pub async fn process<'a>(mut rtc: impl RtcExternal + 'a) {
                 let resp = rtc.get_system_time_with_fallback().unwrap();
 
                 if resp.seconds == 0 {
-                    STATE.update(RtcExternalState::UpdateScreen(resp));
+                    STATE.update(RtcExternalState::UpdateScreen((resp, None)));
                 }
             }
         }

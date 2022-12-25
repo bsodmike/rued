@@ -1,3 +1,4 @@
+use core::sync;
 use core::{cmp::min, fmt::Write};
 use std::fmt::Display;
 
@@ -236,6 +237,8 @@ impl Summary {
             )))?;
         }
 
+        // Time
+
         y_offs += (meter_shape.preferred_size().height + 5) as i32;
 
         let mut text_buf = heapless::String::<32>::new();
@@ -243,7 +246,7 @@ impl Summary {
 
         if let Some(value) = current_time {
             match value {
-                RtcExternalState::UpdateScreen(time_buffer) => {
+                RtcExternalState::UpdateScreen((time_buffer, sntp_sync)) => {
                     let formatted = format!(
                         "{}-{:0>2}-{:0>2} {:0>2}:{:0>2}:{:0>2}",
                         time_buffer.year,
@@ -254,13 +257,60 @@ impl Summary {
                         time_buffer.seconds,
                     );
 
-                    // FIXME
-                    // let formatted = time_buffer.to_s().expect("formatted time as String");
                     write!(&mut text_buf, "{}", formatted)
                         .expect("Writing of String into text buffer");
                 }
                 _ => {
                     write!(&mut text_buf, "{}", "Updating...").unwrap();
+                }
+            }
+        }
+
+        let text_row = shapes::Textbox {
+            text: &text_buf,
+            color: Color::White,
+            font: profont::PROFONT_18_POINT,
+            padding: 1,
+            outline: 0,
+            strikethrough: false,
+            ..Default::default()
+        };
+
+        let text_row_size = text_row.preferred_size();
+        text_row.draw(&mut target.cropped(&Rectangle::new(
+            Point::new(((width - text_row_size.width) / 2) as i32, y_offs),
+            text_row_size,
+        )))?;
+
+        // SNTP Sync Status
+
+        y_offs += (text_row.preferred_size().height + 5) as i32;
+
+        let mut text_buf = heapless::String::<32>::new();
+        write!(&mut text_buf, "{}", "").unwrap();
+
+        if let Some(value) = current_time {
+            match value {
+                RtcExternalState::UpdateScreen((time_buffer, sntp_sync)) => {
+                    if let Some(sync_data) = sntp_sync {
+                        let formatted = format!(
+                            "Synced: {}",
+                            if sync_data.synced {
+                                // FIXME
+                                // This delta should be calculated against
+                                // `sync_data.last_synced`
+                                format!("Yes (<{} s)", crate::SNTP_SYNC_INTERVAL)
+                            } else {
+                                "No".to_string()
+                            },
+                        );
+
+                        write!(&mut text_buf, "{}", formatted)
+                            .expect("Writing of String into text buffer");
+                    };
+                }
+                _ => {
+                    write!(&mut text_buf, "{}", "Synced: Updating...").unwrap();
                 }
             }
         }
