@@ -271,12 +271,6 @@ impl SystemTimeBuffer {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
-pub struct SntpSyncStatus {
-    pub synced: bool,
-    pub last_synced: String,
-}
-
 pub(crate) mod rtc_external {
     pub(crate) mod prelude {
         pub use super::RtcExternal;

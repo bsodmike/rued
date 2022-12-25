@@ -76,4 +76,20 @@ where
     {
         self.update_with(move |_| data)
     }
+
+    pub fn update_without_notifications(&self, data: T) -> bool
+    where
+        T: PartialEq + Debug,
+    {
+        let updater = move |_| data;
+        let (old, new) = self.set_update(updater);
+
+        if old != new {
+            info!("[{} STATE]: {:?}", self.name, new);
+
+            true
+        } else {
+            false
+        }
+    }
 }

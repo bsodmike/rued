@@ -19,10 +19,11 @@ use embedded_svc::executor::asynch::Unblocker;
 use channel_bridge::notification::Notification;
 
 use crate::models::rtc_external::RtcExternal;
-use crate::models::{SntpSyncStatus, SystemTimeBuffer};
+use crate::models::SystemTimeBuffer;
 
 use super::battery::{self, BatteryState};
 use super::keepalive::{self, RemainingTime};
+use super::sntp::{SntpCommand, SntpSyncState};
 use super::state::State;
 
 #[derive(PartialEq, Debug, Serialize, Deserialize)]
@@ -34,7 +35,7 @@ pub enum RtcExternalCommand {
 #[derive(Clone, PartialEq, Debug)]
 pub enum RtcExternalState {
     Initial,
-    UpdateScreen((SystemTimeBuffer, Option<SntpSyncStatus>)),
+    UpdateScreen(SystemTimeBuffer),
 }
 
 pub(crate) static NOTIF: Notification = Notification::new();
@@ -61,7 +62,11 @@ pub async fn process<'a>(mut rtc: impl RtcExternal + 'a) {
         .await;
 
         if matches!(result, Either3::First(_)) {
-            unimplemented!()
+            unsafe {
+                let resp = rtc.get_system_time_with_fallback().unwrap();
+
+                STATE.update(RtcExternalState::UpdateScreen(resp));
+            }
         } else if matches!(result, Either3::Second(_)) {
             match result {
                 Either3::Second(command) => {
@@ -79,13 +84,8 @@ pub async fn process<'a>(mut rtc: impl RtcExternal + 'a) {
                                 .expect("Unwrap local time as rfc3339");
                             log::info!("[RTC EXTERNAL]: SNTP Sync Callback: Update RTC from local time / {}", &timestamp);
 
-                            STATE.update(RtcExternalState::UpdateScreen((
-                                system_time,
-                                Some(SntpSyncStatus {
-                                    synced: true,
-                                    last_synced: timestamp.to_string(),
-                                }),
-                            )));
+                            let sync = SntpSyncState::new(true, timestamp);
+                            super::sntp::COMMAND.signal(SntpCommand::SyncCallback(sync));
                         },
                     }
                 }
@@ -96,7 +96,7 @@ pub async fn process<'a>(mut rtc: impl RtcExternal + 'a) {
                 let resp = rtc.get_system_time_with_fallback().unwrap();
 
                 if resp.seconds == 0 {
-                    STATE.update(RtcExternalState::UpdateScreen((resp, None)));
+                    STATE.update(RtcExternalState::UpdateScreen(resp));
                 }
             }
         }
