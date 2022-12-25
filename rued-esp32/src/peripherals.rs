@@ -157,7 +157,7 @@ impl
 }
 
 #[cfg(esp32)]
-#[cfg(any(feature = "micromod-data-logging-carrier",))]
+#[cfg(feature = "micromod-data-logging-carrier")]
 pub struct SystemPeripherals<P, ADC, V, B1, B2, B3, I2C> {
     pub pulse_counter: PulseCounterPeripherals<P>,
     pub valve: ValvePeripherals,
@@ -171,7 +171,7 @@ pub struct SystemPeripherals<P, ADC, V, B1, B2, B3, I2C> {
 }
 
 #[cfg(esp32)]
-#[cfg(any(feature = "micromod-data-logging-carrier",))]
+#[cfg(feature = "micromod-data-logging-carrier")]
 impl SystemPeripherals<Gpio33, ADC1, Gpio34, Gpio27, Gpio13, Gpio12, I2C0> {
     pub fn take() -> Self {
         let peripherals = Peripherals::take().unwrap();
