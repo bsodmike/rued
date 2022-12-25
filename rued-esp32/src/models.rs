@@ -162,11 +162,6 @@ where
             system_time.year,
         )?;
 
-        info!(
-            "Updated RTC Clock from local time: {}",
-            system_time.to_rfc3339()?
-        );
-
         Ok(resp)
     }
 

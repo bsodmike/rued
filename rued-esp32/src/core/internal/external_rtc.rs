@@ -28,6 +28,7 @@ use super::state::State;
 #[derive(PartialEq, Debug, Serialize, Deserialize)]
 pub enum RtcExternalCommand {
     Pending,
+    SntpSyncCallbackUpdateRtc,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -63,9 +64,20 @@ pub async fn process<'a>(mut rtc: impl RtcExternal + 'a) {
             unimplemented!()
         } else if matches!(result, Either3::Second(_)) {
             match result {
-                Either3::Second(command) => match command {
-                    RtcExternalCommand::Pending => {}
-                },
+                Either3::Second(command) => {
+                    match command {
+                        RtcExternalCommand::Pending => {}
+                        RtcExternalCommand::SntpSyncCallbackUpdateRtc => unsafe {
+                            let system_time = rtc
+                                .get_system_time_with_fallback()
+                                .expect("get_system_time_with_fallback");
+                            rtc.update_rtc_from_local(&system_time)
+                                .expect("update_rtc_from_local");
+
+                            log::info!("[RTC EXTERNAL]: SNTP Sync Callback: Update RTC from local time / {}", &system_time.to_rfc3339().expect("Unwrap local time as rfc3339"));
+                        },
+                    }
+                }
                 _ => unreachable!(),
             }
         } else if matches!(result, Either3::Third(_)) {

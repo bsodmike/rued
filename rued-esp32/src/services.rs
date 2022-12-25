@@ -45,7 +45,6 @@ use esp_idf_sys::{esp, esp_restart, EspError};
 use gfx_xtra::draw_target::{Flushable, OwnedDrawTargetExt};
 
 use edge_executor::*;
-use once_cell::sync::Lazy;
 use shared_bus::BusManager;
 
 use crate::core::internal::mqtt::{MessageParser, MqttCommand};

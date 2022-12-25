@@ -9,7 +9,6 @@ use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
 use http::StatusCode;
 use log::{debug, error, info, warn};
-use once_cell::sync::Lazy;
 use peripherals::{ButtonsPeripherals, PulseCounterPeripherals, SPI_BUS_FREQ};
 use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, Rv8803Bus, TIME_ARRAY_LENGTH};
 use serde::{Deserialize, Serialize};
@@ -49,12 +48,12 @@ use esp_idf_svc::{
     sntp::{self, EspSntp, OperatingMode, SntpConf, SyncMode, SyncStatus},
 };
 
-use esp_idf_sys as _;
+use esp_idf_sys::{self as _};
 #[allow(unused_imports)]
 use esp_idf_sys::{
     self as _, esp_wifi_connect, esp_wifi_set_ps, settimeofday, sntp_get_sync_status, sntp_init,
-    sntp_set_sync_interval, sntp_set_time_sync_notification_cb, sntp_stop, time_t, timeval,
-    timezone, wifi_ps_type_t_WIFI_PS_NONE,
+    sntp_restart, sntp_set_sync_interval, sntp_set_time_sync_notification_cb, sntp_stop, time_t,
+    timeval, timezone, wifi_ps_type_t_WIFI_PS_NONE,
 }; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
 use embedded_svc::{
@@ -93,7 +92,7 @@ use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_sys::esp;
 
 use crate::{
-    core::internal::{pwm, spawn},
+    core::internal::{external_rtc, pwm, spawn},
     errors::*,
     models::{RTClock, SystemTimeBuffer},
 };
@@ -107,15 +106,6 @@ pub(crate) mod models;
 mod peripherals;
 mod services;
 
-const CURRENT_YEAR: u16 = 2022;
-const UTC_OFFSET_CHRONO: Utc = Utc;
-const SNTP_RETRY_COUNT: u32 = 1_000_000;
-static UPDATE_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
-static FALLBACK_TO_RTC: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
-
-// // false: SNTP is enabled
-// static DISABLE_SNTP: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
-
 ///
 /// # Safety
 pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut timeval) {
@@ -123,31 +113,29 @@ pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut time
     let naive_dt = if let Some(value) = naive_dt_opt {
         value
     } else {
-        // FIXME this is bad.
         NaiveDateTime::default()
     };
     let dt = DateTime::<Utc>::from_utc(naive_dt, Utc);
 
-    info!(
+    debug!(
         "SNTP Sync Callback fired. Timestamp: {} / Year: {}",
         dt.timestamp().to_string(),
         dt.year().to_string()
     );
 
     if dt.year() < CURRENT_YEAR.into() {
-        // Do not update RTC.
-        core::fallback_to_rtc_enable();
+        debug!("SNTP Sync Callback: Falling back to RTC for sync.");
 
-        info!("SNTP Sync Callback: Falling back to RTC for sync.");
+        // FIXME
+        todo!();
     } else {
-        info!("RTC update flag: enabled");
-        core::update_rtc_enable();
-
         debug!(
-            "SNTP Sync Callback called: sec: {}, usec: {}",
+            "SNTP Sync Callback: Update RTC from local time. sec: {}, usec: {}",
             (*tv).tv_sec,
-            (*tv).tv_usec,
+            (*tv).tv_usec
         );
+
+        external_rtc::COMMAND.signal(external_rtc::RtcExternalCommand::SntpSyncCallbackUpdateRtc);
     }
 }
 
@@ -156,9 +144,14 @@ pub enum SysLoopMsg {
     IpAddressAcquired,
 }
 
-static LOGGER: EspLogger = EspLogger;
-const SLEEP_TIME: Duration = Duration::from_secs(5);
+const CURRENT_YEAR: u16 = 2022;
 const MQTT_MAX_TOPIC_LEN: usize = 64;
+const SLEEP_TIME: Duration = Duration::from_secs(5);
+const SNTP_RETRY_COUNT: u32 = 1_000_000;
+const SNTP_SYNC_INTERVAL: u32 = 30; // secs
+const UTC_OFFSET_CHRONO: Utc = Utc;
+
+static LOGGER: EspLogger = EspLogger;
 
 // Make sure that the firmware will contain
 // up-to-date build time and package info coming from the binary crate
@@ -278,6 +271,37 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     #[cfg(not(feature = "ulp"))]
     let (pulse_counter, pulse_wakeup) = services::pulse(peripherals.pulse_counter)?;
 
+    // SNTP
+
+    let server_array: [&str; 4] = [
+        "time.aws.com",
+        "1.sg.pool.ntp.org",
+        "0.pool.ntp.org",
+        "3.pool.ntp.org",
+    ];
+
+    let mut sntp_conf = SntpConf::default();
+    let mut servers: [&str; 1 as usize] = Default::default();
+    let copy_len = ::core::cmp::min(servers.len(), server_array.len());
+
+    servers[..copy_len].copy_from_slice(&server_array[..copy_len]);
+    sntp_conf.servers = servers;
+
+    let sntp = sntp::EspSntp::new(&sntp_conf)?;
+
+    unsafe {
+        sntp_set_sync_interval(SNTP_SYNC_INTERVAL * 1000);
+
+        // stop the sntp instance to redefine the callback
+        // https://github.com/esp-rs/esp-idf-svc/blob/v0.42.5/src/sntp.rs#L155-L158
+        sntp_stop();
+
+        // redefine and restart the callback.
+        sntp_set_time_sync_notification_cb(Some(sntp_set_time_sync_notification_cb_custom));
+    }
+
+    unsafe { sntp_init() };
+
     // Wifi
 
     let (wifi, wifi_notif) = services::wifi(
@@ -316,6 +340,11 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
             let duty_cycle = nvs_default_state.pwm_duty_cycle;
             if duty_cycle > 0 && duty_cycle <= 100 {
                 pwm::COMMAND.signal(pwm::PwmCommand::SetDutyCycle(duty_cycle));
+            }
+
+            log::info!("Starting SNTP");
+            unsafe {
+                sntp_restart();
             }
         }
         _ => info!("Received other IPEvent"),

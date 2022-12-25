@@ -357,7 +357,7 @@ impl Summary {
             };
 
             let mut text_buf = heapless::String::<14>::new();
-            write!(&mut text_buf, "ip: {}", ip).unwrap();
+            write!(&mut text_buf, "ip: {}", ip).expect("Writing IP address to buffer");
 
             status_rt.text = &text_buf;
 
