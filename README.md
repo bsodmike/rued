@@ -19,16 +19,11 @@ With any IoT 'stack', there are some rudimentary basics; this repo is an attempt
 | [X] | Httpd server Middleware | Added to provide JSON responses for matching `Content-Type` headers|
 | [X] | SNTP | *Fallback to RTC is pending |
 | [X] | Ext. RTC | [RV8803 module used.](https://www.sparkfun.com/products/16281) |
-| [T] | Display: I2C | **Requires further testing.|
+| [Testing] | Display: I2C | **Requires further testing. |
 | [X] | Display: SPI | ili9342 fully tested. |
+| [Testing] | SD/MMC Card: SPI | **Requires further testing. |
 | [ ] | MQTT |  |
 
-Legend:
-```
-[P]: Pending
-[T]: Requires further testing.
-[X]: Done
-```
 
 ## Quick setup
 
