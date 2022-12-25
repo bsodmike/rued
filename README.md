@@ -15,14 +15,13 @@ With any IoT 'stack', there are some rudimentary basics; this repo is an attempt
 |-----|---|---|
 | [X] | RTOS: High priority executor |  |
 | [X] | Wifi |  |
-| [ ] | SNTP |  |
 | [X] | Httpd server with TLS |  |
 | [X] | Httpd server Middleware | Added to provide JSON responses for matching `Content-Type` headers|
-| [ ] | SNTP fallback to RTC |  |
-| [X] | I2C | |
+| [X] | SNTP | *Fallback to RTC is pending |
+| [X] | Ext. RTC | [RV8803 module used.](https://www.sparkfun.com/products/16281) |
 | [T] | Display: I2C | **Requires further testing.|
 | [X] | Display: SPI | ili9342 fully tested. |
-
+| [ ] | MQTT |  |
 
 Legend:
 ```
