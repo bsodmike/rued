@@ -1,6 +1,8 @@
+use core::sync;
 use core::{cmp::min, fmt::Write};
 use std::fmt::Display;
 
+use chrono::DateTime;
 use embedded_graphics::mono_font;
 use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::{
@@ -16,6 +18,7 @@ use crate::core::internal::external_rtc::RtcExternalState;
 use crate::core::internal::keepalive::RemainingTime;
 use crate::core::internal::pwm::PwmCommand;
 use crate::core::internal::screen::shapes::{self, BatteryChargedText, Color};
+use crate::core::internal::sntp::SntpState;
 use crate::core::internal::wifi::WifiConnection;
 // use crate::valve::ValveState;
 // use crate::wm::WaterMeterState;
@@ -63,6 +66,7 @@ impl Summary {
         ip_addr: Option<&Option<WifiConnection>>,
         ext_rtc: Option<&RtcExternalState>,
         pwm: Option<&PwmCommand>,
+        sntp: Option<&SntpState>,
     ) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = super::super::super::screen::DisplayColor>,
@@ -87,6 +91,7 @@ impl Summary {
             Some(&meter_state),
             ext_rtc,
             pwm,
+            sntp,
         )?;
 
         Ok(())
@@ -204,6 +209,7 @@ impl Summary {
         meter_state: Option<&MeterState>,
         current_time: Option<&RtcExternalState>,
         pwm: Option<&PwmCommand>,
+        sntp: Option<&SntpState>,
     ) -> Result<(), D::Error>
     where
         D: DrawTarget<Color = Color>,
@@ -236,6 +242,8 @@ impl Summary {
             )))?;
         }
 
+        // Time
+
         y_offs += (meter_shape.preferred_size().height + 5) as i32;
 
         let mut text_buf = heapless::String::<32>::new();
@@ -254,8 +262,6 @@ impl Summary {
                         time_buffer.seconds,
                     );
 
-                    // FIXME
-                    // let formatted = time_buffer.to_s().expect("formatted time as String");
                     write!(&mut text_buf, "{}", formatted)
                         .expect("Writing of String into text buffer");
                 }
@@ -269,6 +275,65 @@ impl Summary {
             text: &text_buf,
             color: Color::White,
             font: profont::PROFONT_18_POINT,
+            padding: 1,
+            outline: 0,
+            strikethrough: false,
+            ..Default::default()
+        };
+
+        let text_row_size = text_row.preferred_size();
+        text_row.draw(&mut target.cropped(&Rectangle::new(
+            Point::new(((width - text_row_size.width) / 2) as i32, y_offs),
+            text_row_size,
+        )))?;
+
+        // SNTP Sync Status
+
+        y_offs += (text_row.preferred_size().height + 5) as i32;
+
+        let mut text_buf = heapless::String::<64>::new();
+        write!(&mut text_buf, "{}", "").unwrap();
+
+        if let Some(value) = sntp {
+            match value {
+                SntpState::Sync(sntp_sync) => {
+                    if let Some(rtc_external) = current_time {
+                        match rtc_external {
+                            RtcExternalState::UpdateScreen(time_buffer) => {
+                                let now = time_buffer.datetime;
+                                let last_synced = sntp_sync.last_synced.to_string();
+
+                                let synced_at = DateTime::parse_from_rfc3339(&last_synced)
+                                    .expect("Parse last sync timestamp");
+                                let diff = now.signed_duration_since(synced_at);
+
+                                let delta = diff.num_milliseconds().to_string();
+
+                                // Update details
+                                let formatted = if sntp_sync.synced {
+                                    format!("Synced Del: {} ms", delta)
+                                } else {
+                                    "Synced: No".to_string()
+                                };
+                                log::info!("Sync Δ: {} ms", &delta);
+
+                                write!(&mut text_buf, "{}", formatted)
+                                    .expect("Writing of String into text buffer");
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {
+                    write!(&mut text_buf, "{}", "Synced: Updating...").unwrap();
+                }
+            }
+        }
+
+        let text_row = shapes::Textbox {
+            text: &text_buf,
+            color: Color::Green,
+            font: profont::PROFONT_14_POINT,
             padding: 1,
             outline: 0,
             strikethrough: false,

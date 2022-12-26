@@ -59,6 +59,7 @@ where
         .spawn_local_collect(super::httpd::process(httpd), tasks)?
         .spawn_local_collect(super::pwm::process(pwm), tasks)?
         .spawn_local_collect(super::ws::process(acceptor), tasks)?
+        .spawn_local_collect(super::sntp::process(), tasks)?
         .spawn_local_collect(super::pwm::flash(pwm_flash), tasks)?;
 
     if let Some(rtc) = rtc {

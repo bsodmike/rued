@@ -11,6 +11,7 @@ pub mod pulse_counter;
 pub mod pwm;
 pub mod quit;
 pub mod screen;
+pub mod sntp;
 pub mod spawn;
 pub mod state;
 pub mod web;

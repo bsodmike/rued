@@ -23,6 +23,7 @@ use crate::models::SystemTimeBuffer;
 
 use super::battery::{self, BatteryState};
 use super::keepalive::{self, RemainingTime};
+use super::sntp::{SntpCommand, SntpSyncState};
 use super::state::State;
 
 #[derive(PartialEq, Debug, Serialize, Deserialize)]
@@ -61,7 +62,11 @@ pub async fn process<'a>(mut rtc: impl RtcExternal + 'a) {
         .await;
 
         if matches!(result, Either3::First(_)) {
-            unimplemented!()
+            unsafe {
+                let resp = rtc.get_system_time_with_fallback().unwrap();
+
+                STATE.update(RtcExternalState::UpdateScreen(resp));
+            }
         } else if matches!(result, Either3::Second(_)) {
             match result {
                 Either3::Second(command) => {
@@ -74,7 +79,13 @@ pub async fn process<'a>(mut rtc: impl RtcExternal + 'a) {
                             rtc.update_rtc_from_local(&system_time)
                                 .expect("update_rtc_from_local");
 
-                            log::info!("[RTC EXTERNAL]: SNTP Sync Callback: Update RTC from local time / {}", &system_time.to_rfc3339().expect("Unwrap local time as rfc3339"));
+                            let timestamp = &system_time
+                                .to_rfc3339()
+                                .expect("Unwrap local time as rfc3339");
+                            log::info!("[RTC EXTERNAL]: SNTP Sync Callback: Update RTC from local time / {}", &timestamp);
+
+                            let sync = SntpSyncState::new(true, timestamp);
+                            super::sntp::COMMAND.signal(SntpCommand::SyncCallback(sync));
                         },
                     }
                 }
