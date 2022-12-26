@@ -77,7 +77,7 @@ where
         self.update_with(move |_| data)
     }
 
-    pub fn update_without_notifications(&self, data: T) -> bool
+    pub fn update_skip_notif(&self, data: T) -> bool
     where
         T: PartialEq + Debug,
     {

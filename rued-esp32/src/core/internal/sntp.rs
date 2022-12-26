@@ -65,7 +65,7 @@ pub async fn process() {
                 Either::Second(command) => match command {
                     SntpCommand::SyncCallback(sync_state) => {
                         // NOTE: State is updated, skipping calling notifications
-                        STATE.update_without_notifications(SntpState::Sync(sync_state));
+                        STATE.update_skip_notif(SntpState::Sync(sync_state));
 
                         // NOTE: Ensure time is updated as well
                         super::external_rtc::NOTIF.notify();
