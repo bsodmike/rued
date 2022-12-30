@@ -23,7 +23,6 @@ nvs = []
 pwm = []
 display-i2c = ["profont", "ssd1306", "display-binary-color"]
 display-binary-color = []
-
 display-spi = ["profont", "ili9342"]
 ili9342 = ["profont", "mipidsi"]
 

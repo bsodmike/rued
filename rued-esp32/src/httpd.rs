@@ -25,6 +25,7 @@ pub fn configure_handlers<'a>(httpd: &mut EspHttpServer) -> Result<()> {
         ),
     )?;
 
+    #[cfg(feature = "pwm")]
     httpd.handler(
         "/pwm",
         Method::Post,

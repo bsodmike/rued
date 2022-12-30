@@ -22,6 +22,7 @@ With any IoT 'stack', there are some rudimentary basics; this repo is an attempt
 | [Testing] | Display: I2C | **Requires further testing. |
 | [X] | Display: SPI | ili9342 fully tested. |
 | [Testing] | SD/MMC Card: SPI | **Requires further testing. |
+| [ ] | ADC: Battery voltage |  |
 | [ ] | MQTT |  |
 
 

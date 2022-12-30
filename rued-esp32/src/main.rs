@@ -431,7 +431,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         services::display(proxy1).expect("Return display service to the high_prio executor")
     };
 
-    #[cfg(not(feature = "display-i2c"))]
+    #[cfg(feature = "display-spi")]
     let display = { services::display(peripherals.display, peripherals.spi1).unwrap() };
 
     let mut high_prio_executor = EspExecutor::<16, _>::new();
@@ -443,6 +443,9 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
             peripherals.buttons.button1,
             &core::internal::button::BUTTON1_PIN_EDGE,
         )?,
+        AdcDriver::new(peripherals.battery.adc, &AdcConfig::new().calibration(true))?,
+        AdcChannelDriver::<_, Atten0dB<_>>::new(peripherals.battery.voltage)?,
+        PinDriver::input(peripherals.battery.power)?,
         display,
         (wifi, wifi_notif),
         &mut httpd,

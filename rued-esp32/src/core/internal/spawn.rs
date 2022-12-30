@@ -25,10 +25,13 @@ use super::screen::Color;
 use super::web::{self, WebEvent, WebRequest};
 use super::{battery, mqtt, wifi};
 
-pub fn high_prio<'a, const C: usize, M, D>(
+pub fn high_prio<'a, ADC, BP, const C: usize, M, D>(
     executor: &mut Executor<'a, C, M, Local>,
     tasks: &mut heapless::Vec<Task<()>, C>,
     button1_pin: impl InputPin<Error = impl Debug + 'a> + 'a,
+    battery_voltage: impl adc::OneShot<ADC, u16, BP> + 'a,
+    battery_pin: BP,
+    power_pin: impl InputPin + 'a,
     display: D,
     wifi: (EspWifi<'a>, impl Receiver<Data = WifiEvent> + 'a),
     httpd: &'a mut EspHttpServer,
@@ -45,6 +48,8 @@ where
     M: Monitor + Default,
     D: Flushable<Color = crate::core::internal::screen::DisplayColor> + 'a,
     D::Error: Debug,
+    ADC: 'a,
+    BP: adc::Channel<ADC> + 'a,
 {
     executor
         .spawn_local_collect(
@@ -60,7 +65,11 @@ where
         .spawn_local_collect(super::pwm::process(pwm), tasks)?
         .spawn_local_collect(super::ws::process(acceptor), tasks)?
         .spawn_local_collect(super::sntp::process(), tasks)?
-        .spawn_local_collect(super::pwm::flash(pwm_flash), tasks)?;
+        .spawn_local_collect(super::pwm::flash(pwm_flash), tasks)?
+        .spawn_local_collect(
+            super::battery::process(battery_voltage, battery_pin, power_pin),
+            tasks,
+        )?;
 
     if let Some(rtc) = rtc {
         executor.spawn_local_collect(super::external_rtc::process(rtc), tasks)?;

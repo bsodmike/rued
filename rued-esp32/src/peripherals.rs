@@ -172,7 +172,7 @@ pub struct SystemPeripherals<P, ADC, V, B1, B2, B3, I2C> {
 
 #[cfg(esp32)]
 #[cfg(feature = "micromod-data-logging-carrier")]
-impl SystemPeripherals<Gpio33, ADC1, Gpio34, Gpio27, Gpio13, Gpio12, I2C0> {
+impl SystemPeripherals<Gpio33, ADC1, Gpio35, Gpio27, Gpio13, Gpio12, I2C0> {
     pub fn take() -> Self {
         let peripherals = Peripherals::take().unwrap();
 
@@ -214,8 +214,8 @@ impl SystemPeripherals<Gpio33, ADC1, Gpio34, Gpio27, Gpio13, Gpio12, I2C0> {
                 close: peripherals.pins.gpio10.into(),
             },
             battery: BatteryPeripherals {
-                power: peripherals.pins.gpio35.into(), // A1
-                voltage: peripherals.pins.gpio34,      // A0
+                power: peripherals.pins.gpio34.into(), // A0
+                voltage: peripherals.pins.gpio35,      // A1
                 adc: peripherals.adc1,
             },
             buttons: ButtonsPeripherals {
