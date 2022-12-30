@@ -127,20 +127,25 @@ where
     Ok(())
 }
 
-pub fn mid_prio<'a, const C: usize, M, D>(
+pub fn mid_prio<
+    'a,
+    const C: usize,
+    M,
+    // D
+>(
     executor: &mut Executor<'a, C, M, Local>,
     tasks: &mut heapless::Vec<Task<()>, C>,
-    display: D,
+    // display: D,
     // wm_flash: impl FnMut(WaterMeterState) + 'a,
 ) -> Result<(), SpawnError>
 where
     M: Monitor + Default,
-    D: Flushable<Color = crate::core::internal::screen::DisplayColor> + 'a,
-    D::Error: Debug,
+    // D: Flushable<Color = crate::core::internal::screen::DisplayColor> + 'a,
+    // D::Error: Debug,
 {
-    executor
-        .spawn_local_collect(screen::process(), tasks)?
-        .spawn_local_collect(screen::run_draw(display), tasks)?;
+    // executor
+    //     .spawn_local_collect(screen::process(), tasks)?
+    //     .spawn_local_collect(screen::run_draw(display), tasks)?;
 
     // .spawn_local_collect(wm_stats::process(), tasks)?
     // .spawn_local_collect(wm::flash(wm_flash), tasks)?;
