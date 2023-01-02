@@ -466,8 +466,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         name: Some(b"async-exec-mid\0"),
         ..Default::default()
     }
-    .set()
-    .unwrap();
+    .set()?;
 
     // // let display_peripherals = peripherals.display_i2c;
     // // let proxy = display_peripherals.bus.bus.acquire_i2c();
@@ -503,8 +502,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     //     name: Some(b"async-exec-low\0"),
     //     ..Default::default()
     // }
-    // .set()
-    // .unwrap();
+    // .set()?;
 
     // let low_prio_execution = services::schedule::<4, _>(50000, move || {
     //     let mut executor = EspExecutor::new();
@@ -528,15 +526,15 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     spawn::run(&mut high_prio_executor, high_prio_tasks);
 
     log::info!("Execution finished, waiting for 2s to workaround a STD/ESP-IDF pthread (?) bug");
-
+    // This is required to allow the low prio thread to start
     std::thread::sleep(crate::StdDuration::from_millis(2000));
 
     mid_prio_execution.join().unwrap();
     // low_prio_execution.join().unwrap();
 
-    log::info!("Finished execution");
+    log::info!("all tasks running");
 
-    Ok(())
+    unreachable!()
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -616,14 +614,6 @@ fn mark_wakeup_pins(
 
     Ok(())
 }
-
-/// Configure SNTP
-/// - <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/system_time.html#sntp-time-synchronization>
-/// - <https://wokwi.com/projects/342312626601067091>
-// unsafe fn sntp_setup<'a>() -> Result<(EspSntp, [&'a str; 1])> {
-
-//     Ok((sntp, servers))
-// }
 
 fn toggle_led<P>(driver: &mut P)
 where
