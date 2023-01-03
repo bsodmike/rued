@@ -10,7 +10,9 @@ use embassy_sync::signal::Signal;
 
 use embedded_svc::wifi::{Configuration, Wifi as WifiTrait};
 
-use channel_bridge::asynch::Receiver;
+use channel_bridge::asynch::{Receiver, Sender};
+
+use crate::models::{NetworkStateChange, NETWORK_EVENT_CHANNEL};
 
 use super::state::State;
 
@@ -67,9 +69,12 @@ pub async fn process<'a, D>(
                     }
                     WifiEvent::StaDisconnected => {
                         log::info!("WifiEvent: STADisconnected");
-                        wifi.connect().expect("Establish Wifi connection");
+
+                        let mut publisher = NETWORK_EVENT_CHANNEL.publisher().unwrap();
+                        let _ = publisher.send(NetworkStateChange::WifiDisconnected).await;
+                        let _ = wifi.connect();
                     }
-                    _ => (),
+                    _ => log::info!("WifiEvent: other ....."),
                 }
             }
             Either::Second(command) => match command {

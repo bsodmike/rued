@@ -20,6 +20,7 @@ use channel_bridge::asynch::*;
 
 use crate::core::internal::{mqtt::MqttCommand, screen};
 use crate::models::rtc_external::RtcExternal;
+use crate::services::httpd::LazyInitHttpServer;
 
 use super::button::{self, PressedLevel};
 use super::screen::Color;
@@ -35,7 +36,7 @@ pub fn high_prio<'a, ADC, BP, const C: usize, M, D>(
     power_pin: impl InputPin + 'a,
     display: D,
     wifi: (EspWifi<'a>, impl Receiver<Data = WifiEvent> + 'a),
-    httpd: &'a mut EspHttpServer,
+    httpd: &'a mut LazyInitHttpServer,
     acceptor: impl Acceptor + 'a,
     pwm: Option<(
         impl PwmPin<Duty = u32> + 'a,

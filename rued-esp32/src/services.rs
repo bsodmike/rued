@@ -15,7 +15,9 @@ use embedded_hal_0_2::digital::v2::OutputPin as EHOutputPin;
 
 use embedded_svc::http::server::Method;
 use embedded_svc::mqtt::client::asynch::{Client, Connection, Publish};
+use embedded_svc::utils::asyncify::ws::server::Processor;
 use embedded_svc::utils::asyncify::Asyncify;
+use embedded_svc::utils::mutex::RawCondvar;
 use embedded_svc::wifi::{AuthMethod, ClientConfiguration, Configuration, Wifi};
 use embedded_svc::ws::asynch::server::Acceptor;
 
@@ -32,7 +34,7 @@ use esp_idf_hal::spi::*;
 use esp_idf_hal::task::embassy_sync::EspRawMutex;
 
 use esp_idf_svc::eventloop::EspSystemEventLoop;
-use esp_idf_svc::http::server::ws::EspHttpWsProcessor;
+use esp_idf_svc::http::server::ws::{EspHttpWsConnection, EspHttpWsProcessor};
 use esp_idf_svc::http::server::EspHttpServer;
 use esp_idf_svc::mqtt::client::{EspMqttClient, MqttClientConfiguration};
 use esp_idf_svc::netif::IpEvent;
@@ -80,6 +82,10 @@ use embedded_graphics::{
 
 #[cfg(feature = "display-i2c")]
 use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
+
+use self::httpd::LazyInitHttpServer;
+
+pub mod httpd;
 
 const WIFI_SSID: &str = env!("WIFI_SSID");
 const WIFI_PSK: &str = env!("WIFI_PSK");
@@ -404,12 +410,7 @@ pub fn wifi<'d>(
     ))
 }
 
-pub fn httpd() -> Result<(EspHttpServer, impl Acceptor), InitError> {
-    let (ws_processor, ws_acceptor) =
-        EspHttpWsProcessor::<{ ws::WS_MAX_CONNECTIONS }, { ws::WS_MAX_FRAME_LEN }>::new(());
-
-    let ws_processor = Mutex::<EspRawMutex, _>::new(RefCell::new(ws_processor));
-
+pub fn httpd() -> Result<LazyInitHttpServer, InitError> {
     let server_certificate = tls::X509::pem_until_nul(include_bytes!(
         "/home/mdesilva/esp/openssl-generate-rs/output/cert.pem"
     ));
@@ -421,13 +422,12 @@ pub fn httpd() -> Result<(EspHttpServer, impl Acceptor), InitError> {
     config.server_certificate = Some(server_certificate);
     config.private_key = Some(server_private_key);
 
-    let mut httpd = EspHttpServer::new(&config).unwrap();
+    // FIXME remove this
+    // let mut httpd = EspHttpServer::new(&config).unwrap();
 
-    httpd.ws_handler("/ws", move |connection| {
-        ws_processor.lock(|ws_processor| ws_processor.borrow_mut().process(connection))
-    })?;
+    let httpd = LazyInitHttpServer::new(config);
 
-    Ok((httpd, ws_acceptor))
+    Ok(httpd)
 }
 
 pub fn mqtt() -> Result<

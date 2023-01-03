@@ -44,11 +44,12 @@ use esp_idf_hal::{
     units::{FromValueType, Hertz},
 };
 use esp_idf_svc::{
+    http::server::ws::EspHttpWsProcessor,
     log::EspLogger,
     sntp::{self, EspSntp, OperatingMode, SntpConf, SyncMode, SyncStatus},
 };
 
-use esp_idf_sys::{self as _};
+use esp_idf_sys::{self as _, esp_ota_mark_app_valid_cancel_rollback};
 #[allow(unused_imports)]
 use esp_idf_sys::{
     self as _, esp_wifi_connect, esp_wifi_set_ps, settimeofday, sntp_get_sync_status, sntp_init,
@@ -75,6 +76,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(feature = "nvs")]
 use embassy_sync::blocking_mutex::Mutex as EmbassyMutex;
 use embassy_time::Duration;
+use esp_idf_hal::task::embassy_sync::EspRawMutex;
 
 #[cfg(feature = "nvs")]
 use embedded_svc::storage::Storage;
@@ -90,14 +92,17 @@ use esp_idf_hal::task::thread::ThreadSpawnConfiguration;
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 
-use channel_bridge::{asynch::pubsub, asynch::Receiver as AsynchReceiver};
+use channel_bridge::{
+    asynch::Receiver as AsynchReceiver,
+    asynch::{pubsub, Sender as AsyncSender},
+};
 
 use esp_idf_sys::esp;
 
 use crate::{
-    core::internal::{external_rtc, keepalive, pwm, spawn, wifi::WifiConnection},
+    core::internal::{external_rtc, keepalive, pwm, spawn, wifi::WifiConnection, ws},
     errors::*,
-    models::{RTClock, SystemTimeBuffer},
+    models::{NetworkStateChange, RTClock, SystemTimeBuffer, NETWORK_EVENT_CHANNEL},
 };
 
 mod core;
@@ -165,6 +170,7 @@ esp_idf_sys::esp_app_desc!();
 
 fn main() -> Result<(), InitError> {
     esp_idf_hal::task::critical_section::link();
+    esp_idf_svc::timer::embassy_time::driver::link();
     esp_idf_svc::timer::embassy_time::queue::link();
 
     let wakeup_reason = WakeupReason::get();
@@ -335,8 +341,8 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Httpd
 
-    let (mut httpd, ws_acceptor) = services::httpd()?;
-    httpd::configure_handlers(&mut httpd)?;
+    let mut httpd = services::httpd()?;
+    let ws_acceptor = httpd::configure_websockets(&mut httpd)?;
 
     // Mqtt
 
@@ -534,21 +540,23 @@ pub async fn process_netif_state_change(
                 if let Some(address) = assignment.ip_settings.dns {
                     dns = address.to_string();
                     info!("IpEvent: DhcpIpAssigned: DNS = {}", &dns);
+                } else {
+                    warn!("Unable to unwrap DNS address");
                 };
 
                 // Update wifi state
                 core::internal::wifi::STATE.update(Some(WifiConnection { ip, dns }));
 
-                // // if an IP address has been succesfully assiggned we consider
-                // // the application working, no rollback required.
-                // unsafe { esp_ota_mark_app_valid_cancel_rollback() };
+                // if an IP address has been succesfully assigned we consider
+                // the application working, no rollback required.
+                unsafe { esp_ota_mark_app_valid_cancel_rollback() };
 
-                // let mut publisher = NETWORK_EVENT_CHANNEL.publisher().unwrap();
-                // let _ = publisher
-                //     .send(NetworkStateChange::IpAddressAssigned {
-                //         ip: assignment.ip_settings.ip,
-                //     })
-                //     .await;
+                let mut publisher = NETWORK_EVENT_CHANNEL.publisher().unwrap();
+                let _ = publisher
+                    .send(NetworkStateChange::IpAddressAssigned {
+                        ip: assignment.ip_settings.ip,
+                    })
+                    .await;
 
                 // FIXME this needs to be handled in another task
                 // NOTE: Update PWM Duty-cycle from value stored in NVS.
