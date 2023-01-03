@@ -17,14 +17,12 @@ use super::state::State;
 #[derive(PartialEq, Debug, Serialize, Deserialize)]
 pub enum WifiCommand {
     SetConfiguration(Configuration),
-    DhcpIpAssigned,
-    StaConnected,
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, Default)]
 pub struct WifiConnection {
-    ip: String,
-    dns: String,
+    pub ip: String,
+    pub dns: String,
 }
 
 impl WifiConnection {
@@ -51,7 +49,7 @@ pub static STATE: State<Option<WifiConnection>> = State::new(
 pub(crate) static COMMAND: Signal<CriticalSectionRawMutex, WifiCommand> = Signal::new();
 
 pub async fn process<'a, D>(
-    mut wifi: EspWifi<'a>,
+    mut wifi: impl WifiTrait,
     mut state_changed_source: impl Receiver<Data = D>,
 ) where
     WifiEvent: From<D>,
@@ -69,43 +67,13 @@ pub async fn process<'a, D>(
                     }
                     WifiEvent::StaDisconnected => {
                         log::info!("WifiEvent: STADisconnected");
-                        wifi.connect().unwrap();
+                        wifi.connect().expect("Establish Wifi connection");
                     }
                     _ => (),
                 }
             }
             Either::Second(command) => match command {
                 WifiCommand::SetConfiguration(conf) => wifi.set_configuration(&conf).unwrap(),
-                WifiCommand::StaConnected => {
-                    if let Ok(val) = wifi.connect() {
-                        val
-                    } else {
-                        log::warn!("WifiCommand::StaConnected: Unable to unwrap wifi.connect()");
-                    }
-                }
-                WifiCommand::DhcpIpAssigned => {
-                    log::info!("************ WifiCommand::DhcpIpAssigned: Inside handler");
-
-                    let netif = wifi.sta_netif();
-                    if let Ok(up) = netif.is_up() {
-                        if up {
-                            log::info!("************ WifiCommand::DhcpIpAssigned / Netif: Up");
-
-                            if let Ok(ip_info) = netif.get_ip_info() {
-                                let ip = ip_info.ip.to_string();
-                                let dns = if let Some(value) = ip_info.dns {
-                                    value.to_string()
-                                } else {
-                                    format!("ERR: Unable to unwrap DNS value")
-                                };
-
-                                log::info!("************ Received IPEvent address assigned / IP: {} / DNS: {}", ip, dns);
-
-                                STATE.update(Some(WifiConnection { ip, dns }));
-                            }
-                        }
-                    }
-                }
             },
         }
     }

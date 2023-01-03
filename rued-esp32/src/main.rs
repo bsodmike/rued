@@ -95,7 +95,7 @@ use channel_bridge::{asynch::pubsub, asynch::Receiver as AsynchReceiver};
 use esp_idf_sys::esp;
 
 use crate::{
-    core::internal::{external_rtc, keepalive, pwm, spawn},
+    core::internal::{external_rtc, keepalive, pwm, spawn, wifi::WifiConnection},
     errors::*,
     models::{RTClock, SystemTimeBuffer},
 };
@@ -524,13 +524,20 @@ pub async fn process_netif_state_change(
 
         match event {
             IpEvent::DhcpIpAssigned(assignment) => {
+                let ip = assignment.ip_settings.ip.to_string();
+                let mut dns = String::default();
+
                 info!(
                     "IpEvent: DhcpIpAssigned: IP = {}",
                     assignment.ip_settings.ip.to_string()
                 );
-                if let Some(dns) = assignment.ip_settings.dns {
-                    log::info!("IpEvent: DhcpIpAssigned: DNS = {}", dns.to_string());
+                if let Some(address) = assignment.ip_settings.dns {
+                    dns = address.to_string();
+                    info!("IpEvent: DhcpIpAssigned: DNS = {}", &dns);
                 };
+
+                // Update wifi state
+                core::internal::wifi::STATE.update(Some(WifiConnection { ip, dns }));
 
                 // // if an IP address has been succesfully assiggned we consider
                 // // the application working, no rollback required.
