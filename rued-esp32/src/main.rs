@@ -92,7 +92,7 @@ use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_sys::esp;
 
 use crate::{
-    core::internal::{external_rtc, pwm, spawn},
+    core::internal::{external_rtc, keepalive, pwm, spawn},
     errors::*,
     models::{RTClock, SystemTimeBuffer},
 };
@@ -136,6 +136,9 @@ pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut time
         );
 
         external_rtc::COMMAND.signal(external_rtc::RtcExternalCommand::SntpSyncCallbackUpdateRtc);
+
+        // FIXME simulating, battery status update
+        keepalive::NOTIF.notify();
     }
 }
 
