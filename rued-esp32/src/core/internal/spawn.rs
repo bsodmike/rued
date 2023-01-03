@@ -9,6 +9,7 @@ use embedded_svc::wifi::Wifi as WifiTrait;
 use embedded_svc::ws::asynch::server::Acceptor;
 use esp_idf_svc::handle::RawHandle;
 use esp_idf_svc::http::server::EspHttpServer;
+use esp_idf_svc::netif::IpEvent;
 use esp_idf_svc::wifi::{EspWifi, WifiEvent};
 
 use gfx_xtra::draw_target::Flushable;
@@ -43,6 +44,7 @@ pub fn high_prio<'a, ADC, BP, const C: usize, M, D>(
     )>,
     rtc: Option<impl RtcExternal + 'a>,
     pwm_flash: impl FnMut(crate::NvsDataState) + 'a,
+    netif_notifier: impl Receiver<Data = IpEvent> + 'a,
 ) -> Result<(), SpawnError>
 where
     M: Monitor + Default,
@@ -69,7 +71,8 @@ where
         .spawn_local_collect(
             super::battery::process(battery_voltage, battery_pin, power_pin),
             tasks,
-        )?;
+        )?
+        .spawn_local_collect(crate::process_netif_state_change(netif_notifier), tasks)?;
 
     if let Some(rtc) = rtc {
         executor.spawn_local_collect(super::external_rtc::process(rtc), tasks)?;

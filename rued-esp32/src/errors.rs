@@ -16,6 +16,7 @@ pub enum InitError {
     EspError(EspError),
     SpawnError(SpawnError),
     IoError(IoError),
+    I2cError(I2cError),
 }
 
 impl From<EspError> for InitError {
@@ -45,6 +46,12 @@ impl From<anyhow::Error> for InitError {
 impl From<IoError> for InitError {
     fn from(e: IoError) -> Self {
         Self::IoError(e)
+    }
+}
+
+impl From<I2cError> for InitError {
+    fn from(e: I2cError) -> Self {
+        Self::I2cError(e)
     }
 }
 

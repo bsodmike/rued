@@ -62,12 +62,13 @@ pub async fn process<'a, D>(
                 let event: WifiEvent = data.unwrap().into();
                 match event {
                     WifiEvent::StaConnected => {
+                        log::info!("WifiEvent: STAConnected");
                         if wifi.is_connected().unwrap() {
-                            log::info!("******* Received STA Connected event");
+                            log::info!("WifiEvent: Connected");
                         }
                     }
                     WifiEvent::StaDisconnected => {
-                        log::info!("******* Received STA Disconnected event");
+                        log::info!("WifiEvent: STADisconnected");
                         wifi.connect().unwrap();
                     }
                     _ => (),

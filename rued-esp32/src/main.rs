@@ -62,6 +62,7 @@ use embedded_svc::{
         Method, Query,
     },
     io::Read,
+    utils::asyncify::Asyncify,
     wifi::{self, AuthMethod, ClientConfiguration, Wifi},
 };
 use esp_idf_hal::modem::Modem;
@@ -88,6 +89,8 @@ use esp_idf_hal::task::thread::ThreadSpawnConfiguration;
 
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
+
+use channel_bridge::{asynch::pubsub, asynch::Receiver as AsynchReceiver};
 
 use esp_idf_sys::esp;
 
@@ -138,7 +141,7 @@ pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut time
         external_rtc::COMMAND.signal(external_rtc::RtcExternalCommand::SntpSyncCallbackUpdateRtc);
 
         // FIXME simulating, battery status update
-        keepalive::NOTIF.notify();
+        // keepalive::NOTIF.notify();
     }
 }
 
@@ -238,6 +241,10 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     // Create a shared-bus for the I2C devices that supports threads
     let i2c0_bus_manager: &'static _ = shared_bus::new_std!(I2cDriver = i2c0_driver).unwrap();
 
+    // FIXME just for testing with slave device
+    // let mut i2c_driver = i2c0_bus_manager.acquire_i2c();
+    // i2c_driver.write(0x28, String::from("CommandOne").as_bytes())?;
+
     // Deep sleep wakeup init
 
     mark_wakeup_pins(&peripherals.pulse_counter, &peripherals.buttons)?;
@@ -313,45 +320,6 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         Some(nvs_default_partition),
         AuthMethod::default(),
     )?;
-
-    info!("******* Wifi: Subscribing to events");
-    let _wifi_event_sub = sysloop.subscribe(move |event: &WifiEvent| match event {
-        WifiEvent::StaConnected => {
-            info!("******* Received STA Connected Event");
-            core::internal::wifi::COMMAND.signal(core::internal::wifi::WifiCommand::StaConnected);
-        }
-        WifiEvent::StaDisconnected => {
-            info!("******* Received STA Disconnected event");
-
-            FreeRtos::delay_ms(1000);
-
-            // NOTE: calling the FFI binding directly to prevent casusing a move
-            // on the the EspWifi instance.
-
-            if let Err(err) = esp!(unsafe { esp_wifi_connect() }) {
-                info!("Error calling wifi.connect in wifi reconnect {:?}", err);
-            }
-        }
-        _ => info!("Received other Wifi event"),
-    })?;
-
-    let _ip_event_sub = sysloop.subscribe(move |event: &IpEvent| match event {
-        IpEvent::DhcpIpAssigned(_) => {
-            core::internal::wifi::COMMAND.signal(core::internal::wifi::WifiCommand::DhcpIpAssigned);
-
-            // NOTE: Update PWM Duty-cycle from value stored in NVS.
-            let duty_cycle = nvs_default_state.pwm_duty_cycle;
-            if duty_cycle > 0 && duty_cycle <= 100 {
-                pwm::COMMAND.signal(pwm::PwmCommand::SetDutyCycle(duty_cycle));
-            }
-
-            log::info!("Starting SNTP");
-            unsafe {
-                sntp_restart();
-            }
-        }
-        _ => info!("Received other IPEvent"),
-    })?;
 
     // RTC module (External)
 
@@ -459,6 +427,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
             #[cfg(feature = "nvs")]
             flash_default_state(storage, _new_state);
         },
+        netif_notifier(sysloop.clone()).unwrap(),
     )?;
 
     // Mid-prio tasks
@@ -538,6 +507,60 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     log::info!("all tasks running");
 
     unreachable!()
+}
+
+#[inline(always)]
+pub fn netif_notifier(
+    mut sysloop: EspSystemEventLoop,
+) -> Result<impl AsynchReceiver<Data = IpEvent>, InitError> {
+    Ok(pubsub::SvcReceiver::new(sysloop.as_async().subscribe()?))
+}
+
+pub async fn process_netif_state_change(
+    mut state_changed_source: impl AsynchReceiver<Data = IpEvent>,
+) {
+    loop {
+        let event = state_changed_source.recv().await.unwrap();
+
+        match event {
+            IpEvent::DhcpIpAssigned(assignment) => {
+                info!(
+                    "IpEvent: DhcpIpAssigned: IP = {}",
+                    assignment.ip_settings.ip.to_string()
+                );
+                if let Some(dns) = assignment.ip_settings.dns {
+                    log::info!("IpEvent: DhcpIpAssigned: DNS = {}", dns.to_string());
+                };
+
+                // // if an IP address has been succesfully assiggned we consider
+                // // the application working, no rollback required.
+                // unsafe { esp_ota_mark_app_valid_cancel_rollback() };
+
+                // let mut publisher = NETWORK_EVENT_CHANNEL.publisher().unwrap();
+                // let _ = publisher
+                //     .send(NetworkStateChange::IpAddressAssigned {
+                //         ip: assignment.ip_settings.ip,
+                //     })
+                //     .await;
+
+                // FIXME this needs to be handled in another task
+                // NOTE: Update PWM Duty-cycle from value stored in NVS.
+                // let duty_cycle = nvs_default_state.pwm_duty_cycle;
+                // if duty_cycle > 0 && duty_cycle <= 100 {
+                //     pwm::COMMAND.signal(pwm::PwmCommand::SetDutyCycle(duty_cycle));
+                // }
+
+                // NOTE: Start SNTP
+                log::info!("Starting SNTP");
+                unsafe {
+                    sntp_restart();
+                }
+            }
+            _ => {
+                info!("IpEvent: other .....");
+            }
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
