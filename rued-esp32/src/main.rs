@@ -315,9 +315,9 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
         // redefine and restart the callback.
         sntp_set_time_sync_notification_cb(Some(sntp_set_time_sync_notification_cb_custom));
-    }
 
-    unsafe { sntp_init() };
+        sntp_init()
+    };
 
     // FIXME enable once this is merged
     // https://github.com/esp-rs/esp-idf-svc/pull/207
