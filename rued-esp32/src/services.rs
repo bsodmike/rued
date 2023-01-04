@@ -422,9 +422,6 @@ pub fn httpd() -> Result<LazyInitHttpServer, InitError> {
     config.server_certificate = Some(server_certificate);
     config.private_key = Some(server_private_key);
 
-    // FIXME remove this
-    // let mut httpd = EspHttpServer::new(&config).unwrap();
-
     let httpd = LazyInitHttpServer::new(config);
 
     Ok(httpd)

@@ -1,13 +1,13 @@
 #![feature(const_btree_new)]
 #![feature(type_alias_impl_trait)]
-#![allow(dead_code, unused_variables)]
+#![allow(dead_code, unused_variables, unused_imports)]
 
 extern crate alloc;
 
 // use ::core::time::Duration;
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
-use http::StatusCode;
+use http::{header::SEC_WEBSOCKET_ACCEPT, StatusCode};
 use log::{debug, error, info, warn};
 use peripherals::{ButtonsPeripherals, PulseCounterPeripherals, SPI_BUS_FREQ};
 use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, Rv8803Bus, TIME_ARRAY_LENGTH};
@@ -65,6 +65,7 @@ use embedded_svc::{
     io::Read,
     utils::asyncify::Asyncify,
     wifi::{self, AuthMethod, ClientConfiguration, Wifi},
+    ws::server::Acceptor,
 };
 use esp_idf_hal::modem::Modem;
 use esp_idf_svc::{
@@ -100,7 +101,11 @@ use channel_bridge::{
 use esp_idf_sys::esp;
 
 use crate::{
-    core::internal::{external_rtc, keepalive, pwm, spawn, wifi::WifiConnection, ws},
+    core::internal::{
+        external_rtc, keepalive, pwm, spawn,
+        wifi::WifiConnection,
+        ws::{self, WS_MAX_CONNECTIONS},
+    },
     errors::*,
     models::{NetworkStateChange, RTClock, SystemTimeBuffer, NETWORK_EVENT_CHANNEL},
 };
@@ -342,7 +347,10 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     // Httpd
 
     let mut httpd = services::httpd()?;
-    let ws_acceptor = httpd::configure_websockets(&mut httpd)?;
+    // let ws_acceptor = httpd::configure_websockets(&mut httpd)?;
+    // FIXME this is temporary
+    let (_, ws_acceptor) =
+        EspHttpWsProcessor::<{ ws::WS_MAX_CONNECTIONS }, { ws::WS_MAX_FRAME_LEN }>::new(());
 
     // Mqtt
 
@@ -426,7 +434,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         display,
         (wifi, wifi_notif),
         &mut httpd,
-        ws_acceptor,
+        Some(ws_acceptor),
         pwm,
         rtc_clock,
         move |_new_state| {
@@ -514,6 +522,10 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     unreachable!()
 }
+
+// pub fn fake_ws<'a, F>(acceptor: F) -> Result<Option<impl Acceptor + 'a>> {
+//     Ok(None)
+// }
 
 #[inline(always)]
 pub fn netif_notifier(

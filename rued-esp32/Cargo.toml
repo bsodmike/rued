@@ -5,13 +5,6 @@ authors = ["Michael de Silva <michael@mwdesilva.com>"]
 edition = "2021"
 resolver = "2"
 
-[profile.release]
-opt-level = "s"
-
-[profile.dev]
-debug = true # Symbols are nice and they don't increase the size on Flash
-opt-level = "z"
-
 [features]
 pio = ["esp-idf-sys/pio"]
 default = ["edge-executor", "system", "experimental"] # Note that edge-executor requires alloc
@@ -37,7 +30,10 @@ experimental = ["esp-idf-svc/experimental", "embedded-svc/experimental"]
 anyhow = "1"
 heapless = { version = "0.7" }
 enumset = "1"
-log = "0.4"
+log = { version = "0.4", features = [
+    "max_level_debug",
+    "release_max_level_debug",
+] }
 futures = {version = "0.3", features = ["async-await"] }
 serde = { version = "1", default-features = false }
 postcard = "0.7"

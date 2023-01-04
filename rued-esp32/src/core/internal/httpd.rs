@@ -41,8 +41,6 @@ pub enum HttpdCommand {
 pub(crate) static COMMAND: Signal<CriticalSectionRawMutex, HttpdCommand> = Signal::new();
 
 pub async fn process<'a>(httpd: &'a mut LazyInitHttpServer) {
-    let server = httpd.get().expect("Unwrap HTTPd server instance");
-
     const FIRMWARE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
     let mut network_event = NETWORK_EVENT_CHANNEL.subscriber().unwrap();

@@ -142,12 +142,12 @@ impl Summary {
             ..Default::default()
         };
 
-        // status_mqtt.draw(&mut target.cropped(&Rectangle::new(
-        //     Point::new(x_offs, y_offs),
-        //     status_mqtt.preferred_size(),
-        // )))?;
+        status_mqtt.draw(&mut target.cropped(&Rectangle::new(
+            Point::new(x_offs, y_offs),
+            status_mqtt.preferred_size(),
+        )))?;
 
-        //x_offs += (status_mqtt.preferred_size().width + status_padding) as i32;
+        // x_offs += (status_mqtt.preferred_size().width + status_padding) as i32;
 
         let status_battery_size = Size::new(status_height * 2, status_height);
         let status_battery = shapes::Battery {

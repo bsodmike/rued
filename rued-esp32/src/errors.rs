@@ -9,14 +9,15 @@ use esp_idf_sys::EspError;
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum InitError {
     AnyhowError(anyhow::Error),
     EspError(EspError),
     SpawnError(SpawnError),
     IoError(IoError),
     I2cError(I2cError),
+    OtaError(OtaError),
 }
 
 impl From<EspError> for InitError {
@@ -52,6 +53,44 @@ impl From<IoError> for InitError {
 impl From<I2cError> for InitError {
     fn from(e: I2cError) -> Self {
         Self::I2cError(e)
+    }
+}
+
+impl From<OtaError> for InitError {
+    fn from(e: OtaError) -> Self {
+        Self::OtaError(e)
+    }
+}
+
+// OTA
+
+#[derive(Debug)]
+#[allow(dead_code)]
+
+pub enum OtaError {
+    FwImageNotFound,
+    FwSameAsInvalidFw,
+    VersionAlreadyFlashed,
+    FlashFailed,
+    ImageLoadIncomplete,
+    HttpError,
+    OtaApiError,
+}
+
+impl fmt::Display for OtaError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FwImageNotFound => write!(
+                f,
+                "Firmware not found on server or unexcpected server response error"
+            ),
+            Self::FwSameAsInvalidFw => write!(f, "New firmware same as invalid marked firmware"),
+            Self::VersionAlreadyFlashed => write!(f, "Firmware with same version already flashed"),
+            Self::HttpError => write!(f, "Calling Http client API error"),
+            Self::OtaApiError => write!(f, "Calling OTA API error"),
+            Self::FlashFailed => write!(f, "Failed to write FW data to flash"),
+            Self::ImageLoadIncomplete => write!(f, "Failed to download complete FW image"),
+        }
     }
 }
 

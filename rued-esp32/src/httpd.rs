@@ -138,7 +138,7 @@ pub fn configure_handlers<'a>(httpd: &mut RefMut<'_, EspHttpServer>) -> Result<(
 }
 
 pub fn configure_websockets<'a>(server: &mut LazyInitHttpServer) -> Result<impl Acceptor> {
-    let mut httpd = server.get().expect("Access Httpd Server instance");
+    let mut httpd = server.create();
 
     // Websockets
     let (ws_processor, ws_acceptor) =

@@ -37,7 +37,7 @@ pub fn high_prio<'a, ADC, BP, const C: usize, M, D>(
     display: D,
     wifi: (EspWifi<'a>, impl Receiver<Data = WifiEvent> + 'a),
     httpd: &'a mut LazyInitHttpServer,
-    acceptor: impl Acceptor + 'a,
+    acceptor: Option<impl Acceptor + 'a>,
     pwm: Option<(
         impl PwmPin<Duty = u32> + 'a,
         impl PwmPin<Duty = u32> + 'a,
@@ -66,15 +66,20 @@ where
         .spawn_local_collect(super::wifi::process(wifi.0, wifi.1), tasks)?
         .spawn_local_collect(super::httpd::process(httpd), tasks)?
         .spawn_local_collect(super::pwm::process(pwm), tasks)?
-        .spawn_local_collect(super::ws::process(acceptor), tasks)?
         .spawn_local_collect(super::sntp::process(), tasks)?
         .spawn_local_collect(super::pwm::flash(pwm_flash), tasks)?
         .spawn_local_collect(
             super::battery::process(battery_voltage, battery_pin, power_pin),
             tasks,
         )?
-        .spawn_local_collect(crate::process_netif_state_change(netif_notifier), tasks)?;
+        // Netif State Change
+        .spawn_local_collect(crate::process_netif_state_change(netif_notifier), tasks)?
+        // OTA
+        .spawn_local_collect(super::ota::ota_task(), tasks)?;
 
+    // if let Some(acceptor) = acceptor {
+    //     executor.spawn_local_collect(super::ws::process(acceptor), tasks)?;
+    // };
     if let Some(rtc) = rtc {
         executor.spawn_local_collect(super::external_rtc::process(rtc), tasks)?;
     };
