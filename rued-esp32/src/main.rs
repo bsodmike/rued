@@ -347,10 +347,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     // Httpd
 
     let mut httpd = services::httpd()?;
-    // let ws_acceptor = httpd::configure_websockets(&mut httpd)?;
-    // FIXME this is temporary
-    let (_, ws_acceptor) =
-        EspHttpWsProcessor::<{ ws::WS_MAX_CONNECTIONS }, { ws::WS_MAX_FRAME_LEN }>::new(());
+    let ws_acceptor = httpd::configure_websockets(&mut httpd)?;
 
     // Mqtt
 
