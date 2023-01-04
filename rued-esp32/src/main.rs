@@ -164,7 +164,7 @@ const CURRENT_YEAR: u16 = 2022;
 const MQTT_MAX_TOPIC_LEN: usize = 64;
 const SLEEP_TIME: Duration = Duration::from_secs(5);
 const SNTP_RETRY_COUNT: u32 = 1_000_000;
-const SNTP_SYNC_INTERVAL: u32 = 30; // secs
+const SNTP_SYNC_INTERVAL: u32 = 30_000; // milli-secs
 const UTC_OFFSET_CHRONO: Utc = Utc;
 
 static LOGGER: EspLogger = EspLogger;
@@ -307,11 +307,12 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     servers[..copy_len].copy_from_slice(&server_array[..copy_len]);
     sntp_conf.servers = servers;
+    // sntp_conf.sync_interval = Some(SNTP_SYNC_INTERVAL);
 
     let sntp = sntp::EspSntp::new(&sntp_conf)?;
 
     unsafe {
-        sntp_set_sync_interval(SNTP_SYNC_INTERVAL * 1000);
+        sntp_set_sync_interval(SNTP_SYNC_INTERVAL);
 
         // stop the sntp instance to redefine the callback
         // https://github.com/esp-rs/esp-idf-svc/blob/v0.42.5/src/sntp.rs#L155-L158
@@ -325,11 +326,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // FIXME enable once this is merged
     // https://github.com/esp-rs/esp-idf-svc/pull/207
-    // let sntp = sntp::EspSntp::new_with_callback(
-    //     &sntp_conf,
-    //     sntp_set_time_sync_notification_cb_custom,
-    //     SNTP_SYNC_INTERVAL * 1000,
-    // )?;
+    // let sntp = sntp::EspSntp::new(&sntp_conf, Some(sntp_set_time_sync_notification_cb_custom))?;
 
     // Wifi
 
