@@ -294,20 +294,15 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // SNTP
 
-    let server_array: [&str; 4] = [
+    let servers: [&str; 4] = [
         "time.aws.com",
         "1.sg.pool.ntp.org",
         "0.pool.ntp.org",
-        "3.pool.ntp.org",
+        "1.pool.ntp.org",
     ];
 
     let mut sntp_conf = SntpConf::default();
-    let mut servers: [&str; 1 as usize] = Default::default();
-    let copy_len = ::core::cmp::min(servers.len(), server_array.len());
-
-    servers[..copy_len].copy_from_slice(&server_array[..copy_len]);
     sntp_conf.servers = servers;
-    // sntp_conf.sync_interval = Some(SNTP_SYNC_INTERVAL);
 
     let sntp = sntp::EspSntp::new(&sntp_conf)?;
 
