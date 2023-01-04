@@ -323,6 +323,14 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     unsafe { sntp_init() };
 
+    // FIXME enable once this is merged
+    // https://github.com/esp-rs/esp-idf-svc/pull/207
+    // let sntp = sntp::EspSntp::new_with_callback(
+    //     &sntp_conf,
+    //     sntp_set_time_sync_notification_cb_custom,
+    //     SNTP_SYNC_INTERVAL * 1000,
+    // )?;
+
     // Wifi
 
     let (wifi, wifi_notif) = services::wifi(

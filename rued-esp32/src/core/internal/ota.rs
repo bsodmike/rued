@@ -107,7 +107,8 @@ fn perform_update(firmware_url: &str) -> Result<(), OtaError> {
     let run_slot = ota.get_running_slot().unwrap();
     let update_slot = ota.get_update_slot().unwrap();
 
-    // FIXME `get_last_invalid_slot` is missing?
+    // FIXME `get_last_invalid_slot` is pending
+    // https://github.com/esp-rs/esp-idf-svc/pull/203
     // if let Some(slot) = ota.get_last_invalid_slot().unwrap() {
     //     info!("last invalid slot = {:?}", slot);
     //     if slot.firmware.is_some() {

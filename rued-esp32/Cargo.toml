@@ -43,6 +43,7 @@ embedded-hal-0-2 = { package = "embedded-hal", version = "0.2.7", features = ["u
 embedded-svc = { version = "0.24.0", features = ["nightly", "experimental"] }
 esp-idf-sys = { version = "0.32.0", features = ["binstart"] }
 esp-idf-svc = { version = "0.45.0", features = ["nightly", "experimental", "embassy-time-isr-queue"] }
+# esp-idf-svc = { path = "/home/mdesilva/esp/esp-idf-svc_fork", features = ["nightly", "experimental", "embassy-time-isr-queue"] }
 esp-idf-hal = { version = "0.40.0", features = ["edge-executor", "embassy-sync", "critical-section"] }
 embassy-futures = { version = "0.1" }
 embassy-sync = { version = "0.1", features = ["std"] }
