@@ -307,8 +307,6 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     let sntp = sntp::EspSntp::new(&sntp_conf)?;
 
     unsafe {
-        sntp_set_sync_interval(SNTP_SYNC_INTERVAL);
-
         // stop the sntp instance to redefine the callback
         // https://github.com/esp-rs/esp-idf-svc/blob/v0.42.5/src/sntp.rs#L155-L158
         sntp_stop();
