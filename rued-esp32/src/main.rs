@@ -116,6 +116,7 @@ mod errors;
 mod http_client;
 mod httpd;
 pub(crate) mod models;
+mod mqtt_msg;
 mod peripherals;
 mod services;
 
@@ -349,7 +350,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Mqtt
 
-    // let (mqtt_topic_prefix, mqtt_client, mqtt_conn) = services::mqtt()?;
+    let (mqtt_topic_prefix, mqtt_client, mqtt_conn) = services::mqtt()?;
 
     // PWM
 
@@ -437,6 +438,9 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
             flash_default_state(storage, _new_state);
         },
         netif_notifier(sysloop.clone()).unwrap(),
+        mqtt_topic_prefix,
+        mqtt_client,
+        mqtt_conn,
     )?;
 
     // Mid-prio tasks

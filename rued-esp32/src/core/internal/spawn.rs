@@ -18,9 +18,11 @@ use edge_executor::*;
 
 use channel_bridge::asynch::*;
 
-use crate::core::internal::{mqtt::MqttCommand, screen};
+use crate::core::internal::screen;
 use crate::models::rtc_external::RtcExternal;
+use crate::mqtt_msg::MqttCommand;
 use crate::services::httpd::LazyInitHttpServer;
+use crate::MQTT_MAX_TOPIC_LEN;
 
 use super::button::{self, PressedLevel};
 use super::screen::Color;
@@ -46,6 +48,9 @@ pub fn high_prio<'a, ADC, BP, const C: usize, M, D>(
     rtc: Option<impl RtcExternal + 'a>,
     pwm_flash: impl FnMut(crate::NvsDataState) + 'a,
     netif_notifier: impl Receiver<Data = IpEvent> + 'a,
+    mqtt_topic_prefix: &'a str,
+    mqtt_client: impl Client + Publish + 'a,
+    mqtt_conn: impl Connection<Message = Option<MqttCommand>> + 'a,
 ) -> Result<(), SpawnError>
 where
     M: Monitor + Default,
@@ -75,7 +80,13 @@ where
         // Netif State Change
         .spawn_local_collect(crate::process_netif_state_change(netif_notifier), tasks)?
         // OTA
-        .spawn_local_collect(super::ota::ota_task(), tasks)?;
+        .spawn_local_collect(super::ota::ota_task(), tasks)?
+        // MQTT
+        .spawn_local_collect(super::mqtt::receive_task(mqtt_conn), tasks)?
+        .spawn_local_collect(
+            super::mqtt::send_task::<MQTT_MAX_TOPIC_LEN>(mqtt_topic_prefix, mqtt_client),
+            tasks,
+        )?;
 
     // if let Some(acceptor) = acceptor {
     //     executor.spawn_local_collect(super::ws::process(acceptor), tasks)?;
@@ -178,32 +189,33 @@ where
     Ok(())
 }
 
-pub fn mqtt_send<'a, const L: usize, const C: usize, M>(
-    executor: &mut Executor<'a, C, M, Local>,
-    tasks: &mut heapless::Vec<Task<()>, C>,
-    mqtt_topic_prefix: &'a str,
-    mqtt_client: impl Client + Publish + 'a,
-) -> Result<(), SpawnError>
-where
-    M: Monitor + Default,
-{
-    executor.spawn_local_collect(mqtt::send::<L>(mqtt_topic_prefix, mqtt_client), tasks)?;
+// FIXME This is MQTT based on ruwm
+// pub fn mqtt_send<'a, const L: usize, const C: usize, M>(
+//     executor: &mut Executor<'a, C, M, Local>,
+//     tasks: &mut heapless::Vec<Task<()>, C>,
+//     mqtt_topic_prefix: &'a str,
+//     mqtt_client: impl Client + Publish + 'a,
+// ) -> Result<(), SpawnError>
+// where
+//     M: Monitor + Default,
+// {
+//     executor.spawn_local_collect(mqtt::send::<L>(mqtt_topic_prefix, mqtt_client), tasks)?;
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-pub fn mqtt_receive<'a, const C: usize, M>(
-    executor: &mut Executor<'a, C, M, Local>,
-    tasks: &mut heapless::Vec<Task<()>, C>,
-    mqtt_conn: impl Connection<Message = Option<MqttCommand>> + 'a,
-) -> Result<(), SpawnError>
-where
-    M: Monitor + Default,
-{
-    executor.spawn_local_collect(mqtt::receive(mqtt_conn), tasks)?;
+// pub fn mqtt_receive<'a, const C: usize, M>(
+//     executor: &mut Executor<'a, C, M, Local>,
+//     tasks: &mut heapless::Vec<Task<()>, C>,
+//     mqtt_conn: impl Connection<Message = Option<MqttCommand>> + 'a,
+// ) -> Result<(), SpawnError>
+// where
+//     M: Monitor + Default,
+// {
+//     executor.spawn_local_collect(mqtt::receive(mqtt_conn), tasks)?;
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 pub fn ws<'a, const C: usize, M>(
     executor: &mut Executor<'a, C, M, Local>,

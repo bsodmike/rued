@@ -39,6 +39,15 @@ pub static APPLICATION_EVENT_CHANNEL: PubSubChannel<
     5,
 > = PubSubChannel::new();
 
+#[allow(dead_code)]
+pub static APPLICATION_DATA_CHANNEL: PubSubChannel<
+    CriticalSectionRawMutex,
+    ApplicationDataChange,
+    5,
+    5,
+    5,
+> = PubSubChannel::new();
+
 #[derive(Copy, Clone, Debug)]
 pub enum NetworkStateChange {
     WifiDisconnected,
@@ -50,6 +59,17 @@ pub enum NetworkStateChange {
 pub enum ApplicationStateChange {
     OTAUpdateRequest(OtaUrl),
     OTAUpdateStarted,
+}
+
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub enum ApplicationDataChange {
+    NewBatteryData(BatteryData),
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub struct BatteryData {
+    pub voltage: u16,
 }
 
 pub struct RTClock<'a, I2C> {

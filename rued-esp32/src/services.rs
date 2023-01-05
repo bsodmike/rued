@@ -49,12 +49,15 @@ use gfx_xtra::draw_target::{Flushable, OwnedDrawTargetExt};
 use edge_executor::*;
 use shared_bus::BusManager;
 
-use crate::core::internal::mqtt::{MessageParser, MqttCommand};
+// FIXME This is MQTT based on ruwm
+// use crate::core::internal::mqtt::{MessageParser, MqttCommand};
+
 use crate::core::internal::pulse_counter::PulseCounter;
 use crate::core::internal::pulse_counter::PulseWakeup;
 use crate::core::internal::ws;
 
 use crate::core::internal::screen::Color;
+use crate::mqtt_msg::{MessageParser, MqttCommand};
 // use ruwm::button::PressedLevel;
 // use ruwm::pulse_counter::PulseCounter;
 // use ruwm::pulse_counter::PulseWakeup;
@@ -90,6 +93,7 @@ pub mod httpd;
 const WIFI_SSID: &str = env!("WIFI_SSID");
 const WIFI_PSK: &str = env!("WIFI_PSK");
 const WIFI_START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+const MQTT_HOST: &str = env!("MQTT_HOST");
 
 // const ASSETS: assets::serve::Assets = edge_frame::assets!("RUWM_WEB");
 
@@ -435,11 +439,11 @@ pub fn mqtt() -> Result<
     ),
     InitError,
 > {
-    let client_id = "water-meter-demo";
+    let client_id = "rued";
     let mut mqtt_parser = MessageParser::new();
 
     let (mqtt_client, mqtt_conn) = EspMqttClient::new_with_converting_async_conn(
-        "mqtt://broker.emqx.io:1883",
+        format!("mqtt://{}:1883", MQTT_HOST).as_str(),
         &MqttClientConfiguration {
             client_id: Some(client_id),
             ..Default::default()
