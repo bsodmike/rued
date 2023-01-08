@@ -522,10 +522,6 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     unreachable!()
 }
 
-// pub fn fake_ws<'a, F>(acceptor: F) -> Result<Option<impl Acceptor + 'a>> {
-//     Ok(None)
-// }
-
 #[inline(always)]
 pub fn netif_notifier(
     mut sysloop: EspSystemEventLoop,
