@@ -75,6 +75,7 @@ pub enum OtaError {
     ImageLoadIncomplete,
     HttpError,
     OtaApiError,
+    EspError(EspError),
 }
 
 impl fmt::Display for OtaError {
@@ -82,7 +83,7 @@ impl fmt::Display for OtaError {
         match self {
             Self::FwImageNotFound => write!(
                 f,
-                "Firmware not found on server or unexcpected server response error"
+                "Firmware not found on server or unexpected server response error"
             ),
             Self::FwSameAsInvalidFw => write!(f, "New firmware same as invalid marked firmware"),
             Self::VersionAlreadyFlashed => write!(f, "Firmware with same version already flashed"),
@@ -90,7 +91,14 @@ impl fmt::Display for OtaError {
             Self::OtaApiError => write!(f, "Calling OTA API error"),
             Self::FlashFailed => write!(f, "Failed to write FW data to flash"),
             Self::ImageLoadIncomplete => write!(f, "Failed to download complete FW image"),
+            Self::EspError(e) => write!(f, "EspError: {}", e),
         }
+    }
+}
+
+impl From<EspError> for OtaError {
+    fn from(e: EspError) -> Self {
+        Self::EspError(e)
     }
 }
 
