@@ -26,7 +26,7 @@ linker = "ldproxy"
 # See also https://github.com/ivmarkov/embuild/issues/16
 # rustflags = ["-C", "default-linker-libraries"]
 # Uncomment for ESP-IDF 5 and later. Don't forget to also uncomment the `ESP_IDF_VERSION = "release/v5.0"`parameter in the `[env]` section below
-rustflags = ["--cfg", "espidf_time64", "-C", "default-linker-libraries"]
+rustflags = ["--cfg", "espidf_time64", "--cfg", "esp32c3", "-C", "default-linker-libraries"]
 
 [unstable]
 build-std = ["std", "panic_abort"]

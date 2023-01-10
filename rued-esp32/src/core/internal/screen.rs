@@ -171,6 +171,7 @@ pub(crate) static BUTTON1_PRESSED_NOTIF: Notification = Notification::new();
 pub(crate) static BUTTON2_PRESSED_NOTIF: Notification = Notification::new();
 pub(crate) static BUTTON3_PRESSED_NOTIF: Notification = Notification::new();
 pub(crate) static WIFI_STATE_NOTIF: Notification = Notification::new();
+pub(crate) static BATTERY_STATE_NOTIF: Notification = Notification::new();
 pub(crate) static REMAINING_TIME_NOTIF: Notification = Notification::new();
 pub(crate) static EXT_RTC_NOTIF: Notification = Notification::new();
 pub(crate) static PWM_CHANGE_NOTIF: Notification = Notification::new();
@@ -193,6 +194,7 @@ pub async fn process() {
             EXT_RTC_NOTIF.wait(),         // 5
             PWM_CHANGE_NOTIF.wait(),      // 6
             SNTP_STATE_NOTIF.wait(),      // 7
+            BATTERY_STATE_NOTIF.wait(),   // 8
         ])
         .await;
 
@@ -254,6 +256,9 @@ pub async fn process() {
                     7 => {
                         // Redraw Summary page to update SNTP sync info
                         screen_state.changeset.insert(DataSource::Page);
+                    }
+                    8 => {
+                        screen_state.changeset.insert(DataSource::Battery);
                     }
                     _ => unreachable!(),
                 }

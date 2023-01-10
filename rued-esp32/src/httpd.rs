@@ -1,15 +1,31 @@
-use crate::core::internal::{self, pwm::DEFAULT_DUTY_CYCLE};
+use std::cell::{RefCell, RefMut};
+
+use crate::{
+    core::internal::{self, pwm::DEFAULT_DUTY_CYCLE, ws},
+    services::httpd::LazyInitHttpServer,
+};
 use anyhow::Result;
 use http::status::StatusCode;
 use serde_json::json;
 
-use embedded_svc::http::{server::Middleware, Method};
-use esp_idf_svc::http::server::{fn_handler, EspHttpConnection, EspHttpServer};
+use embassy_sync::blocking_mutex::Mutex;
+use embedded_svc::{
+    http::{server::Middleware, Method},
+    utils::{asyncify::ws::server::Processor, mutex::RawCondvar},
+    ws::asynch::server::Acceptor,
+};
+use esp_idf_hal::task::embassy_sync::EspRawMutex;
+use esp_idf_svc::http::server::{
+    fn_handler,
+    ws::{EspHttpWsConnection, EspHttpWsProcessor},
+    EspHttpConnection, EspHttpServer,
+};
 use middleware::DefaultMiddleware;
 
-mod middleware;
+pub mod middleware;
 
-pub fn configure_handlers<'a>(httpd: &mut EspHttpServer) -> Result<()> {
+pub fn configure_handlers<'a>(httpd: &mut RefMut<'_, EspHttpServer>) -> Result<()> {
+    // HTTPd
     httpd.handler(
         "/health",
         Method::Get,
@@ -25,6 +41,7 @@ pub fn configure_handlers<'a>(httpd: &mut EspHttpServer) -> Result<()> {
         ),
     )?;
 
+    #[cfg(feature = "pwm")]
     httpd.handler(
         "/pwm",
         Method::Post,
@@ -118,6 +135,22 @@ pub fn configure_handlers<'a>(httpd: &mut EspHttpServer) -> Result<()> {
     )?;
 
     Ok(())
+}
+
+pub fn configure_websockets<'a>(server: &mut LazyInitHttpServer) -> Result<impl Acceptor> {
+    let mut httpd = server.create();
+
+    // Websockets
+    let (ws_processor, ws_acceptor) =
+        EspHttpWsProcessor::<{ ws::WS_MAX_CONNECTIONS }, { ws::WS_MAX_FRAME_LEN }>::new(());
+
+    let ws_processor = Mutex::<EspRawMutex, _>::new(RefCell::new(ws_processor));
+
+    httpd.ws_handler("/ws", move |connection| {
+        ws_processor.lock(|ws_processor| ws_processor.borrow_mut().process(connection))
+    })?;
+
+    Ok(ws_acceptor)
 }
 
 fn respond_err(conn: &mut EspHttpConnection, status: StatusCode, error: &str) -> Result<()> {

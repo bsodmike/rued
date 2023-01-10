@@ -52,6 +52,7 @@ pub async fn process() {
         } else if matches!(result, Either::First(_)) {
             // Only if this recieves a NOTIF trigger
             quit_time = Some(now + TIMEOUT);
+            log::warn!("Got NOTIF: {:?}", quit_time);
         }
 
         let remaining_time = if let Some(quit_time) = quit_time {
@@ -71,6 +72,11 @@ pub async fn process() {
             STATE.update(remaining_time);
         }
 
+        println!("{:?} / now: {:?}", quit_time, now);
+        println!(
+            "{:?}",
+            quit_time.map(|quit_time| now >= quit_time).unwrap_or(false)
+        );
         if quit_time.map(|quit_time| now >= quit_time).unwrap_or(false) {
             quit::QUIT.notify();
         }

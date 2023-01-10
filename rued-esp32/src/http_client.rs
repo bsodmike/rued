@@ -8,6 +8,7 @@ const BUFFER_SIZE: usize = 1024;
 pub fn get(url: impl AsRef<str>) -> Result<Option<String>> {
     let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
     let mut client = EspHttpConnection::new(&Configuration::default())?;
+    #[allow(unused_mut)]
     let mut total_size = 0;
 
     client.initiate_request(Method::Get, url.as_ref(), &[("Content-Type", "text/html")])?;
@@ -15,14 +16,14 @@ pub fn get(url: impl AsRef<str>) -> Result<Option<String>> {
 
     match status_code {
         200..=299 => {
-            let (conn, client_mut) = client.split();
+            let (conn, _) = client.split();
 
             loop {
                 if let Ok(size) = client.read(&mut buffer) {
                     if size == 0 {
                         break Ok(None);
                     }
-                    total_size += size;
+                    // total_size += size;
 
                     let response_text = std::str::from_utf8(&buffer[..size])?;
 
