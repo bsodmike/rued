@@ -395,11 +395,32 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     let driver: Arc<SpiDriver<'static>> = peripherals.spi1.driver.clone();
 
+    #[cfg(esp32)]
+    #[cfg(any(
+        feature = "micromod-qwiic-carrier-single",
+        feature = "micromod-main-board-single"
+    ))]
     let sdmmc_spi = SpiDeviceDriver::new(
         driver,
         Option::<Gpio27>::None,
         &SpiConfig::default().baudrate(SPI_BUS_FREQ.MHz().into()),
     )?;
+
+    #[cfg(esp32)]
+    #[cfg(feature = "micromod-data-logging-carrier")]
+    let sdmmc_spi = SpiDeviceDriver::new(
+        driver,
+        Option::<Gpio5>::None,
+        &SpiConfig::default().baudrate(SPI_BUS_FREQ.MHz().into()),
+    )?;
+
+    #[cfg(esp32c3)]
+    let sdmmc_spi = SpiDeviceDriver::new(
+        driver,
+        Option::<Gpio7>::None,
+        &SpiConfig::default().baudrate(SPI_BUS_FREQ.MHz().into()),
+    )?;
+
     let sdmmc_cs = PinDriver::output(peripherals.sd_card.cs)?;
     let sdmmc_spi = embedded_sdmmc::SdMmcSpi::new(sdmmc_spi, sdmmc_cs);
 
@@ -638,11 +659,21 @@ fn mark_wakeup_pins(
         //     buttons_peripherals.button3.pin()
         // );
 
+        #[cfg(esp32)]
         #[cfg(not(feature = "ulp"))]
         {
             // Enable power for RTC IO, sensors and ULP co-processor during Deep-sleep
             esp!(esp_idf_sys::esp_sleep_pd_config(
                 esp_idf_sys::esp_sleep_pd_domain_t_ESP_PD_DOMAIN_RTC_PERIPH,
+                esp_idf_sys::esp_sleep_pd_option_t_ESP_PD_OPTION_ON
+            ))?;
+        }
+        #[cfg(esp32c3)]
+        #[cfg(not(feature = "ulp"))]
+        {
+            // Enable power for RTC IO, sensors and ULP co-processor during Deep-sleep
+            esp!(esp_idf_sys::esp_sleep_pd_config(
+                esp_idf_sys::esp_sleep_pd_domain_t_ESP_PD_DOMAIN_RTC8M,
                 esp_idf_sys::esp_sleep_pd_option_t_ESP_PD_OPTION_ON
             ))?;
         }
