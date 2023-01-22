@@ -156,6 +156,8 @@ pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut time
     }
 }
 
+pub fn sntp_sync_callback(time: ::core::time::Duration) {}
+
 pub enum SysLoopMsg {
     WifiDisconnect,
     IpAddressAcquired,
@@ -318,9 +320,9 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         sntp_init()
     };
 
-    // FIXME enable once this is merged
+    // FIXME enable in v0.46.0
     // https://github.com/esp-rs/esp-idf-svc/pull/207
-    // let sntp = sntp::EspSntp::new(&sntp_conf, Some(sntp_set_time_sync_notification_cb_custom))?;
+    // let sntp = sntp::EspSntp::new_with_callback(&sntp_conf, sntp_sync_callback)?;
 
     // Wifi
 
