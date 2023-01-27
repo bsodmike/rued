@@ -13,6 +13,7 @@ use esp_idf_hal::spi::*;
 use esp_idf_hal::units::Hertz;
 use shared_bus::{BusManager, NullMutex};
 
+pub const NO_PIN: Option<AnyIOPin> = None;
 pub const SPI_BUS_FREQ: u32 = 26;
 
 #[cfg(esp32)]

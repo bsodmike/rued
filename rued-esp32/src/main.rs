@@ -1,4 +1,3 @@
-#![feature(const_btree_new)]
 #![feature(type_alias_impl_trait)]
 #![allow(dead_code, unused_variables, unused_imports)]
 
