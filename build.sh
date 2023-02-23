@@ -16,4 +16,4 @@ echo "Building release"
 CARGO_PKG_VERSION=$version cargo build --release
 
 echo "Building firmware image"
-CARGO_PKG_VERSION=$version cargo espflash  save-image --release --package rued-esp32 --chip esp32 --target xtensa-esp32-espidf --flash-size 2M ./bin/firmware-$version.bin
+CARGO_PKG_VERSION=$version cargo espflash save-image --release  --package rued-esp32 --target xtensa-esp32-espidf --flash-size 2MB ESP32 ./bin/firmware-$version.bin
