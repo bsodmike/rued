@@ -24,7 +24,7 @@ With any IoT 'stack', there are some rudimentary basics; this repo is an attempt
 | [Testing] | SD/MMC Card: SPI | **Requires further testing. |
 | [Testing] | ADC: Battery voltage |  |
 | [X] | MQTT |  |
-| [X] | OTA |  |
+| [X] | OTA | Ref: https://github.com/bsodmike/rued-mqtt-client |
 
 ## Quick setup
 
