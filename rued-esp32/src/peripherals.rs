@@ -13,6 +13,7 @@ use esp_idf_hal::spi::*;
 use esp_idf_hal::units::Hertz;
 use shared_bus::{BusManager, NullMutex};
 
+pub const NO_PIN: Option<AnyIOPin> = None;
 pub const SPI_BUS_FREQ: u32 = 26;
 
 #[cfg(esp32)]
@@ -172,7 +173,7 @@ pub struct SystemPeripherals<P, ADC, V, B1, B2, B3, I2C> {
 
 #[cfg(esp32)]
 #[cfg(feature = "micromod-data-logging-carrier")]
-impl SystemPeripherals<Gpio33, ADC1, Gpio34, Gpio27, Gpio13, Gpio12, I2C0> {
+impl SystemPeripherals<Gpio33, ADC1, Gpio35, Gpio27, Gpio13, Gpio12, I2C0> {
     pub fn take() -> Self {
         let peripherals = Peripherals::take().unwrap();
 
@@ -214,8 +215,8 @@ impl SystemPeripherals<Gpio33, ADC1, Gpio34, Gpio27, Gpio13, Gpio12, I2C0> {
                 close: peripherals.pins.gpio10.into(),
             },
             battery: BatteryPeripherals {
-                power: peripherals.pins.gpio35.into(), // A1
-                voltage: peripherals.pins.gpio34,      // A0
+                power: peripherals.pins.gpio34.into(), // A0
+                voltage: peripherals.pins.gpio35,      // A1
                 adc: peripherals.adc1,
             },
             buttons: ButtonsPeripherals {
@@ -239,6 +240,86 @@ impl SystemPeripherals<Gpio33, ADC1, Gpio34, Gpio27, Gpio13, Gpio12, I2C0> {
                 i2c: peripherals.i2c0,
                 sda: peripherals.pins.gpio21.into(),
                 scl: peripherals.pins.gpio22.into(),
+            },
+        }
+    }
+}
+
+#[cfg(esp32c3)]
+pub struct SystemPeripherals<P, ADC, V, B1, B2, B3, I2C> {
+    pub pulse_counter: PulseCounterPeripherals<P>,
+    pub battery: BatteryPeripherals<ADC, V>,
+    pub buttons: ButtonsPeripherals<B1, B2, B3>,
+    pub display: DisplayPeripherals,
+    pub spi1: SpiBusPeripherals,
+    pub sd_card: SdCardPeripherals,
+    pub i2c0: I2c0Peripherals<I2C>,
+    pub modem: Modem,
+}
+
+#[cfg(esp32c3)]
+impl SystemPeripherals<Gpio0, ADC1, Gpio4, Gpio1, Gpio2, Gpio3, I2C0> {
+    pub fn take() -> Self {
+        let peripherals = Peripherals::take().unwrap();
+
+        let spi1 = SpiPeripherals {
+            spi: peripherals.spi2,
+            sclk: peripherals.pins.gpio15.into(),     // SCK
+            sdo: peripherals.pins.gpio16.into(),      // COPI
+            sdi: peripherals.pins.gpio17.into(),      // CIPO
+            cs: Some(peripherals.pins.gpio18.into()), // HEADER_CS / G0-Processor
+        };
+
+        let driver = std::sync::Arc::new(
+            SpiDriver::new(
+                spi1.spi,
+                spi1.sclk,      // SCK
+                spi1.sdo,       // MOSI
+                Some(spi1.sdi), // MISO / NOTE: Default value
+                Dma::Disabled,
+            )
+            .unwrap(),
+        );
+
+        let spi1 = SpiBusPeripherals {
+            driver,
+            cs: spi1.cs,
+        };
+
+        // gpio25, // G1-Processor
+
+        SystemPeripherals {
+            pulse_counter: PulseCounterPeripherals {
+                pulse: peripherals.pins.gpio0,
+                #[cfg(feature = "ulp")]
+                ulp: peripherals.ulp,
+            },
+            battery: BatteryPeripherals {
+                power: peripherals.pins.gpio10.into(), // A1
+                voltage: peripherals.pins.gpio4,       // A0
+                adc: peripherals.adc1,
+            },
+            buttons: ButtonsPeripherals {
+                button1: peripherals.pins.gpio1, // D1
+                button2: peripherals.pins.gpio2, // PWM0-Processor
+                button3: peripherals.pins.gpio3, // PWM1-Processor
+            },
+            display: DisplayPeripherals {
+                control: DisplayControlPeripherals {
+                    backlight: Some(peripherals.pins.gpio19.into()), // G4
+                    dc: peripherals.pins.gpio20.into(),              // D0
+                    rst: peripherals.pins.gpio21.into(),             // I2C_INT
+                },
+            },
+            spi1, // SPI2
+            sd_card: SdCardPeripherals {
+                cs: peripherals.pins.gpio7.into(), // SPI_CS
+            },
+            modem: peripherals.modem,
+            i2c0: I2c0Peripherals {
+                i2c: peripherals.i2c0,
+                sda: peripherals.pins.gpio8.into(),
+                scl: peripherals.pins.gpio9.into(),
             },
         }
     }

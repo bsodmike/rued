@@ -7,6 +7,7 @@ pub mod httpd;
 pub mod inspector;
 pub mod keepalive;
 pub mod mqtt;
+pub mod ota;
 pub mod pulse_counter;
 pub mod pwm;
 pub mod quit;

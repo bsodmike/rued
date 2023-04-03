@@ -11,11 +11,66 @@ use serde::Serialize;
 use shared_bus::{BusManager, I2cProxy};
 use std::{env, error::Error as StdError, fmt, marker::PhantomData, ptr, sync::Mutex};
 
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::pubsub::PubSubChannel;
+
 use crate::CURRENT_YEAR;
 
 use self::rtc_external::get_system_time;
 use self::rtc_external::prelude::*;
 use self::rtc_external::Weekday;
+
+pub type OtaUrl = heapless::String<128>;
+
+pub static NETWORK_EVENT_CHANNEL: PubSubChannel<
+    CriticalSectionRawMutex,
+    NetworkStateChange,
+    4,
+    4,
+    4,
+> = PubSubChannel::new();
+
+#[allow(dead_code)]
+pub static APPLICATION_EVENT_CHANNEL: PubSubChannel<
+    CriticalSectionRawMutex,
+    ApplicationStateChange,
+    5,
+    5,
+    5,
+> = PubSubChannel::new();
+
+#[allow(dead_code)]
+pub static APPLICATION_DATA_CHANNEL: PubSubChannel<
+    CriticalSectionRawMutex,
+    ApplicationDataChange,
+    5,
+    5,
+    5,
+> = PubSubChannel::new();
+
+#[derive(Copy, Clone, Debug)]
+pub enum NetworkStateChange {
+    WifiDisconnected,
+    IpAddressAssigned { ip: embedded_svc::ipv4::Ipv4Addr },
+}
+
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub enum ApplicationStateChange {
+    OTAUpdateRequest(OtaUrl),
+    OTAUpdateStarted,
+}
+
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub enum ApplicationDataChange {
+    NewBatteryData(BatteryData),
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub struct BatteryData {
+    pub voltage: u16,
+}
 
 pub struct RTClock<'a, I2C> {
     datetime: Option<DateTime<Utc>>,

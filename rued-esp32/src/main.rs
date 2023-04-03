@@ -1,13 +1,12 @@
-#![feature(const_btree_new)]
 #![feature(type_alias_impl_trait)]
-#![allow(dead_code, unused_variables)]
+#![allow(dead_code, unused_variables, unused_imports)]
 
 extern crate alloc;
 
 // use ::core::time::Duration;
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
-use http::StatusCode;
+use http::{header::SEC_WEBSOCKET_ACCEPT, StatusCode};
 use log::{debug, error, info, warn};
 use peripherals::{ButtonsPeripherals, PulseCounterPeripherals, SPI_BUS_FREQ};
 use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, Rv8803Bus, TIME_ARRAY_LENGTH};
@@ -44,11 +43,12 @@ use esp_idf_hal::{
     units::{FromValueType, Hertz},
 };
 use esp_idf_svc::{
+    http::server::ws::EspHttpWsProcessor,
     log::EspLogger,
     sntp::{self, EspSntp, OperatingMode, SntpConf, SyncMode, SyncStatus},
 };
 
-use esp_idf_sys::{self as _};
+use esp_idf_sys::{self as _, esp_ota_mark_app_valid_cancel_rollback};
 #[allow(unused_imports)]
 use esp_idf_sys::{
     self as _, esp_wifi_connect, esp_wifi_set_ps, settimeofday, sntp_get_sync_status, sntp_init,
@@ -62,7 +62,9 @@ use embedded_svc::{
         Method, Query,
     },
     io::Read,
+    utils::asyncify::Asyncify,
     wifi::{self, AuthMethod, ClientConfiguration, Wifi},
+    ws::server::Acceptor,
 };
 use esp_idf_hal::modem::Modem;
 use esp_idf_svc::{
@@ -74,6 +76,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(feature = "nvs")]
 use embassy_sync::blocking_mutex::Mutex as EmbassyMutex;
 use embassy_time::Duration;
+use esp_idf_hal::task::embassy_sync::EspRawMutex;
 
 #[cfg(feature = "nvs")]
 use embedded_svc::storage::Storage;
@@ -89,12 +92,21 @@ use esp_idf_hal::task::thread::ThreadSpawnConfiguration;
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 
+use channel_bridge::{
+    asynch::Receiver as AsynchReceiver,
+    asynch::{pubsub, Sender as AsyncSender},
+};
+
 use esp_idf_sys::esp;
 
 use crate::{
-    core::internal::{external_rtc, pwm, spawn},
+    core::internal::{
+        external_rtc, keepalive, pwm, spawn,
+        wifi::WifiConnection,
+        ws::{self, WS_MAX_CONNECTIONS},
+    },
     errors::*,
-    models::{RTClock, SystemTimeBuffer},
+    models::{NetworkStateChange, RTClock, SystemTimeBuffer, NETWORK_EVENT_CHANNEL},
 };
 
 mod core;
@@ -103,6 +115,7 @@ mod errors;
 mod http_client;
 mod httpd;
 pub(crate) mod models;
+mod mqtt_msg;
 mod peripherals;
 mod services;
 
@@ -136,8 +149,13 @@ pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(tv: *mut time
         );
 
         external_rtc::COMMAND.signal(external_rtc::RtcExternalCommand::SntpSyncCallbackUpdateRtc);
+
+        // FIXME simulating, battery status update
+        // keepalive::NOTIF.notify();
     }
 }
+
+pub fn sntp_sync_callback(time: ::core::time::Duration) {}
 
 pub enum SysLoopMsg {
     WifiDisconnect,
@@ -148,7 +166,7 @@ const CURRENT_YEAR: u16 = 2022;
 const MQTT_MAX_TOPIC_LEN: usize = 64;
 const SLEEP_TIME: Duration = Duration::from_secs(5);
 const SNTP_RETRY_COUNT: u32 = 1_000_000;
-const SNTP_SYNC_INTERVAL: u32 = 30; // secs
+const SNTP_SYNC_INTERVAL: u32 = 30_000; // milli-secs
 const UTC_OFFSET_CHRONO: Utc = Utc;
 
 static LOGGER: EspLogger = EspLogger;
@@ -159,6 +177,7 @@ esp_idf_sys::esp_app_desc!();
 
 fn main() -> Result<(), InitError> {
     esp_idf_hal::task::critical_section::link();
+    esp_idf_svc::timer::embassy_time::driver::link();
     esp_idf_svc::timer::embassy_time::queue::link();
 
     let wakeup_reason = WakeupReason::get();
@@ -235,6 +254,10 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     // Create a shared-bus for the I2C devices that supports threads
     let i2c0_bus_manager: &'static _ = shared_bus::new_std!(I2cDriver = i2c0_driver).unwrap();
 
+    // FIXME just for testing with slave device
+    // let mut i2c_driver = i2c0_bus_manager.acquire_i2c();
+    // i2c_driver.write(0x28, String::from("CommandOne").as_bytes())?;
+
     // Deep sleep wakeup init
 
     mark_wakeup_pins(&peripherals.pulse_counter, &peripherals.buttons)?;
@@ -273,34 +296,32 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // SNTP
 
-    let server_array: [&str; 4] = [
+    let servers: [&str; 4] = [
         "time.aws.com",
         "1.sg.pool.ntp.org",
         "0.pool.ntp.org",
-        "3.pool.ntp.org",
+        "1.pool.ntp.org",
     ];
 
     let mut sntp_conf = SntpConf::default();
-    let mut servers: [&str; 1 as usize] = Default::default();
-    let copy_len = ::core::cmp::min(servers.len(), server_array.len());
-
-    servers[..copy_len].copy_from_slice(&server_array[..copy_len]);
     sntp_conf.servers = servers;
 
     let sntp = sntp::EspSntp::new(&sntp_conf)?;
 
     unsafe {
-        sntp_set_sync_interval(SNTP_SYNC_INTERVAL * 1000);
-
         // stop the sntp instance to redefine the callback
         // https://github.com/esp-rs/esp-idf-svc/blob/v0.42.5/src/sntp.rs#L155-L158
         sntp_stop();
 
         // redefine and restart the callback.
         sntp_set_time_sync_notification_cb(Some(sntp_set_time_sync_notification_cb_custom));
-    }
 
-    unsafe { sntp_init() };
+        sntp_init()
+    };
+
+    // FIXME enable in v0.46.0
+    // https://github.com/esp-rs/esp-idf-svc/pull/207
+    // let sntp = sntp::EspSntp::new_with_callback(&sntp_conf, sntp_sync_callback)?;
 
     // Wifi
 
@@ -310,45 +331,6 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         Some(nvs_default_partition),
         AuthMethod::default(),
     )?;
-
-    info!("******* Wifi: Subscribing to events");
-    let _wifi_event_sub = sysloop.subscribe(move |event: &WifiEvent| match event {
-        WifiEvent::StaConnected => {
-            info!("******* Received STA Connected Event");
-            core::internal::wifi::COMMAND.signal(core::internal::wifi::WifiCommand::StaConnected);
-        }
-        WifiEvent::StaDisconnected => {
-            info!("******* Received STA Disconnected event");
-
-            FreeRtos::delay_ms(1000);
-
-            // NOTE: calling the FFI binding directly to prevent casusing a move
-            // on the the EspWifi instance.
-
-            if let Err(err) = esp!(unsafe { esp_wifi_connect() }) {
-                info!("Error calling wifi.connect in wifi reconnect {:?}", err);
-            }
-        }
-        _ => info!("Received other Wifi event"),
-    })?;
-
-    let _ip_event_sub = sysloop.subscribe(move |event: &IpEvent| match event {
-        IpEvent::DhcpIpAssigned(_) => {
-            core::internal::wifi::COMMAND.signal(core::internal::wifi::WifiCommand::DhcpIpAssigned);
-
-            // NOTE: Update PWM Duty-cycle from value stored in NVS.
-            let duty_cycle = nvs_default_state.pwm_duty_cycle;
-            if duty_cycle > 0 && duty_cycle <= 100 {
-                pwm::COMMAND.signal(pwm::PwmCommand::SetDutyCycle(duty_cycle));
-            }
-
-            log::info!("Starting SNTP");
-            unsafe {
-                sntp_restart();
-            }
-        }
-        _ => info!("Received other IPEvent"),
-    })?;
 
     // RTC module (External)
 
@@ -364,12 +346,12 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Httpd
 
-    let (mut httpd, ws_acceptor) = services::httpd()?;
-    httpd::configure_handlers(&mut httpd)?;
+    let mut httpd = services::httpd()?;
+    let ws_acceptor = httpd::configure_websockets(&mut httpd)?;
 
     // Mqtt
 
-    // let (mqtt_topic_prefix, mqtt_client, mqtt_conn) = services::mqtt()?;
+    let (mqtt_topic_prefix, mqtt_client, mqtt_conn) = services::mqtt()?;
 
     // PWM
 
@@ -414,11 +396,32 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     let driver: Arc<SpiDriver<'static>> = peripherals.spi1.driver.clone();
 
+    #[cfg(esp32)]
+    #[cfg(any(
+        feature = "micromod-qwiic-carrier-single",
+        feature = "micromod-main-board-single"
+    ))]
     let sdmmc_spi = SpiDeviceDriver::new(
         driver,
         Option::<Gpio27>::None,
         &SpiConfig::default().baudrate(SPI_BUS_FREQ.MHz().into()),
     )?;
+
+    #[cfg(esp32)]
+    #[cfg(feature = "micromod-data-logging-carrier")]
+    let sdmmc_spi = SpiDeviceDriver::new(
+        driver,
+        Option::<Gpio5>::None,
+        &SpiConfig::default().baudrate(SPI_BUS_FREQ.MHz().into()),
+    )?;
+
+    #[cfg(esp32c3)]
+    let sdmmc_spi = SpiDeviceDriver::new(
+        driver,
+        Option::<Gpio7>::None,
+        &SpiConfig::default().baudrate(SPI_BUS_FREQ.MHz().into()),
+    )?;
+
     let sdmmc_cs = PinDriver::output(peripherals.sd_card.cs)?;
     let sdmmc_spi = embedded_sdmmc::SdMmcSpi::new(sdmmc_spi, sdmmc_cs);
 
@@ -431,7 +434,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         services::display(proxy1).expect("Return display service to the high_prio executor")
     };
 
-    #[cfg(not(feature = "display-i2c"))]
+    #[cfg(feature = "display-spi")]
     let display = { services::display(peripherals.display, peripherals.spi1).unwrap() };
 
     let mut high_prio_executor = EspExecutor::<16, _>::new();
@@ -443,53 +446,60 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
             peripherals.buttons.button1,
             &core::internal::button::BUTTON1_PIN_EDGE,
         )?,
+        AdcDriver::new(peripherals.battery.adc, &AdcConfig::new().calibration(true))?,
+        AdcChannelDriver::<_, Atten0dB<_>>::new(peripherals.battery.voltage)?,
+        PinDriver::input(peripherals.battery.power)?,
         display,
         (wifi, wifi_notif),
         &mut httpd,
-        ws_acceptor,
+        Some(ws_acceptor),
         pwm,
         rtc_clock,
         move |_new_state| {
             #[cfg(feature = "nvs")]
             flash_default_state(storage, _new_state);
         },
+        netif_notifier(sysloop.clone()).unwrap(),
+        mqtt_topic_prefix,
+        mqtt_client,
+        mqtt_conn,
     )?;
 
     // Mid-prio tasks
 
-    // log::info!("Starting mid-prio executor");
+    log::info!("Starting mid-prio executor");
 
-    // ThreadSpawnConfiguration {
-    //     name: Some(b"async-exec-mid\0"),
-    //     ..Default::default()
-    // }
-    // .set()
-    // .unwrap();
+    ThreadSpawnConfiguration {
+        name: Some(b"async-exec-mid\0"),
+        ..Default::default()
+    }
+    .set()?;
 
     // // let display_peripherals = peripherals.display_i2c;
     // // let proxy = display_peripherals.bus.bus.acquire_i2c();
 
-    // let mid_prio_execution = services::schedule::<8, _>(50000, move || {
-    //     let mut executor = EspExecutor::new();
-    //     let mut tasks = heapless::Vec::new();
+    let mid_prio_execution = services::schedule::<8, _>(50000, move || {
+        let mut executor = EspExecutor::new();
+        let mut tasks = heapless::Vec::new();
 
-    //     spawn::mid_prio(
-    //         &mut executor,
-    //         &mut tasks,
-    //         services::display(display_peripherals)
-    //             .expect("Return display service to the mid_prio executor"),
-    //         // move |_new_state| {
-    //         //     #[cfg(feature = "nvs")]
-    //         //     flash_wm_state(storage, _new_state);
-    //         // },
-    //     )?;
+        spawn::mid_prio(
+            &mut executor,
+            &mut tasks,
+            // services::display(display_peripherals)
+            //     .expect("Return display service to the mid_prio executor"),
 
-    //     // spawn::wifi(&mut executor, &mut tasks, wifi, wifi_notif)?;
+            // move |_new_state| {
+            //     #[cfg(feature = "nvs")]
+            //     flash_wm_state(storage, _new_state);
+            // },
+        )?;
 
-    //     // spawn::mqtt_receive(&mut executor, &mut tasks, mqtt_conn)?;
+        // spawn::wifi(&mut executor, &mut tasks, wifi, wifi_notif)?;
 
-    //     Ok((executor, tasks))
-    // });
+        // spawn::mqtt_receive(&mut executor, &mut tasks, mqtt_conn)?;
+
+        Ok((executor, tasks))
+    });
 
     // Low-prio tasks
 
@@ -499,8 +509,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     //     name: Some(b"async-exec-low\0"),
     //     ..Default::default()
     // }
-    // .set()
-    // .unwrap();
+    // .set()?;
 
     // let low_prio_execution = services::schedule::<4, _>(50000, move || {
     //     let mut executor = EspExecutor::new();
@@ -524,15 +533,78 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     spawn::run(&mut high_prio_executor, high_prio_tasks);
 
     log::info!("Execution finished, waiting for 2s to workaround a STD/ESP-IDF pthread (?) bug");
-
+    // This is required to allow the low prio thread to start
     std::thread::sleep(crate::StdDuration::from_millis(2000));
 
-    // mid_prio_execution.join().unwrap();
+    mid_prio_execution.join().unwrap();
     // low_prio_execution.join().unwrap();
 
-    log::info!("Finished execution");
+    log::info!("all tasks running");
 
-    Ok(())
+    unreachable!()
+}
+
+#[inline(always)]
+pub fn netif_notifier(
+    mut sysloop: EspSystemEventLoop,
+) -> Result<impl AsynchReceiver<Data = IpEvent>, InitError> {
+    Ok(pubsub::SvcReceiver::new(sysloop.as_async().subscribe()?))
+}
+
+pub async fn process_netif_state_change(
+    mut state_changed_source: impl AsynchReceiver<Data = IpEvent>,
+) {
+    loop {
+        let event = state_changed_source.recv().await.unwrap();
+
+        match event {
+            IpEvent::DhcpIpAssigned(assignment) => {
+                let ip = assignment.ip_settings.ip.to_string();
+                let mut dns = String::default();
+
+                info!(
+                    "IpEvent: DhcpIpAssigned: IP = {}",
+                    assignment.ip_settings.ip.to_string()
+                );
+                if let Some(address) = assignment.ip_settings.dns {
+                    dns = address.to_string();
+                    info!("IpEvent: DhcpIpAssigned: DNS = {}", &dns);
+                } else {
+                    warn!("Unable to unwrap DNS address");
+                };
+
+                // Update wifi state
+                core::internal::wifi::STATE.update(Some(WifiConnection { ip, dns }));
+
+                // if an IP address has been succesfully assigned we consider
+                // the application working, no rollback required.
+                unsafe { esp_ota_mark_app_valid_cancel_rollback() };
+
+                let mut publisher = NETWORK_EVENT_CHANNEL.publisher().unwrap();
+                let _ = publisher
+                    .send(NetworkStateChange::IpAddressAssigned {
+                        ip: assignment.ip_settings.ip,
+                    })
+                    .await;
+
+                // FIXME this needs to be handled in another task
+                // NOTE: Update PWM Duty-cycle from value stored in NVS.
+                // let duty_cycle = nvs_default_state.pwm_duty_cycle;
+                // if duty_cycle > 0 && duty_cycle <= 100 {
+                //     pwm::COMMAND.signal(pwm::PwmCommand::SetDutyCycle(duty_cycle));
+                // }
+
+                // NOTE: Start SNTP
+                log::info!("Starting SNTP");
+                unsafe {
+                    sntp_restart();
+                }
+            }
+            _ => {
+                info!("IpEvent: other .....");
+            }
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -588,11 +660,21 @@ fn mark_wakeup_pins(
         //     buttons_peripherals.button3.pin()
         // );
 
+        #[cfg(esp32)]
         #[cfg(not(feature = "ulp"))]
         {
             // Enable power for RTC IO, sensors and ULP co-processor during Deep-sleep
             esp!(esp_idf_sys::esp_sleep_pd_config(
                 esp_idf_sys::esp_sleep_pd_domain_t_ESP_PD_DOMAIN_RTC_PERIPH,
+                esp_idf_sys::esp_sleep_pd_option_t_ESP_PD_OPTION_ON
+            ))?;
+        }
+        #[cfg(esp32c3)]
+        #[cfg(not(feature = "ulp"))]
+        {
+            // Enable power for RTC IO, sensors and ULP co-processor during Deep-sleep
+            esp!(esp_idf_sys::esp_sleep_pd_config(
+                esp_idf_sys::esp_sleep_pd_domain_t_ESP_PD_DOMAIN_CPU,
                 esp_idf_sys::esp_sleep_pd_option_t_ESP_PD_OPTION_ON
             ))?;
         }
@@ -612,14 +694,6 @@ fn mark_wakeup_pins(
 
     Ok(())
 }
-
-/// Configure SNTP
-/// - <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/system_time.html#sntp-time-synchronization>
-/// - <https://wokwi.com/projects/342312626601067091>
-// unsafe fn sntp_setup<'a>() -> Result<(EspSntp, [&'a str; 1])> {
-
-//     Ok((sntp, servers))
-// }
 
 fn toggle_led<P>(driver: &mut P)
 where

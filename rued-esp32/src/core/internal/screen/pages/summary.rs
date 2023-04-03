@@ -142,12 +142,12 @@ impl Summary {
             ..Default::default()
         };
 
-        // status_mqtt.draw(&mut target.cropped(&Rectangle::new(
-        //     Point::new(x_offs, y_offs),
-        //     status_mqtt.preferred_size(),
-        // )))?;
+        status_mqtt.draw(&mut target.cropped(&Rectangle::new(
+            Point::new(x_offs, y_offs),
+            status_mqtt.preferred_size(),
+        )))?;
 
-        //x_offs += (status_mqtt.preferred_size().width + status_padding) as i32;
+        // x_offs += (status_mqtt.preferred_size().width + status_padding) as i32;
 
         let status_battery_size = Size::new(status_height * 2, status_height);
         let status_battery = shapes::Battery {
@@ -421,10 +421,16 @@ impl Summary {
                 }
             };
 
-            let mut text_buf = heapless::String::<14>::new();
-            write!(&mut text_buf, "ip: {}", ip).expect("Writing IP address to buffer");
-
-            status_rt.text = &text_buf;
+            let mut text_buf = heapless::String::<32>::new();
+            match write!(&mut text_buf, "ip: {}", ip) {
+                Ok(value) => {
+                    status_rt.text = &text_buf;
+                }
+                Err(error) => {
+                    log::warn!("Unable to unwrap IP address");
+                    status_rt.text = "            ";
+                }
+            };
 
             let mut text_buf = heapless::String::<12>::new();
             status_rt.text = match remaining_time {

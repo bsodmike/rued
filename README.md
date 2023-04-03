@@ -22,8 +22,9 @@ With any IoT 'stack', there are some rudimentary basics; this repo is an attempt
 | [Testing] | Display: I2C | **Requires further testing. |
 | [X] | Display: SPI | ili9342 fully tested. |
 | [Testing] | SD/MMC Card: SPI | **Requires further testing. |
-| [ ] | MQTT |  |
-
+| [Testing] | ADC: Battery voltage |  |
+| [X] | MQTT |  |
+| [X] | OTA | Ref: https://github.com/bsodmike/rued-mqtt-client |
 
 ## Quick setup
 
@@ -34,7 +35,9 @@ With any IoT 'stack', there are some rudimentary basics; this repo is an attempt
 
 ```
 // flash
-scp 10.0.3.70:~/esp/rued/target/xtensa-esp32-espidf/release/rued-esp32 . && espflash flash --baud 920000 --monitor rued-esp32
+scp 10.0.3.70:~/esp/rued/partitions.csv . \
+    && scp 10.0.3.70:~/esp/rued/target/xtensa-esp32-espidf/release/rued-esp32 . \
+    && espflash flash --baud 920000 --monitor rued-esp32 --partition-table partitions.csv
 
 // monitor for stack-traces
 scp 10.0.3.70:~/esp/rued/target/xtensa-esp32-espidf/release/rued-esp32 . && espflash monitor --baud 115200 --elf rued-esp32
