@@ -34,7 +34,8 @@ build-std = ["std", "panic_abort"]
 
 [env]
 CARGO_WORKSPACE_DIR = { value = "", relative = true }
-LIBCLANG_PATH = "/home/mdesilva/.espressif/tools/xtensa-esp32-elf-clang/esp-15.0.0-20221014-x86_64-unknown-linux-gnu/esp-clang/lib"
+# LIBCLANG_PATH = "/home/mdesilva/.espressif/tools/xtensa-esp32-elf-clang/esp-15.0.0-20221014-x86_64-unknown-linux-gnu/esp-clang/lib"
+LIBCLANG_PATH = "/home/mdesilva/.espup/esp-clang"
 # Uncomment this to build against ESP-IDF master (currently unreleased ESP IDF 5.1)
 #ESP_IDF_VERSION = "master"
 # Don't forget to uncomment also the `rustflags` parameter in your "target" section above
