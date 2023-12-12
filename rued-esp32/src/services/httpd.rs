@@ -3,12 +3,12 @@ use std::rc::Rc;
 
 use esp_idf_svc::http::server::{Configuration, EspHttpServer};
 
-pub struct LazyInitHttpServer {
-    data: Rc<RefCell<Option<EspHttpServer>>>,
+pub struct LazyInitHttpServer<'a> {
+    data: Rc<RefCell<Option<EspHttpServer<'a>>>>,
     config: Configuration,
 }
 
-impl LazyInitHttpServer {
+impl LazyInitHttpServer<'_> {
     pub fn new(config: Configuration) -> Self {
         Self {
             data: Rc::new(RefCell::new(None)),

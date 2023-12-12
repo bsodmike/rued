@@ -2,10 +2,12 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::io::Error as IoError;
 
-use edge_executor::SpawnError;
-use esp_idf_hal::i2c::I2cError;
-use esp_idf_svc::errors::EspIOError;
-use esp_idf_sys::EspError;
+// use edge_executor::SpawnError;
+use futures::task::SpawnError;
+
+use esp_idf_svc::hal::i2c::I2cError;
+use esp_idf_svc::io::EspIOError;
+use esp_idf_svc::sys::EspError;
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -136,8 +138,8 @@ impl StdError for BlanketError {
     }
 }
 
-impl From<esp_idf_sys::EspError> for BlanketError {
-    fn from(error: esp_idf_sys::EspError) -> Self {
+impl From<EspError> for BlanketError {
+    fn from(error: EspError) -> Self {
         Self {
             inner: error.into(),
         }

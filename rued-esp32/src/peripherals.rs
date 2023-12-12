@@ -1,16 +1,9 @@
 use std::marker::PhantomData;
 
-use esp_idf_hal::adc::*;
-use esp_idf_hal::gpio::*;
-use esp_idf_hal::i2c::*;
-use esp_idf_hal::ledc::CHANNEL0;
-use esp_idf_hal::ledc::CHANNEL1;
-use esp_idf_hal::ledc::CHANNEL2;
-use esp_idf_hal::ledc::TIMER0;
-use esp_idf_hal::modem::Modem;
-use esp_idf_hal::peripherals::Peripherals;
-use esp_idf_hal::spi::*;
-use esp_idf_hal::units::Hertz;
+use esp_idf_svc::hal::{
+    adc::*, gpio::*, i2c::*, interrupt::InterruptType, ledc::*, modem::Modem,
+    peripherals::Peripherals, spi::*, units::Hertz,
+};
 use shared_bus::{BusManager, NullMutex};
 
 pub const NO_PIN: Option<AnyIOPin> = None;

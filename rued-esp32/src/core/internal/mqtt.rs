@@ -15,7 +15,9 @@ use log::*;
 
 static MQTT_CONNECT_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 
-pub async fn receive_task(mut connection: impl Connection<Message = Option<MqttCommand>>) {
+pub async fn receive_task<'a>(
+    mut connection: impl Connection<Message<'a> = Option<MqttCommand>> + 'a,
+) {
     let mut app_event = APPLICATION_EVENT_CHANNEL.subscriber().unwrap();
 
     loop {
@@ -48,7 +50,7 @@ pub async fn receive_task(mut connection: impl Connection<Message = Option<MqttC
                     MqttCommand::SystemRestart => {
                         info!("receive_task MQTT received system restart request");
                         unsafe {
-                            esp_idf_sys::esp_restart();
+                            esp_idf_svc::sys::esp_restart();
                         }
                     }
                 }

@@ -10,39 +10,53 @@ extern crate alloc;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_time::Duration;
 
+use embedded_hal::digital::OutputPin as EHOutputPin;
+
 use embedded_hal::spi::SpiDevice;
-use embedded_hal_0_2::digital::v2::OutputPin as EHOutputPin;
+use esp_idf_svc::tls;
 
 use embedded_svc::http::server::Method;
 use embedded_svc::mqtt::client::asynch::{Client, Connection, Publish};
-use embedded_svc::utils::asyncify::ws::server::Processor;
 use embedded_svc::utils::asyncify::Asyncify;
-use embedded_svc::utils::mutex::RawCondvar;
-use embedded_svc::wifi::{AuthMethod, ClientConfiguration, Configuration, Wifi};
+use embedded_svc::wifi::asynch::Wifi;
+use embedded_svc::wifi::{AuthMethod, ClientConfiguration, Configuration};
 use embedded_svc::ws::asynch::server::Acceptor;
 
-use esp_idf_hal::delay;
-use esp_idf_hal::delay::FreeRtos;
-use esp_idf_hal::gpio::*;
-use esp_idf_hal::i2c::{I2c, I2cConfig, I2cDriver};
-use esp_idf_hal::modem::WifiModemPeripheral;
-use esp_idf_hal::peripheral::Peripheral;
-use esp_idf_hal::prelude::*;
-use esp_idf_hal::reset::WakeupReason;
-use esp_idf_hal::spi::config::Duplex;
-use esp_idf_hal::spi::*;
-use esp_idf_hal::task::embassy_sync::EspRawMutex;
-
 use esp_idf_svc::eventloop::EspSystemEventLoop;
-use esp_idf_svc::http::server::ws::{EspHttpWsConnection, EspHttpWsProcessor};
+use esp_idf_svc::hal::adc::{Adc, AdcChannelDriver, AdcConfig, AdcDriver};
+use esp_idf_svc::hal::delay;
+use esp_idf_svc::hal::delay::FreeRtos;
+use esp_idf_svc::hal::gpio::*;
+use esp_idf_svc::hal::modem::WifiModemPeripheral;
+use esp_idf_svc::hal::peripheral::Peripheral;
+use esp_idf_svc::hal::prelude::*;
+use esp_idf_svc::hal::reset::WakeupReason;
+use esp_idf_svc::hal::spi::*;
+use esp_idf_svc::hal::task::embassy_sync::EspRawMutex;
+
+use esp_idf_svc::http::server::ws::EspHttpWsProcessor;
 use esp_idf_svc::http::server::EspHttpServer;
 use esp_idf_svc::mqtt::client::{EspMqttClient, MqttClientConfiguration};
-use esp_idf_svc::netif::IpEvent;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
-use esp_idf_svc::tls;
-use esp_idf_svc::wifi::{EspWifi, WifiEvent, WifiWait};
+use esp_idf_svc::timer::EspTaskTimerService;
+use esp_idf_svc::wifi::{AsyncWifi, BlockingWifi, EspWifi};
 
-use esp_idf_sys::{esp, esp_restart, EspError};
+use esp_idf_svc::sys::{adc_atten_t, EspError};
+
+// use esp_idf_hal::gpio::*;
+// use esp_idf_hal::i2c::{I2c, I2cConfig, I2cDriver};
+// use esp_idf_hal::modem::WifiModemPeripheral;
+// use esp_idf_hal::peripheral::Peripheral;
+// use esp_idf_hal::prelude::*;
+// use esp_idf_hal::reset::WakeupReason;
+// use esp_idf_hal::spi::config::Duplex;
+// use esp_idf_hal::spi::*;
+// use esp_idf_hal::task::embassy_sync::EspRawMutex;
+// use esp_idf_svc::hal::delay;
+// use esp_idf_svc::hal::delay::FreeRtos;
+
+use futures::task::SpawnError;
+use futures::Future;
 
 use gfx_xtra::draw_target::{Flushable, OwnedDrawTargetExt};
 
@@ -233,8 +247,10 @@ pub fn pulse(
 pub fn button<'d, P: InputPin + OutputPin>(
     pin: impl Peripheral<P = P> + 'd,
     notification: &'static Notification,
-) -> Result<impl embedded_hal_0_2::digital::v2::InputPin<Error = impl Debug + 'd> + 'd, InitError> {
-    subscribe_pin(pin, move || notification.notify())
+) -> Result<impl embedded_hal::digital::InputPin + 'd, InitError> {
+    let resp = subscribe_pin(pin, move || notification.notify())?;
+
+    Ok(resp)
 }
 
 #[cfg(feature = "display-i2c")]
@@ -367,12 +383,20 @@ pub fn display<'a>(
     Ok(display)
 }
 
+// TODO: Make it async
 pub fn wifi<'d>(
     modem: impl Peripheral<P = impl WifiModemPeripheral + 'd> + 'd,
-    mut sysloop: EspSystemEventLoop,
+    sysloop: EspSystemEventLoop,
+    timer_service: EspTaskTimerService,
     partition: Option<EspDefaultNvsPartition>,
     auth_method: AuthMethod,
-) -> Result<(EspWifi<'d>, impl Receiver<Data = WifiEvent>), InitError> {
+) -> Result<
+    (
+        impl embedded_svc::wifi::asynch::Wifi + 'd,
+        impl Receiver<Data = esp_idf_svc::wifi::WifiEvent>,
+    ),
+    InitError,
+> {
     let mut wifi = EspWifi::new(modem, sysloop.clone(), partition)?;
 
     if WIFI_PSK.is_empty() {
@@ -390,23 +414,15 @@ pub fn wifi<'d>(
         }))?;
     }
 
-    let wait = WifiWait::new(&sysloop)?;
+    let mut bwifi = BlockingWifi::wrap(&mut wifi, sysloop.clone())?;
 
-    wifi.start()?;
+    bwifi.start()?;
 
-    let started = wait.wait_with_timeout(WIFI_START_TIMEOUT, || wifi.is_started().unwrap());
-    if !started {
-        log::warn!("Wifi failed to start, restarting.");
-        unsafe {
-            esp_restart();
-        }
-    }
+    bwifi.connect()?;
 
-    wifi.connect()?;
+    bwifi.wait_netif_up()?;
 
-    // if !PASS.is_empty() {
-    //     wait.wait(|| wifi.is_connected().unwrap());
-    // }
+    let wifi = AsyncWifi::wrap(wifi, sysloop, timer_service)?;
 
     Ok((
         wifi,
@@ -414,12 +430,12 @@ pub fn wifi<'d>(
     ))
 }
 
-pub fn httpd() -> Result<LazyInitHttpServer, InitError> {
+pub fn httpd() -> Result<LazyInitHttpServer<'static>, InitError> {
     let server_certificate = tls::X509::pem_until_nul(include_bytes!(
-        "/home/mdesilva/esp/openssl-generate-rs/output/cert.pem"
+        "/home/mike/esp/openssl-generate-rs/output/cert.pem"
     ));
     let server_private_key = tls::X509::pem_until_nul(include_bytes!(
-        "/home/mdesilva/esp/openssl-generate-rs/output/cert_key.pem"
+        "/home/mike/esp/openssl-generate-rs/output/cert_key.pem"
     ));
 
     let mut config = esp_idf_svc::http::server::Configuration::default();
@@ -431,11 +447,11 @@ pub fn httpd() -> Result<LazyInitHttpServer, InitError> {
     Ok(httpd)
 }
 
-pub fn mqtt() -> Result<
+pub fn mqtt<'a>() -> Result<
     (
         &'static str,
         impl Client + Publish,
-        impl Connection<Message = Option<MqttCommand>>,
+        impl Connection<Message<'a> = Option<MqttCommand>>,
     ),
     InitError,
 > {
@@ -456,10 +472,42 @@ pub fn mqtt() -> Result<
     Ok((client_id, mqtt_client, mqtt_conn))
 }
 
+pub fn adc<'d, const A: adc_atten_t, ADC: Adc + 'd, P: ADCPin<Adc = ADC>>(
+    adc: impl Peripheral<P = ADC> + 'd,
+    pin: impl Peripheral<P = P> + 'd,
+) -> Result<impl crate::core::internal::battery::Adc + 'd, InitError> {
+    struct AdcImpl<'d, const A: adc_atten_t, ADC, V>
+    where
+        ADC: Adc,
+        V: ADCPin<Adc = ADC>,
+    {
+        driver: AdcDriver<'d, ADC>,
+        channel_driver: AdcChannelDriver<'d, A, V>,
+    }
+
+    impl<'d, const A: adc_atten_t, ADC, V> crate::core::internal::battery::Adc
+        for AdcImpl<'d, A, ADC, V>
+    where
+        ADC: Adc,
+        V: ADCPin<Adc = ADC>,
+    {
+        type Error = esp_idf_svc::sys::EspError;
+
+        async fn read(&mut self) -> Result<u16, Self::Error> {
+            self.driver.read(&mut self.channel_driver)
+        }
+    }
+
+    Ok(AdcImpl {
+        driver: AdcDriver::new(adc, &AdcConfig::new().calibration(true))?,
+        channel_driver: AdcChannelDriver::<{ A }, _>::new(pin)?,
+    })
+}
+
 fn subscribe_pin<'d, P: InputPin + OutputPin>(
     pin: impl Peripheral<P = P> + 'd,
     notify: impl Fn() + Send + 'static,
-) -> Result<impl embedded_hal_0_2::digital::v2::InputPin<Error = impl Debug + 'd> + 'd, InitError> {
+) -> Result<impl embedded_hal::digital::InputPin + 'd, InitError> {
     let mut pin = PinDriver::input(pin)?;
 
     pin.set_interrupt_type(InterruptType::NegEdge)?;
@@ -471,26 +519,22 @@ fn subscribe_pin<'d, P: InputPin + OutputPin>(
     Ok(pin)
 }
 
-pub fn schedule<'a, const C: usize, M>(
+pub fn schedule<'a, const C: usize>(
     stack_size: usize,
-    spawner: impl FnOnce() -> Result<(Executor<'a, C, M, Local>, heapless::Vec<Task<()>, C>), SpawnError>
-        + Send
-        + 'static,
-) -> std::thread::JoinHandle<()>
-where
-    M: Monitor + Wait + Default,
-{
+    run: impl Future + Send + 'static,
+    spawner: impl FnOnce() -> LocalExecutor<'a, C> + Send + 'static,
+) -> std::thread::JoinHandle<()> {
     std::thread::Builder::new()
         .stack_size(stack_size)
         .spawn(move || {
-            let (mut executor, tasks) = spawner().unwrap();
+            let executor = spawner();
 
             // info!(
             //     "Tasks on thread {:?} scheduled, about to run the executor now",
             //     "TODO"
             // );
 
-            super::spawn::run(&mut executor, tasks);
+            block_on(executor.run(run));
         })
         .unwrap()
 }

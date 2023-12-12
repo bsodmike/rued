@@ -4,9 +4,12 @@ version = "4.0.0"
 authors = ["Michael de Silva <michael@mwdesilva.com>"]
 edition = "2021"
 resolver = "2"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+rust-version = "1.71"
 
 [features]
-default = ["system", "experimental"] # Note that edge-executor requires alloc
+default = ["edge-executor", "system", "experimental"] # Note that edge-executor requires alloc
 # system = ["display-i2c"]
 system = ["display-spi", "nvs", "external-rtc", "board"]
 
@@ -27,7 +30,6 @@ experimental = ["esp-idf-svc/experimental", "embedded-svc/experimental"]
 
 [dependencies]
 anyhow = "1"
-heapless = { version = "0.8.0" }
 enumset = "1"
 log = { version = "0.4", features = [
     "max_level_debug",
@@ -36,19 +38,20 @@ log = { version = "0.4", features = [
 futures = {version = "0.3", features = ["async-await"] }
 serde = { version = "1", default-features = false }
 postcard = "0.7"
+heapless = "0.8"
 critical-section = "1.1"
-embedded-hal = { git = "https://github.com/rust-embedded/embedded-hal" }
-# embedded-hal-0-2 = { package = "embedded-hal", version = "0.2.7", features = ["unproven"] }
-embedded-svc = { version = "0.26.4", features = ["nightly", "experimental"] }
-esp-idf-svc = { version = "0.47.3", features = ["nightly", "experimental", "embassy-time-isr-queue"] }
-# esp-idf-svc = { path = "/home/mdesilva/esp/esp-idf-svc_fork", features = ["nightly", "experimental", "embassy-time-isr-queue"] }
+embedded-hal = { version = "1.0.0-rc.1" }
+embedded-hal-async = "1.0.0-rc.1"
+embedded-hal-0-2 = { package = "embedded-hal", version = "0.2", features = ["unproven"] }
+embedded-svc = { version = "0.26", features = ["nightly", "experimental"] }
+esp-idf-svc = { version = "0.47", features = ["nightly", "experimental", "critical-section", "embassy-time-driver"] }
 embassy-futures = { version = "0.1" }
-embassy-sync = { version = "0.5.0", features = ["std"] }
+embassy-sync = { version = "0.3", features = ["std"] }
 embassy-time = { version = "0.1" }
-static_cell = { version = "2.0.0" }
-edge-frame = { version = "0.7.0", default-features = false, features = ["dto"], git = "https://github.com/ivmarkov/edge-frame" }
-# edge-executor = { version = "0.4.1", optional = true }
-channel-bridge = { version = "0.6", git = "https://github.com/ivmarkov/channel-bridge", default-features = false, features = ["nightly", "embedded-svc"] }
+static_cell = { version = "2" }
+edge-frame = { version = "0.7", default-features = false, features = ["dto"] }
+edge-executor = { version = "0.4", optional = true }
+channel-bridge = { version = "0.6", default-features = false, features = ["nightly", "embedded-svc"] }
 http = "0.2"
 
 # time = { version = "0.3.17", features = ["macros"] }
@@ -62,7 +65,7 @@ cstr_core = "0.2.6"
 uncased = { version = "0.9.7" }
 shared-bus = { version = "0.2", features = ["std"] }
 # rv8803-rs = { git = "https://github.com/bsodmike/rv8803-rs" }
-rv8803 = { path = "/home/mdesilva/esp/rv8803-rs" }
+rv8803 = { path = "/home/mike/esp/rv8803-rs" }
 embedded-sdmmc = { git = "https://github.com/rust-embedded-community/embedded-sdmmc-rs", branch = "develop" }
 
 # optional dependencies
@@ -72,5 +75,5 @@ ssd1351 = { version = "0.4", optional = true }
 mipidsi = { git = "https://github.com/almindor/mipidsi", optional = true }
 
 [build-dependencies]
-embuild = { version = "0.31.4", features = ["elf"] }
+embuild = { version = "0.31", features = ["espidf", "elf"] }
 anyhow = "1"

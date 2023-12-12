@@ -3,7 +3,7 @@ use core::fmt::Debug;
 
 use channel_bridge::Receiver;
 use embedded_hal_0_2::PwmPin;
-use esp_idf_hal::delay::FreeRtos;
+use esp_idf_svc::hal::delay::FreeRtos;
 use serde::{Deserialize, Serialize};
 
 use log::trace;
@@ -13,7 +13,7 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::signal::Signal;
 
-use embedded_svc::executor::asynch::Unblocker;
+use embedded_svc::utils::asyncify::Unblocker;
 
 use channel_bridge::notification::Notification;
 
@@ -69,6 +69,10 @@ pub async fn process<'a>(
         impl PwmPin<Duty = u32> + 'a,
     )>,
 ) {
+    let mut pwm0;
+    let mut pwm1;
+    let mut pwm2;
+
     #[cfg(feature = "pwm")]
     {
         let (mut pwm0, mut pwm1, mut pwm2) = pwm.expect("Unwraps pwm channels");

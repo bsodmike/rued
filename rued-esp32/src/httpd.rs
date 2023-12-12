@@ -14,7 +14,7 @@ use embedded_svc::{
     utils::{asyncify::ws::server::Processor, mutex::RawCondvar},
     ws::asynch::server::Acceptor,
 };
-use esp_idf_hal::task::embassy_sync::EspRawMutex;
+use esp_idf_svc::hal::task::embassy_sync::EspRawMutex;
 use esp_idf_svc::http::server::{
     fn_handler,
     ws::{EspHttpWsConnection, EspHttpWsProcessor},

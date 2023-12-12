@@ -8,7 +8,6 @@ use embassy_time::{Duration, Timer};
 use embedded_svc::ota::{FirmwareInfo, FirmwareInfoLoader, LoadResult, Slot};
 use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
 use esp_idf_svc::ota::{EspFirmwareInfoLoader, EspOta};
-use esp_idf_sys::*;
 use heapless::String;
 use log::*;
 
@@ -36,9 +35,9 @@ pub async fn ota_task() {
                 info!("Firmware update successful. Restarting device.");
             }
 
-            esp_idf_hal::delay::FreeRtos::delay_ms(5000);
+            esp_idf_svc::hal::delay::FreeRtos::delay_ms(5000);
             unsafe {
-                esp_idf_sys::esp_restart();
+                esp_idf_svc::sys::esp_restart();
             }
         }
     }
@@ -90,8 +89,8 @@ fn perform_update(firmware_url: &str) -> Result<(), OtaError> {
 
     info!("initiating OTA update");
 
-    let update_partition: esp_partition_t =
-        unsafe { *esp_ota_get_next_update_partition(ptr::null()) };
+    let update_partition: esp_idf_svc::sys::esp_partition_t =
+        unsafe { *esp_idf_svc::sys::esp_ota_get_next_update_partition(ptr::null()) };
     let partition_label =
         std::str::from_utf8(unsafe { std::mem::transmute(&update_partition.label as &[i8]) })
             .unwrap()
@@ -142,9 +141,9 @@ fn perform_update(firmware_url: &str) -> Result<(), OtaError> {
         // Check if first segment and process image meta data
         if !image_header_was_checked
             && data_read
-                > mem::size_of::<esp_image_header_t>()
-                    + mem::size_of::<esp_image_segment_header_t>()
-                    + mem::size_of::<esp_app_desc_t>()
+                > mem::size_of::<esp_idf_svc::sys::esp_image_header_t>()
+                    + mem::size_of::<esp_idf_svc::sys::esp_image_segment_header_t>()
+                    + mem::size_of::<esp_idf_svc::sys::esp_app_desc_t>()
         {
             let mut esp_fw_loader_info = EspFirmwareInfoLoader::new();
             let res = match esp_fw_loader_info.load(&ota_write_data) {

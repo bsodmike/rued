@@ -8,15 +8,14 @@ members = [
 # exclude = []
 
 [patch.crates-io]
-embedded-hal = { git = "https://github.com/rust-embedded/embedded-hal" }
+crossbeam-utils = { git = "https://github.com/crossbeam-rs/crossbeam" }
+# embedded-hal = { git = "https://github.com/rust-embedded/embedded-hal" }
 # embedded-svc = { git = "https://github.com/esp-rs/embedded-svc" }
 # esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal" }
 # esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc" }
 # edge-frame = { git = "https://github.com/ivmarkov/edge-frame" }
-embedded-io = { git = "https://github.com/ivmarkov/embedded-io" }
 # shared-bus = { git = "https://github.com/taks/shared-bus", branch = "embedded-hal-1.0.0-alpha.10" }
 # shared-bus = { git = "https://github.com/taks/shared-bus" }
-crossbeam-utils = { git = "https://github.com/crossbeam-rs/crossbeam" }
 
 #socket2 = { git = "https://github.com/esp-rs-compat/socket2" }
 #polling = { git = "https://github.com/esp-rs-compat/polling" }

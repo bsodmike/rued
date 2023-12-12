@@ -17,7 +17,7 @@ use embassy_sync::blocking_mutex::Mutex;
 
 use gfx_xtra::draw_target::Flushable;
 
-use embedded_svc::executor::asynch::Unblocker;
+use embedded_svc::utils::asyncify::Unblocker;
 
 use channel_bridge::notification::Notification;
 

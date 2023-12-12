@@ -1,11 +1,12 @@
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike};
-use esp_idf_hal::i2c::{I2cDriver, I2cError};
-use esp_idf_sys::settimeofday;
-use esp_idf_sys::timeval;
-use esp_idf_sys::timezone;
+use esp_idf_svc::hal::i2c::{I2cDriver, I2cError};
+use esp_idf_svc::sys::settimeofday;
+use esp_idf_svc::sys::time;
+use esp_idf_svc::sys::timeval;
+use esp_idf_svc::sys::timezone;
 use log::{debug, info, warn};
-use rv8803_rs::{i2c0::Bus as I2cBus, Rv8803, TIME_ARRAY_LENGTH};
+use rv8803::{i2c0::Bus as I2cBus, Rv8803, TIME_ARRAY_LENGTH};
 use serde::Deserialize;
 use serde::Serialize;
 use shared_bus::{BusManager, I2cProxy};
@@ -84,7 +85,7 @@ where
         + embedded_hal_0_2::blocking::i2c::WriteRead<Error = I2cError>,
 {
     pub fn new(bus_manager: &'a BusManager<Mutex<I2cDriver<'a>>>) -> Result<Self> {
-        let address = rv8803_rs::i2c0::Address::Default;
+        let address = rv8803::i2c0::Address::Default;
         let rtc = Rv8803::from_i2c0(bus_manager.acquire_i2c(), address)?;
 
         Ok(Self {
@@ -97,7 +98,7 @@ where
     pub fn rtc(&self) -> Result<Rv8803<I2cBus<I2cProxy<'_, std::sync::Mutex<I2cDriver<'a>>>>>> {
         let proxy = self.bus_manager.acquire_i2c();
 
-        let bus = rv8803_rs::i2c0::Bus::new(proxy, rv8803_rs::i2c0::Address::Default);
+        let bus = rv8803::i2c0::Bus::new(proxy, rv8803::i2c0::Address::Default);
 
         Ok(Rv8803::new(bus)?)
     }
@@ -335,7 +336,7 @@ pub(crate) mod rtc_external {
 
     use crate::UTC_OFFSET_CHRONO;
     use chrono::{offset::Utc, DateTime, Datelike, NaiveDateTime, Timelike};
-    use esp_idf_sys::time_t;
+    use esp_idf_svc::sys::time_t;
 
     type I2cDriverType<'a> = I2cDriver<'a>;
 
@@ -361,7 +362,7 @@ pub(crate) mod rtc_external {
 
     pub(crate) unsafe fn get_system_time() -> Result<SystemTimeBuffer> {
         let timer: *mut time_t = ptr::null_mut();
-        let mut timestamp = esp_idf_sys::time(timer);
+        let mut timestamp = esp_idf_svc::sys::time(timer);
 
         // NOTE: Handle system time providing a wierdly large value,
         // > Friday, 1 January 2100 00:00:00

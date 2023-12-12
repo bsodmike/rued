@@ -43,25 +43,13 @@ impl ws::AcceptorHandler for WebHandler {
 
     type ReceiveData = WebRequest;
 
-    type HandleFuture<'a, S, R> = impl Future<Output = Result<(), S::Error>> + 'a
+    async fn handle<S, R>(&self, sender: S, receiver: R, index: usize) -> Result<(), S::Error>
     where
-        Self: 'a,
-        S: Sender<Data = Self::SendData> + 'a,
-        R: Receiver<Error = S::Error, Data = Option<Self::ReceiveData>> + 'a,
-        S::Error: core::fmt::Debug + 'a;
-
-    fn handle<'a, S, R>(
-        &'a self,
-        sender: S,
-        receiver: R,
-        index: usize,
-    ) -> Self::HandleFuture<'a, S, R>
-    where
-        S: Sender<Data = Self::SendData> + 'a,
-        R: Receiver<Error = S::Error, Data = Option<Self::ReceiveData>> + 'a,
-        S::Error: core::fmt::Debug + 'a,
+        S: Sender<Data = Self::SendData>,
+        R: Receiver<Error = S::Error, Data = Option<Self::ReceiveData>>,
+        S::Error: core::fmt::Debug,
     {
-        async move { web::handle(sender, receiver, &HANDLERS_BATTERY_STATE_NOTIF[index]).await }
+        web::handle(sender, receiver, &HANDLERS_BATTERY_STATE_NOTIF[index]).await
     }
 }
 
