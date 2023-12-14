@@ -170,8 +170,9 @@ impl ScreenState {
 pub(crate) static BUTTON1_PRESSED_NOTIF: Notification = Notification::new();
 pub(crate) static BUTTON2_PRESSED_NOTIF: Notification = Notification::new();
 pub(crate) static BUTTON3_PRESSED_NOTIF: Notification = Notification::new();
-pub(crate) static WIFI_STATE_NOTIF: Notification = Notification::new();
 pub(crate) static BATTERY_STATE_NOTIF: Notification = Notification::new();
+pub(crate) static MQTT_STATE_NOTIF: Notification = Notification::new();
+pub(crate) static WIFI_STATE_NOTIF: Notification = Notification::new();
 pub(crate) static REMAINING_TIME_NOTIF: Notification = Notification::new();
 pub(crate) static EXT_RTC_NOTIF: Notification = Notification::new();
 pub(crate) static PWM_CHANGE_NOTIF: Notification = Notification::new();

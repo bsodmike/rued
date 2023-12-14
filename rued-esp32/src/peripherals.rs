@@ -1,8 +1,15 @@
 use std::marker::PhantomData;
 
 use esp_idf_svc::hal::{
-    adc::*, gpio::*, i2c::*, interrupt::InterruptType, ledc::*, modem::Modem,
-    peripherals::Peripherals, spi::*, units::Hertz,
+    adc::*,
+    gpio::*,
+    i2c::*,
+    interrupt::InterruptType,
+    ledc::*,
+    modem::Modem,
+    peripherals::Peripherals,
+    spi::{self, *},
+    units::Hertz,
 };
 use shared_bus::{BusManager, NullMutex};
 
@@ -178,15 +185,16 @@ impl SystemPeripherals<Gpio33, ADC1, Gpio35, Gpio27, Gpio13, Gpio12, I2C0> {
             cs: Some(peripherals.pins.gpio15.into()), // HEADER_CS / G0-Processor
         };
 
+        let spi_config = spi::SpiDriverConfig::new();
         let driver = std::sync::Arc::new(
             SpiDriver::new(
                 spi1.spi,
                 spi1.sclk,      // SCK
                 spi1.sdo,       // MOSI
                 Some(spi1.sdi), // MISO / NOTE: Default value
-                Dma::Disabled,
+                &spi_config,
             )
-            .unwrap(),
+            .expect("Initialise an instance of `SpiDriver`"),
         );
 
         let spi1 = SpiBusPeripherals {

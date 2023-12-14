@@ -121,7 +121,7 @@ fn perform_update(firmware_url: &str) -> Result<(), OtaError> {
     //     info!("no invalid slot found");
     // }
 
-    let ota_update = match ota.initiate_update() {
+    let mut ota_update = match ota.initiate_update() {
         Ok(handle) => handle,
         Err(_) => return Err(OtaError::OtaApiError),
     };
@@ -260,7 +260,7 @@ fn add_firmware_info<const N: usize>(
         update_summary.push_str(released.as_str()).unwrap();
         if let Some(desc) = fw.description {
             update_summary.push_str(", ").unwrap();
-            copy_truncated_string(&mut description, desc);
+            copy_truncated_string::<32, 128>(&mut description, desc);
             update_summary.push_str(description.as_str()).unwrap();
         }
     }

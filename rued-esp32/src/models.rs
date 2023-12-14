@@ -5,11 +5,12 @@ use esp_idf_svc::sys::settimeofday;
 use esp_idf_svc::sys::time;
 use esp_idf_svc::sys::timeval;
 use esp_idf_svc::sys::timezone;
+use heapless::String;
 use log::{debug, info, warn};
 use rv8803::{i2c0::Bus as I2cBus, Rv8803, TIME_ARRAY_LENGTH};
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use shared_bus::{BusManager, I2cProxy};
+use std::str::FromStr;
 use std::{env, error::Error as StdError, fmt, marker::PhantomData, ptr, sync::Mutex};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -144,7 +145,8 @@ where
             reading.seconds as u32,
         )
         .unwrap();
-        let datetime_utc = DateTime::<Utc>::from_utc(naivedatetime_utc, crate::UTC_OFFSET_CHRONO);
+        let datetime_utc =
+            DateTime::<Utc>::from_naive_utc_and_offset(naivedatetime_utc, crate::UTC_OFFSET_CHRONO);
         self.datetime = Some(datetime_utc);
 
         Ok(reading)
@@ -265,10 +267,9 @@ pub struct RTCReading {
 }
 
 impl RTCReading {
-    pub fn to_s(&self) -> Result<String> {
+    pub fn to_s(&self) -> Result<String<255>> {
         let weekday: Weekday = self.weekday.into();
-
-        Ok(format!(
+        let text = format!(
             "{} {}-{:0>2}-{:0>2} {:0>2}:{:0>2}:{:0>2} {}",
             weekday,
             self.year,
@@ -278,7 +279,11 @@ impl RTCReading {
             self.minutes,
             self.seconds,
             crate::UTC_OFFSET_CHRONO
-        ))
+        );
+
+        let resp: String<255> = String::from_str(text.as_str()).expect("Returns heapless String");
+
+        Ok(resp)
     }
 }
 
@@ -294,8 +299,8 @@ pub struct SystemTimeBuffer {
 }
 
 impl SystemTimeBuffer {
-    pub fn to_s(&self) -> Result<String> {
-        Ok(format!(
+    pub fn to_s(&self) -> Result<String<255>> {
+        let text = format!(
             "{} {}-{:0>2}-{:0>2} {:0>2}:{:0>2}:{:0>2} {}",
             self.weekday().expect("Unwrapping weekday"),
             self.year,
@@ -305,15 +310,26 @@ impl SystemTimeBuffer {
             self.minutes,
             self.seconds,
             crate::UTC_OFFSET_CHRONO
-        ))
+        );
+
+        let resp: String<255> = String::from_str(text.as_str()).expect("Returns heapless String");
+
+        Ok(resp)
     }
 
     fn to_timestamp(&self) -> Result<i64> {
         Ok(self.datetime.timestamp())
     }
 
-    pub fn to_rfc3339(&self) -> Result<String> {
-        Ok(self.datetime.to_rfc3339())
+    pub fn to_rfc3339(&self) -> Result<String<255>> {
+        // let bytes = self.datetime.to_rfc3339().into_bytes();
+        // let mut heapless_vec: heapless::Vec<u8, 255> = heapless::Vec::new();
+        // heapless_vec.extend_from_slice(&bytes[..]);
+
+        let resp: String<255> =
+            String::from_str(self.datetime.to_rfc3339().as_str()).expect("Returns heapless String");
+
+        Ok(resp)
     }
 
     pub fn weekday(&self) -> Result<Weekday> {
@@ -386,7 +402,8 @@ pub(crate) mod rtc_external {
             ));
         };
 
-        let datetime_utc = DateTime::<Utc>::from_utc(naivedatetime_utc, UTC_OFFSET_CHRONO);
+        let datetime_utc =
+            DateTime::<Utc>::from_naive_utc_and_offset(naivedatetime_utc, UTC_OFFSET_CHRONO);
 
         let buf = SystemTimeBuffer {
             date: datetime_utc.day() as u8,
@@ -437,9 +454,11 @@ pub(crate) mod rtc_external {
         }
 
         // Returns the first 3-letters of the day of the week
-        pub fn as_short(&self) -> Result<String> {
+        pub fn as_short(&self) -> Result<String<3>> {
+            type HeaplessString = String<3>;
+
             let day = self.as_str();
-            let result: String = day.chars().take(3).collect();
+            let result: HeaplessString = day.chars().take(3).collect();
 
             Ok(result)
         }

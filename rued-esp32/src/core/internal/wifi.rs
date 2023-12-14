@@ -8,7 +8,7 @@ use embassy_futures::select::{select, Either};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 
-use embedded_svc::wifi::{Configuration, Wifi as WifiTrait};
+use embedded_svc::wifi::{asynch::Wifi, Configuration};
 
 use channel_bridge::asynch::{Receiver, Sender};
 
@@ -50,10 +50,8 @@ pub static STATE: State<Option<WifiConnection>> = State::new(
 
 pub(crate) static COMMAND: Signal<CriticalSectionRawMutex, WifiCommand> = Signal::new();
 
-pub async fn process<'a, D>(
-    mut wifi: impl WifiTrait,
-    mut state_changed_source: impl Receiver<Data = D>,
-) where
+pub async fn process<'a, D>(mut wifi: impl Wifi, mut state_changed_source: impl Receiver<Data = D>)
+where
     WifiEvent: From<D>,
 {
     loop {
@@ -63,7 +61,7 @@ pub async fn process<'a, D>(
                 match event {
                     WifiEvent::StaConnected => {
                         log::info!("WifiEvent: STAConnected");
-                        if wifi.is_connected().unwrap() {
+                        if wifi.is_connected().await.unwrap() {
                             log::info!("WifiEvent: Connected");
                         }
                     }
@@ -78,7 +76,7 @@ pub async fn process<'a, D>(
                 }
             }
             Either::Second(command) => match command {
-                WifiCommand::SetConfiguration(conf) => wifi.set_configuration(&conf).unwrap(),
+                WifiCommand::SetConfiguration(conf) => wifi.set_configuration(&conf).await.unwrap(),
             },
         }
     }

@@ -14,7 +14,6 @@ crossbeam-utils = { git = "https://github.com/crossbeam-rs/crossbeam" }
 # esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal" }
 # esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc" }
 # edge-frame = { git = "https://github.com/ivmarkov/edge-frame" }
-# shared-bus = { git = "https://github.com/taks/shared-bus", branch = "embedded-hal-1.0.0-alpha.10" }
 # shared-bus = { git = "https://github.com/taks/shared-bus" }
 
 #socket2 = { git = "https://github.com/esp-rs-compat/socket2" }

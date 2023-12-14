@@ -137,43 +137,43 @@ mod mqtt_msg;
 mod peripherals;
 mod services;
 
-///
-/// # Safety
-pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(
-    tv: *mut esp_idf_svc::sys::timeval,
-) {
-    let naive_dt_opt = NaiveDateTime::from_timestamp_opt((*tv).tv_sec as i64, 0);
-    let naive_dt = if let Some(value) = naive_dt_opt {
-        value
-    } else {
-        NaiveDateTime::default()
-    };
-    let dt = DateTime::<Utc>::from_utc(naive_dt, Utc);
+// ///
+// /// # Safety
+// pub unsafe extern "C" fn sntp_set_time_sync_notification_cb_custom(
+//     tv: *mut esp_idf_svc::sys::timeval,
+// ) {
+//     let naive_dt_opt = NaiveDateTime::from_timestamp_opt((*tv).tv_sec as i64, 0);
+//     let naive_dt = if let Some(value) = naive_dt_opt {
+//         value
+//     } else {
+//         NaiveDateTime::default()
+//     };
+//     let dt = DateTime::<Utc>::from_utc(naive_dt, Utc);
 
-    debug!(
-        "SNTP Sync Callback fired. Timestamp: {} / Year: {}",
-        dt.timestamp().to_string(),
-        dt.year().to_string()
-    );
+//     debug!(
+//         "SNTP Sync Callback fired. Timestamp: {} / Year: {}",
+//         dt.timestamp().to_string(),
+//         dt.year().to_string()
+//     );
 
-    if dt.year() < CURRENT_YEAR.into() {
-        debug!("SNTP Sync Callback: Falling back to RTC for sync.");
+//     if dt.year() < CURRENT_YEAR.into() {
+//         debug!("SNTP Sync Callback: Falling back to RTC for sync.");
 
-        // FIXME
-        todo!();
-    } else {
-        debug!(
-            "SNTP Sync Callback: Update RTC from local time. sec: {}, usec: {}",
-            (*tv).tv_sec,
-            (*tv).tv_usec
-        );
+//         // FIXME
+//         todo!();
+//     } else {
+//         debug!(
+//             "SNTP Sync Callback: Update RTC from local time. sec: {}, usec: {}",
+//             (*tv).tv_sec,
+//             (*tv).tv_usec
+//         );
 
-        external_rtc::COMMAND.signal(external_rtc::RtcExternalCommand::SntpSyncCallbackUpdateRtc);
+//         external_rtc::COMMAND.signal(external_rtc::RtcExternalCommand::SntpSyncCallbackUpdateRtc);
 
-        // FIXME simulating, battery status update
-        // keepalive::NOTIF.notify();
-    }
-}
+//         // FIXME simulating, battery status update
+//         // keepalive::NOTIF.notify();
+//     }
+// }
 
 pub fn sntp_sync_callback(time: ::core::time::Duration) {}
 
@@ -256,7 +256,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     let i2c0_peripherals = peripherals.i2c0;
     let config = I2cConfig::new();
-    let _ = config.baudrate(Hertz::from(400_u32));
+    let _ = config.clone().baudrate(Hertz::from(400_u32));
 
     let i2c0_driver = I2cDriver::new(
         i2c0_peripherals.i2c,
@@ -367,8 +367,9 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Httpd
 
-    let mut httpd = services::httpd()?;
-    let ws_acceptor = httpd::configure_websockets(&mut httpd)?;
+    // FIXME
+    // let mut httpd = services::httpd()?;
+    // let ws_acceptor = httpd::configure_websockets(&mut httpd)?;
 
     // Mqtt
 
@@ -466,9 +467,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         battery_voltage,
         PinDriver::input(peripherals.battery.power)?,
         // display,
-        (wifi, wifi_notif),
-        &mut httpd,
-        Some(ws_acceptor),
+        // &mut httpd,
         pwm,
         rtc_clock,
         move |_new_state| {
@@ -477,8 +476,6 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
         },
         netif_notifier(sysloop.clone()).unwrap(),
         mqtt_topic_prefix,
-        mqtt_client,
-        mqtt_conn,
     );
 
     // Mid-prio tasks
@@ -507,8 +504,8 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
             // },
         );
 
-        // spawn::wifi(&mut executor, &mut tasks, wifi, wifi_notif)?;
-        // spawn::mqtt_receive(&mut executor, &mut tasks, mqtt_conn)?;
+        spawn::wifi(&executor, wifi, wifi_notif).expect("Spawn Wifi in Executor");
+        spawn::mqtt_receive(&executor, mqtt_conn);
 
         executor
     });
@@ -527,7 +524,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     let low_prio_execution = services::schedule::<4>(50000, quit::QUIT[2].wait(), move || {
         let executor = LocalExecutor::new();
 
-        // spawn::mqtt_send::<MQTT_MAX_TOPIC_LEN, 4>(&executor, mqtt_topic_prefix, mqtt_client);
+        spawn::mqtt_send::<MQTT_MAX_TOPIC_LEN, 4>(&executor, mqtt_topic_prefix, mqtt_client);
         // spawn::ws(&executor, ws_acceptor);
 
         executor

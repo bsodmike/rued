@@ -63,15 +63,13 @@ use gfx_xtra::draw_target::{Flushable, OwnedDrawTargetExt};
 use edge_executor::*;
 use shared_bus::BusManager;
 
-// FIXME This is MQTT based on ruwm
-// use crate::core::internal::mqtt::{MessageParser, MqttCommand};
+use crate::core::internal::mqtt::{MessageParser, MqttCommand};
 
 use crate::core::internal::pulse_counter::PulseCounter;
 use crate::core::internal::pulse_counter::PulseWakeup;
 use crate::core::internal::ws;
 
 use crate::core::internal::screen::Color;
-use crate::mqtt_msg::{MessageParser, MqttCommand};
 // use ruwm::button::PressedLevel;
 // use ruwm::pulse_counter::PulseCounter;
 // use ruwm::pulse_counter::PulseWakeup;
@@ -221,7 +219,6 @@ pub fn pulse(
     let pulse_counter = crate::core::internal::pulse_counter::CpuPulseCounter::new(
         subscribe_pin(peripherals.pulse, || PULSE_SIGNAL.notify())?,
         crate::core::internal::button::PressedLevel::Low,
-        &PULSE_SIGNAL,
         Some(Duration::from_millis(50)),
     );
 
@@ -247,7 +244,8 @@ pub fn pulse(
 pub fn button<'d, P: InputPin + OutputPin>(
     pin: impl Peripheral<P = P> + 'd,
     notification: &'static Notification,
-) -> Result<impl embedded_hal::digital::InputPin + 'd, InitError> {
+) -> Result<impl embedded_hal::digital::InputPin + embedded_hal_async::digital::Wait + 'd, InitError>
+{
     let resp = subscribe_pin(pin, move || notification.notify())?;
 
     Ok(resp)
@@ -341,7 +339,6 @@ pub fn display<'a>(
             .with_display_size(240, 320)
             .with_framebuffer_size(240, 320)
             .with_color_order(mipidsi::ColorOrder::Bgr)
-            .with_invert_colors(true)
             .with_orientation(mipidsi::Orientation::PortraitInverted(true))
             .init(&mut delay::Ets, Some(rst))
             .unwrap()
@@ -378,7 +375,7 @@ pub fn display<'a>(
         display.owned_cropped(display, &rect)
     };
 
-    let display = display.owned_color_converted().owned_noop_flushing();
+    let display = display.owned_noop_flushing().owned_color_converted();
 
     Ok(display)
 }
@@ -386,7 +383,7 @@ pub fn display<'a>(
 // TODO: Make it async
 pub fn wifi<'d>(
     modem: impl Peripheral<P = impl WifiModemPeripheral + 'd> + 'd,
-    sysloop: EspSystemEventLoop,
+    mut sysloop: EspSystemEventLoop,
     timer_service: EspTaskTimerService,
     partition: Option<EspDefaultNvsPartition>,
     auth_method: AuthMethod,
@@ -422,7 +419,7 @@ pub fn wifi<'d>(
 
     bwifi.wait_netif_up()?;
 
-    let wifi = AsyncWifi::wrap(wifi, sysloop, timer_service)?;
+    let wifi = AsyncWifi::wrap(wifi, sysloop.clone(), timer_service)?;
 
     Ok((
         wifi,
@@ -430,7 +427,7 @@ pub fn wifi<'d>(
     ))
 }
 
-pub fn httpd() -> Result<LazyInitHttpServer<'static>, InitError> {
+pub fn httpd<'a>() -> Result<LazyInitHttpServer<'a>, InitError> {
     let server_certificate = tls::X509::pem_until_nul(include_bytes!(
         "/home/mike/esp/openssl-generate-rs/output/cert.pem"
     ));
@@ -447,11 +444,11 @@ pub fn httpd() -> Result<LazyInitHttpServer<'static>, InitError> {
     Ok(httpd)
 }
 
-pub fn mqtt<'a>() -> Result<
+pub fn mqtt() -> Result<
     (
         &'static str,
         impl Client + Publish,
-        impl Connection<Message<'a> = Option<MqttCommand>>,
+        impl for<'a> Connection<Message<'a> = Option<MqttCommand>> + 'static,
     ),
     InitError,
 > {
@@ -507,7 +504,8 @@ pub fn adc<'d, const A: adc_atten_t, ADC: Adc + 'd, P: ADCPin<Adc = ADC>>(
 fn subscribe_pin<'d, P: InputPin + OutputPin>(
     pin: impl Peripheral<P = P> + 'd,
     notify: impl Fn() + Send + 'static,
-) -> Result<impl embedded_hal::digital::InputPin + 'd, InitError> {
+) -> Result<impl embedded_hal::digital::InputPin + embedded_hal_async::digital::Wait + 'd, InitError>
+{
     let mut pin = PinDriver::input(pin)?;
 
     pin.set_interrupt_type(InterruptType::NegEdge)?;

@@ -6,7 +6,6 @@ use embedded_hal_0_2::{adc, PwmPin};
 use embedded_hal_async::digital::Wait;
 
 use embedded_svc::mqtt::client::asynch::{Client, Connection, Publish};
-use embedded_svc::wifi::Wifi as WifiTrait;
 use embedded_svc::ws::asynch::server::Acceptor;
 use esp_idf_svc::handle::RawHandle;
 use esp_idf_svc::http::server::EspHttpServer;
@@ -19,9 +18,9 @@ use edge_executor::*;
 
 use channel_bridge::asynch::*;
 
+use crate::core::internal::mqtt::MqttCommand;
 use crate::core::internal::screen;
 use crate::models::rtc_external::RtcExternal;
-use crate::mqtt_msg::MqttCommand;
 use crate::services::httpd::LazyInitHttpServer;
 use crate::MQTT_MAX_TOPIC_LEN;
 
@@ -34,16 +33,11 @@ use super::{battery, mqtt, wifi};
 
 pub fn high_prio<'a, const C: usize>(
     executor: &LocalExecutor<'a, C>,
-    button1_pin: impl InputPin<Error = impl Debug + 'a> + 'a,
+    button1_pin: impl InputPin<Error = impl Debug + 'a> + Wait + 'a,
     battery_voltage: impl crate::core::internal::battery::Adc + 'a,
     power_pin: impl InputPin + 'a,
     // display: D,
-    wifi: (
-        impl embedded_svc::wifi::asynch::Wifi + 'a,
-        impl Receiver<Data = WifiEvent> + 'a,
-    ),
-    httpd: &'a mut LazyInitHttpServer,
-    acceptor: Option<impl Acceptor + 'a>,
+    // httpd: &'a mut LazyInitHttpServer<'a>,
     pwm: Option<(
         impl PwmPin<Duty = u32> + 'a,
         impl PwmPin<Duty = u32> + 'a,
@@ -53,8 +47,6 @@ pub fn high_prio<'a, const C: usize>(
     pwm_flash: impl FnMut(crate::NvsDataState) + 'a,
     netif_notifier: impl Receiver<Data = IpEvent> + 'a,
     mqtt_topic_prefix: &'a str,
-    mqtt_client: impl Client + Publish + 'a,
-    mqtt_conn: impl Connection<Message<'a> = Option<MqttCommand>> + 'a,
 ) {
     executor
         .spawn(button::button1_process(button1_pin, PressedLevel::Low))
@@ -63,10 +55,10 @@ pub fn high_prio<'a, const C: usize>(
     executor.spawn(super::keepalive::process()).detach();
     // executor.spawn(screen::process()).detach();
     // executor.spawn(screen::run_draw(display)).detach();
-    executor
-        .spawn(super::wifi::process(wifi.0, wifi.1))
-        .detach();
-    executor.spawn(super::httpd::process(httpd)).detach();
+
+    // FIXME
+    // executor.spawn(super::httpd::process(httpd)).detach();
+
     executor.spawn(super::pwm::process(pwm)).detach();
     executor.spawn(super::sntp::process()).detach();
     executor.spawn(super::pwm::flash(pwm_flash)).detach();
@@ -79,16 +71,6 @@ pub fn high_prio<'a, const C: usize>(
         .detach();
     // OTA
     executor.spawn(super::ota::ota_task()).detach();
-    // MQTT
-    executor
-        .spawn(super::mqtt::receive_task(mqtt_conn))
-        .detach();
-    executor
-        .spawn(super::mqtt::send_task::<MQTT_MAX_TOPIC_LEN>(
-            mqtt_topic_prefix,
-            mqtt_client,
-        ))
-        .detach();
 
     if let Some(rtc) = rtc {
         executor.spawn(super::external_rtc::process(rtc)).detach();
@@ -166,39 +148,29 @@ pub fn wifi<'a, const C: usize, D>(
 ) -> Result<(), SpawnError>
 where
     D: 'a,
+    WifiEvent: From<D>,
 {
     executor.spawn(wifi::process(wifi, wifi_notif)).detach();
 
     Ok(())
 }
 
-// FIXME This is MQTT based on ruwm
-// pub fn mqtt_send<'a, const L: usize, const C: usize, M>(
-//     executor: &mut Executor<'a, C, M, Local>,
-//     tasks: &mut heapless::Vec<Task<()>, C>,
-//     mqtt_topic_prefix: &'a str,
-//     mqtt_client: impl Client + Publish + 'a,
-// ) -> Result<(), SpawnError>
-// where
-//     M: Monitor + Default,
-// {
-//     executor.spawn_local_collect(mqtt::send::<L>(mqtt_topic_prefix, mqtt_client), tasks)?;
+pub fn mqtt_send<'a, const L: usize, const C: usize>(
+    executor: &LocalExecutor<'a, C>,
+    mqtt_topic_prefix: &'a str,
+    mqtt_client: impl Client + Publish + 'a,
+) {
+    executor
+        .spawn(mqtt::send::<L>(mqtt_topic_prefix, mqtt_client))
+        .detach();
+}
 
-//     Ok(())
-// }
-
-// pub fn mqtt_receive<'a, const C: usize, M>(
-//     executor: &mut Executor<'a, C, M, Local>,
-//     tasks: &mut heapless::Vec<Task<()>, C>,
-//     mqtt_conn: impl Connection<Message = Option<MqttCommand>> + 'a,
-// ) -> Result<(), SpawnError>
-// where
-//     M: Monitor + Default,
-// {
-//     executor.spawn_local_collect(mqtt::receive(mqtt_conn), tasks)?;
-
-//     Ok(())
-// }
+pub fn mqtt_receive<const C: usize>(
+    executor: &LocalExecutor<'_, C>,
+    mqtt_conn: impl for<'a> Connection<Message<'a> = Option<MqttCommand>> + 'static,
+) {
+    executor.spawn(mqtt::receive(mqtt_conn)).detach();
+}
 
 pub fn ws<'a, const C: usize>(
     executor: &LocalExecutor<'a, C>,

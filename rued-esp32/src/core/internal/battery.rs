@@ -1,8 +1,8 @@
+use core::fmt::Debug;
+
 use embassy_time::{Duration, Timer};
 
-use core::fmt::Debug;
-use embedded_hal_0_2::adc;
-use embedded_hal_0_2::digital::v2::InputPin;
+use embedded_hal::digital::InputPin;
 
 use super::state::State;
 

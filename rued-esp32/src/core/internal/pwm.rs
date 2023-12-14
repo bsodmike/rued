@@ -4,6 +4,7 @@ use core::fmt::Debug;
 use channel_bridge::Receiver;
 use embedded_hal_0_2::PwmPin;
 use esp_idf_svc::hal::delay::FreeRtos;
+use esp_idf_svc::hal::ledc::LedcDriver;
 use serde::{Deserialize, Serialize};
 
 use log::trace;
@@ -69,13 +70,13 @@ pub async fn process<'a>(
         impl PwmPin<Duty = u32> + 'a,
     )>,
 ) {
-    let mut pwm0;
-    let mut pwm1;
-    let mut pwm2;
+    let mut pwm0: LedcDriver<'a>;
+    let mut pwm1: LedcDriver<'a>;
+    let mut pwm2: LedcDriver<'a>;
 
     #[cfg(feature = "pwm")]
     {
-        let (mut pwm0, mut pwm1, mut pwm2) = pwm.expect("Unwraps pwm channels");
+        let (pwm0, pwm1, pwm2) = pwm.expect("Unwraps pwm channels");
 
         set_duty(&mut pwm0, DEFAULT_DUTY_CYCLE);
         set_duty(&mut pwm1, DEFAULT_DUTY_CYCLE);

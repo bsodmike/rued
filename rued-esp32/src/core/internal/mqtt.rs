@@ -1,164 +1,436 @@
-use super::state::*;
-use crate::{
-    models::{
-        ApplicationDataChange, ApplicationStateChange, APPLICATION_DATA_CHANNEL,
-        APPLICATION_EVENT_CHANNEL,
-    },
-    mqtt_msg::{MqttCommand, MQTT_TOPIC_POSTFIX_BATTERY_VOLTAGE, MQTT_TOPIC_POSTFIX_COMMAND},
-};
 use core::str::{self, FromStr};
-use embassy_futures::select::{select, select3, Either, Either3};
+use core::time::Duration;
+
+use log::{error, info};
+
+use serde::{Deserialize, Serialize};
+
+use heapless::String;
+
+use embassy_futures::select::{select, Either};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
-use embedded_svc::mqtt::client::asynch::{Client, Connection, Event, Publish, QoS};
-use log::*;
 
-static MQTT_CONNECT_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
+use embedded_svc::mqtt::client::asynch::{Client, Connection, Event, Message, Publish, QoS};
+use embedded_svc::mqtt::client::Details;
 
-pub async fn receive_task<'a>(
-    mut connection: impl Connection<Message<'a> = Option<MqttCommand>> + 'a,
-) {
-    let mut app_event = APPLICATION_EVENT_CHANNEL.subscriber().unwrap();
+use channel_bridge::notification::Notification;
 
-    loop {
-        let (message, app_state_change) =
-            match select(connection.next(), app_event.next_message_pure()).await {
-                Either::First(message) => {
-                    info!("send_task recv MQTT_CONNECT_SIGNAL");
-                    (message, None)
-                }
-                Either::Second(app_state_change) => {
-                    info!("send_task recv app_state_change");
-                    (None, Some(app_state_change))
-                }
-            };
+use crate::core::internal::battery::{self, BatteryState};
 
-        if let Some(message) = message {
-            info!("receive_task [MQTT/CONNECTION]: {:?}", message);
+use crate::core::internal::error;
 
-            if let Ok(Event::Received(Some(cmd))) = &message {
-                match cmd {
-                    MqttCommand::ExecOTAUpdate(url) => {
-                        info!(
-                            "receive_task MQTT received OTA update request. url = {}",
-                            url
-                        );
-                        let publisher = APPLICATION_EVENT_CHANNEL.publisher().unwrap();
-                        let data = ApplicationStateChange::OTAUpdateRequest(url.clone());
-                        publisher.publish(data).await;
-                    }
-                    MqttCommand::SystemRestart => {
-                        info!("receive_task MQTT received system restart request");
-                        unsafe {
-                            esp_idf_svc::sys::esp_restart();
-                        }
-                    }
-                }
-            } else if matches!(&message, Ok(Event::Connected(_))) {
-                MQTT_CONNECT_SIGNAL.signal(true);
-            } else if matches!(&message, Ok(Event::Disconnected)) {
-                MQTT_CONNECT_SIGNAL.signal(false);
-            }
-        }
-
-        if let Some(ApplicationStateChange::OTAUpdateStarted) = app_state_change {
-            info!("receive_task OTA Update started shutting down mqtt receive_task");
-            // No clean-up of the mqtt object here as this has been done in
-            // send_task
-            break;
-        }
-    }
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub struct MqttConfiguration {
+    protocol_311: bool,
+    url: heapless::String<128>,
+    client_id: heapless::String<64>,
+    username: heapless::String<64>,
+    password: heapless::String<64>,
 }
 
-// send will react on application state change event and then send the MQTT message
-// the application state change event will be fired if new wind data is availbale.
-// the requence in which MQTT messages are send depends on how often the application
-// state change events gets fired.
-// we are not implementing explicit re-connect logic, as this is already implemented
-// in ESP IDF for MQTT.
-pub async fn send_task<const L: usize>(topic_prefix: &str, mut mqtt: impl Client + Publish) {
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+pub enum MqttCommand {
+    KeepAlive(Duration),
+    Valve(bool),
+    FlowWatch(bool),
+    SystemUpdate,
+}
+
+pub type MqttClientNotification = Result<Event<Option<MqttCommand>>, ()>;
+
+// TODO: Web: connected info at least
+static PUBLISH_NOTIFY: &[&Notification] = &[
+    &crate::keepalive::NOTIF,
+    &crate::core::internal::screen::MQTT_STATE_NOTIF,
+];
+static RECEIVE_NOTIFY: &[&Notification] = &[
+    &crate::keepalive::NOTIF,
+    &crate::core::internal::screen::MQTT_STATE_NOTIF,
+];
+
+pub(crate) static BATTERY_STATE_NOTIF: Notification = Notification::new();
+pub(crate) static WIFI_STATE_NOTIF: Notification = Notification::new();
+
+static CONN_SIGNAL: Signal<CriticalSectionRawMutex, bool> = Signal::new();
+
+pub async fn send<const L: usize>(topic_prefix: &str, mut mqtt: impl Client + Publish) {
     let mut connected = false;
 
     let topic = |topic_suffix| {
-        heapless::String::<L>::from_str(topic_prefix)
+        String::<L>::from_str(topic_prefix.as_ref())
             .and_then(|mut s| s.push_str(topic_suffix).map(|_| s))
-            .unwrap_or_else(|_| panic!("failed to construct topic"))
+            .unwrap_or_else(|_| panic!(""))
     };
 
-    let topic_commands = topic(MQTT_TOPIC_POSTFIX_COMMAND);
-    let topic_battery_voltage = topic(MQTT_TOPIC_POSTFIX_BATTERY_VOLTAGE);
+    let topic_commands = topic("/commands/#");
 
-    let mut app_event = APPLICATION_EVENT_CHANNEL.subscriber().unwrap();
-    let mut app_data = APPLICATION_DATA_CHANNEL.subscriber().unwrap();
+    let topic_valve = topic("/valve");
+
+    let topic_meter_edges = topic("/meter/edges");
+    let topic_meter_armed = topic("/meter/armed");
+    let topic_meter_leak = topic("/meter/leak");
+
+    let topic_battery_voltage = topic("/battery/voltage");
+    let topic_battery_low = topic("/battery/low");
+    let topic_battery_charged = topic("/battery/charged");
+
+    let topic_powered = topic("/powered");
+
+    let mut published_battery_state: Option<BatteryState> = None;
 
     loop {
-        let (conn_state, app_state_change, app_data) = match select3(
-            MQTT_CONNECT_SIGNAL.wait(),
-            app_event.next_message_pure(),
-            app_data.next_message_pure(),
-        )
-        .await
-        {
-            Either3::First(conn_state) => {
-                info!("send_task recv MQTT_CONNECT_SIGNAL");
-                (Some(conn_state), None, None)
+        let (conn_state, battery_state) = if connected {
+            match select(CONN_SIGNAL.wait(), BATTERY_STATE_NOTIF.wait()).await {
+                Either::First(conn_state) => (Some(conn_state), None),
+                Either::Second(_) => (None, Some(battery::STATE.get())),
             }
-            Either3::Second(app_state_change) => {
-                info!("send_task recv app_state_change");
-                (None, Some(app_state_change), None)
-            }
-            Either3::Third(app_data) => {
-                info!("send_task recv app_data");
-                (None, None, Some(app_data))
-            }
+        } else {
+            let conn_state = CONN_SIGNAL.wait().await;
+
+            (Some(conn_state), None)
         };
 
-        if let Some(new_conn_state) = conn_state {
-            if new_conn_state {
-                info!("send_task MQTT is now connected, subscribing");
+        if let Some(conn_state) = conn_state {
+            if conn_state {
+                info!("MQTT is now connected, subscribing");
 
-                mqtt.subscribe(topic_commands.as_str(), QoS::AtLeastOnce)
-                    .await
-                    .unwrap();
+                error::check!(
+                    mqtt.subscribe(topic_commands.as_str(), QoS::AtLeastOnce)
+                        .await
+                )
+                .unwrap();
 
                 connected = true;
             } else {
-                info!("send_task MQTT disconnected");
+                info!("MQTT disconnected");
 
                 connected = false;
             }
         }
 
-        if let Some(ApplicationStateChange::OTAUpdateStarted) = app_state_change {
-            info!("send_task OTA Update started shutting down mqtt send_task");
-            drop(mqtt);
+        // if let Some(valve_state) = valve_state {
+        //     if published_valve_state != valve_state {
+        //         published_valve_state = valve_state;
+
+        //         let status = match valve_state {
+        //             Some(ValveState::Open) => "open",
+        //             Some(ValveState::Opening(_)) => "opening",
+        //             Some(ValveState::Closed) => "closed",
+        //             Some(ValveState::Closing(_)) => "closing",
+        //             None => "unknown",
+        //         };
+
+        //         publish(
+        //             connected,
+        //             &mut mqtt,
+        //             &topic_valve,
+        //             QoS::AtLeastOnce,
+        //             status.as_bytes(),
+        //         )
+        //         .await;
+        //     }
+        // }
+
+        // if let Some(wm_state) = wm_state {
+        //     if published_wm_state
+        //         .map(|p| p.edges_count != wm_state.edges_count)
+        //         .unwrap_or(true)
+        //     {
+        //         let num = wm_state.edges_count.to_le_bytes();
+        //         let num_slice: &[u8] = &num;
+
+        //         publish(
+        //             connected,
+        //             &mut mqtt,
+        //             &topic_meter_edges,
+        //             QoS::AtLeastOnce,
+        //             num_slice,
+        //         )
+        //         .await;
+        //     }
+
+        //     if published_wm_state
+        //         .map(|p| p.armed != wm_state.armed)
+        //         .unwrap_or(true)
+        //     {
+        //         publish(
+        //             connected,
+        //             &mut mqtt,
+        //             &topic_meter_armed,
+        //             QoS::AtLeastOnce,
+        //             (if wm_state.armed { "true" } else { "false" }).as_bytes(),
+        //         )
+        //         .await;
+        //     }
+
+        //     if published_wm_state
+        //         .map(|p| p.leaking != wm_state.leaking)
+        //         .unwrap_or(true)
+        //     {
+        //         publish(
+        //             connected,
+        //             &mut mqtt,
+        //             &topic_meter_leak,
+        //             QoS::AtLeastOnce,
+        //             (if wm_state.armed { "true" } else { "false" }).as_bytes(),
+        //         )
+        //         .await;
+        //     }
+
+        //     published_wm_state = Some(wm_state);
+        // }
+
+        if let Some(battery_state) = battery_state {
+            if published_battery_state
+                .map(|p| p.voltage != battery_state.voltage)
+                .unwrap_or(true)
+            {
+                if let Some(voltage) = battery_state.voltage {
+                    let num = voltage.to_le_bytes();
+                    let num_slice: &[u8] = &num;
+
+                    publish(
+                        connected,
+                        &mut mqtt,
+                        &topic_battery_voltage,
+                        QoS::AtMostOnce,
+                        num_slice,
+                    )
+                    .await;
+
+                    if let Some(prev_voltage) = published_battery_state.and_then(|p| p.voltage) {
+                        if (prev_voltage > BatteryState::LOW_VOLTAGE)
+                            != (voltage > BatteryState::LOW_VOLTAGE)
+                        {
+                            let status = if voltage > BatteryState::LOW_VOLTAGE {
+                                "false"
+                            } else {
+                                "true"
+                            };
+
+                            publish(
+                                connected,
+                                &mut mqtt,
+                                &topic_battery_low,
+                                QoS::AtLeastOnce,
+                                status.as_bytes(),
+                            )
+                            .await;
+                        }
+
+                        if (prev_voltage >= BatteryState::MAX_VOLTAGE)
+                            != (voltage >= BatteryState::MAX_VOLTAGE)
+                        {
+                            let status = if voltage >= BatteryState::MAX_VOLTAGE {
+                                "true"
+                            } else {
+                                "false"
+                            };
+
+                            publish(
+                                connected,
+                                &mut mqtt,
+                                &topic_battery_charged,
+                                QoS::AtMostOnce,
+                                status.as_bytes(),
+                            )
+                            .await;
+                        }
+                    }
+                }
+            }
+
+            if published_battery_state
+                .map(|p| p.powered != battery_state.powered)
+                .unwrap_or(true)
+            {
+                if let Some(powered) = battery_state.powered {
+                    publish(
+                        connected,
+                        &mut mqtt,
+                        &topic_powered,
+                        QoS::AtMostOnce,
+                        (if powered { "true" } else { "false" }).as_bytes(),
+                    )
+                    .await;
+                }
+            }
+
+            published_battery_state = Some(battery_state);
+        };
+    }
+}
+
+async fn publish(connected: bool, mqtt: &mut impl Publish, topic: &str, qos: QoS, payload: &[u8]) {
+    if connected {
+        if let Ok(_msg_id) = error::check!(mqtt.publish(topic, qos, false, payload).await) {
+            // TODO
+            info!("Published to {}", topic);
+
+            if qos >= QoS::AtLeastOnce {
+                for notification in PUBLISH_NOTIFY {
+                    notification.notify();
+                }
+            }
+        }
+    } else {
+        error!("Client not connected, skipping publishment to {}", topic);
+    }
+}
+
+pub async fn receive(
+    mut connection: impl for<'a> Connection<Message<'a> = Option<MqttCommand>> + 'static,
+) {
+    loop {
+        let message = connection.next().await;
+
+        if let Some(message) = message {
+            info!("[MQTT/CONNECTION]: {:?}", message);
+
+            if let Ok(Event::Received(Some(cmd))) = &message {
+                match cmd {
+                    MqttCommand::Valve(open) => {
+                        // valve::COMMAND.signal(if *open {
+                        //     ValveCommand::Open
+                        // } else {
+                        //     ValveCommand::Close
+                        // });
+                    }
+                    MqttCommand::FlowWatch(enable) => {
+                        // wm::COMMAND.signal(if *enable {
+                        //     WaterMeterCommand::Arm
+                        // } else {
+                        //     WaterMeterCommand::Disarm
+                        // });
+                    }
+                    _ => (),
+                }
+            } else if matches!(&message, Ok(Event::Connected(_))) {
+                CONN_SIGNAL.signal(true);
+            } else if matches!(&message, Ok(Event::Disconnected)) {
+                CONN_SIGNAL.signal(false);
+            }
+
+            for notification in RECEIVE_NOTIFY {
+                notification.notify();
+            }
+        } else {
             break;
         }
+    }
+}
 
-        if let Some(ApplicationDataChange::NewBatteryData(battery_data)) = app_data {
-            info!(
-                "send_task send new battery voltage data {}",
-                battery_data.voltage
-            );
+#[derive(Default)]
+pub struct MessageParser {
+    #[allow(clippy::type_complexity)]
+    command_parser: Option<fn(&[u8]) -> Option<MqttCommand>>,
+    payload_buf: [u8; 16],
+}
 
-            if connected {
-                if let Ok(_msg_id) = super::error::check!(
-                    mqtt.publish(
-                        &topic_battery_voltage,
-                        QoS::AtLeastOnce,
-                        false,
-                        format!("{}", battery_data.voltage).as_str().as_bytes()
-                    )
-                    .await
-                ) {
-                    info!("send_task published to {}", topic_battery_voltage);
+impl MessageParser {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn convert<M, E>(
+        &mut self,
+        event: &Result<Event<M>, E>,
+    ) -> Result<Event<Option<MqttCommand>>, E>
+    where
+        M: Message,
+        E: Clone,
+    {
+        event
+            .as_ref()
+            .map(|event| event.transform_received(|message| self.process(message)))
+            .map_err(|e| e.clone())
+    }
+
+    fn process<M>(&mut self, message: &M) -> Option<MqttCommand>
+    where
+        M: Message,
+    {
+        match message.details() {
+            Details::Complete => Self::parse_command(message.topic().unwrap())
+                .and_then(|parser| parser(message.data())),
+            Details::InitialChunk(initial_chunk_data) => {
+                if initial_chunk_data.total_data_size > self.payload_buf.len() {
+                    self.command_parser = None;
+                } else {
+                    self.command_parser = Self::parse_command(message.topic().unwrap());
+
+                    self.payload_buf[..message.data().len()]
+                        .copy_from_slice(message.data().as_ref());
                 }
-            } else {
-                info!(
-                    "send_task client not connected, skipping publishment to {}",
-                    topic_battery_voltage
-                );
+
+                None
             }
+            Details::SubsequentChunk(subsequent_chunk_data) => {
+                if let Some(command_parser) = self.command_parser.as_ref() {
+                    self.payload_buf
+                        [subsequent_chunk_data.current_data_offset..message.data().len()]
+                        .copy_from_slice(message.data().as_ref());
+
+                    if subsequent_chunk_data.total_data_size
+                        == subsequent_chunk_data.current_data_offset + message.data().len()
+                    {
+                        command_parser(&self.payload_buf[0..subsequent_chunk_data.total_data_size])
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn parse_command(topic: &str) -> Option<fn(&[u8]) -> Option<MqttCommand>> {
+        if topic.ends_with("/commands/valve") {
+            Some(Self::parse_valve_command)
+        } else if topic.ends_with("/commands/flow_watch") {
+            Some(Self::parse_flow_watch_command)
+        } else if topic.ends_with("/commands/keep_alive") {
+            Some(Self::parse_keep_alive_command)
+        } else if topic.ends_with("/commands/system_update") {
+            Some(Self::parse_system_update_command)
+        } else {
+            None
+        }
+    }
+
+    fn parse_valve_command(data: &[u8]) -> Option<MqttCommand> {
+        Self::parse::<bool>(data).map(MqttCommand::Valve)
+    }
+
+    fn parse_flow_watch_command(data: &[u8]) -> Option<MqttCommand> {
+        Self::parse::<bool>(data).map(MqttCommand::FlowWatch)
+    }
+
+    fn parse_keep_alive_command(data: &[u8]) -> Option<MqttCommand> {
+        Self::parse::<u32>(data).map(|secs| MqttCommand::KeepAlive(Duration::from_secs(secs as _)))
+    }
+
+    fn parse_system_update_command(data: &[u8]) -> Option<MqttCommand> {
+        Self::parse_empty(data).map(|_| MqttCommand::SystemUpdate)
+    }
+
+    fn parse<T>(data: &[u8]) -> Option<T>
+    where
+        T: str::FromStr,
+    {
+        str::from_utf8(data)
+            .ok()
+            .and_then(|s| str::parse::<T>(s).ok())
+    }
+
+    fn parse_empty(data: &[u8]) -> Option<()> {
+        if data.is_empty() {
+            Some(())
+        } else {
+            None
         }
     }
 }
