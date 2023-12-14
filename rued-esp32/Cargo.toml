@@ -64,8 +64,7 @@ serde_json = "1.0.87"
 cstr_core = "0.2.6"
 uncased = { version = "0.9.7" }
 shared-bus = { version = "0.2", features = ["std"] }
-# rv8803-rs = { git = "https://github.com/bsodmike/rv8803-rs" }
-rv8803 = { path = "/home/mike/esp/rv8803-rs" }
+rv8803 = { version = "0.3" }
 embedded-sdmmc = { git = "https://github.com/rust-embedded-community/embedded-sdmmc-rs", branch = "develop" }
 
 # optional dependencies
