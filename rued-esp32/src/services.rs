@@ -427,7 +427,7 @@ pub fn wifi<'d>(
     ))
 }
 
-pub fn httpd<'a>() -> Result<LazyInitHttpServer<'a>, InitError> {
+pub fn httpd() -> Result<LazyInitHttpServer<'static>, InitError> {
     let server_certificate = tls::X509::pem_until_nul(include_bytes!(
         "/home/mike/esp/openssl-generate-rs/output/cert.pem"
     ));
@@ -439,7 +439,7 @@ pub fn httpd<'a>() -> Result<LazyInitHttpServer<'a>, InitError> {
     config.server_certificate = Some(server_certificate);
     config.private_key = Some(server_private_key);
 
-    let httpd = LazyInitHttpServer::new(config);
+    let httpd: LazyInitHttpServer<'static> = LazyInitHttpServer::new(config);
 
     Ok(httpd)
 }

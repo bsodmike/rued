@@ -8,23 +8,27 @@ pub struct LazyInitHttpServer<'a> {
     config: Configuration,
 }
 
-impl<'a> LazyInitHttpServer<'a> {
+impl LazyInitHttpServer<'static> {
     pub fn new(config: Configuration) -> Self {
         Self {
             data: Rc::new(RefCell::new(None)),
             config,
         }
     }
-    pub fn create(&self) -> RefMut<'a, EspHttpServer> {
+    pub fn create(&self) -> RefMut<'_, EspHttpServer<'static>> {
+        // let server = EspHttpServer::new(&self.config).unwrap();
+
         if self.data.borrow().is_none() {
             *self.data.borrow_mut() = Some(EspHttpServer::new(&self.config).unwrap());
         }
         let m = self.data.borrow_mut();
-        RefMut::map(m, |m| m.as_mut().unwrap())
+
+        let resp = RefMut::map(m, |m| m.as_mut().unwrap());
+        resp
     }
 
     #[allow(dead_code)]
-    pub fn get(&self) -> Option<RefMut<'a, EspHttpServer>> {
+    pub fn get(&self) -> Option<RefMut<'_, EspHttpServer<'static>>> {
         let m = self.data.borrow_mut();
         if m.is_some() {
             Some(RefMut::map(m, |m| m.as_mut().unwrap()))

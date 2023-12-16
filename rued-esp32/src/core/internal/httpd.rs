@@ -40,7 +40,7 @@ pub enum HttpdCommand {
 
 pub(crate) static COMMAND: Signal<CriticalSectionRawMutex, HttpdCommand> = Signal::new();
 
-pub async fn process<'a>(httpd: &'a mut LazyInitHttpServer<'a>) {
+pub async fn process(httpd: &mut LazyInitHttpServer<'static>) {
     const FIRMWARE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
     let mut network_event = NETWORK_EVENT_CHANNEL.subscriber().unwrap();

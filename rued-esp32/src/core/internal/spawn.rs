@@ -37,7 +37,7 @@ pub fn high_prio<'a, const C: usize>(
     battery_voltage: impl crate::core::internal::battery::Adc + 'a,
     power_pin: impl InputPin + 'a,
     // display: D,
-    // httpd: &'a mut LazyInitHttpServer<'a>,
+    httpd: &'a mut LazyInitHttpServer<'static>,
     pwm: Option<(
         impl PwmPin<Duty = u32> + 'a,
         impl PwmPin<Duty = u32> + 'a,
@@ -57,7 +57,7 @@ pub fn high_prio<'a, const C: usize>(
     // executor.spawn(screen::run_draw(display)).detach();
 
     // FIXME
-    // executor.spawn(super::httpd::process(httpd)).detach();
+    executor.spawn(super::httpd::process(httpd)).detach();
 
     executor.spawn(super::pwm::process(pwm)).detach();
     executor.spawn(super::sntp::process()).detach();

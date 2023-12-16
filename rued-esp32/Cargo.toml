@@ -1,6 +1,6 @@
 [package]
 name = "rued-esp32"
-version = "4.0.0"
+version = "5.0.0"
 authors = ["Michael de Silva <michael@mwdesilva.com>"]
 edition = "2021"
 resolver = "2"
@@ -36,7 +36,7 @@ log = { version = "0.4", features = [
     "release_max_level_debug",
 ] }
 futures = {version = "0.3", features = ["async-await"] }
-serde = { version = "1", default-features = false, features = ["derive"]}
+serde = { version = "1", default-features = false, features = ["derive"] }
 postcard = "0.7"
 heapless = { version = "0.7", features = ["serde"] }
 critical-section = "1.1"
