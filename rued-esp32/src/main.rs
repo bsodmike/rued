@@ -367,46 +367,8 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
 
     // Httpd
 
-    // FIXME
-    use esp_idf_svc::http::server::Middleware;
-    use esp_idf_svc::io::Write;
-
-    // const FIRMWARE_VERSION: &str = env!("CARGO_PKG_VERSION");
     let mut httpd = services::httpd()?;
-    // let http_server = esp_idf_svc::http::server::EspHttpServer::new(&config);
-
     // let ws_acceptor = httpd::configure_websockets(&mut httpd)?;
-
-    // let mut s = httpd;
-
-    // // log::info!("http_server_task: starting httpd on address: {:?}", ip);
-    // if let Err(err) = s.handler(
-    //     "/",
-    //     embedded_svc::http::Method::Get,
-    //     crate::httpd::middleware::DefaultMiddleware {}.compose(
-    //         //
-    //         esp_idf_svc::http::server::fn_handler(move |req| {
-    //             let mut headers = embedded_svc::utils::http::Headers::<1>::new();
-    //             headers.set_cache_control("no-store");
-
-    //             let mut resp = req.into_response(200, None, headers.as_slice())?;
-    //             resp.write_all(FIRMWARE_VERSION.as_bytes())?;
-
-    //             log::info!("Processing '/' request");
-    //             Ok(())
-    //         }),
-    //     ),
-    // ) {
-    //     log::info!(
-    //         "http_server_task: failed to register http handler /: {:?} - restarting device",
-    //         err
-    //     );
-    //     unsafe {
-    //         esp_idf_svc::sys::esp_restart();
-    //     }
-    // }
-
-    // crate::httpd::configure_handlers(&mut s).expect("Configure handlers for HTTPd server");
 
     // Mqtt
 

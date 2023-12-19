@@ -16,15 +16,11 @@ impl LazyInitHttpServer<'static> {
         }
     }
     pub fn create(&self) -> RefMut<'_, EspHttpServer<'static>> {
-        // let server = EspHttpServer::new(&self.config).unwrap();
-
         if self.data.borrow().is_none() {
             *self.data.borrow_mut() = Some(EspHttpServer::new(&self.config).unwrap());
         }
         let m = self.data.borrow_mut();
-
-        let resp = RefMut::map(m, |m| m.as_mut().unwrap());
-        resp
+        RefMut::map(m, |m| m.as_mut().unwrap())
     }
 
     #[allow(dead_code)]

@@ -11,7 +11,7 @@ rust-version = "1.71"
 [features]
 default = ["system", "experimental"]
 # system = ["display-i2c"]
-system = ["display-spi", "nvs", "external-rtc", "board"]
+system = ["display-spi", "nvs", "external-rtc", "board1"]
 
 external-rtc = []
 nvs = []
@@ -21,7 +21,8 @@ display-binary-color = []
 display-spi = ["profont", "ili9342"]
 ili9342 = ["profont", "mipidsi"]
 
-board = ["micromod-data-logging-carrier"]
+board1 = ["micromod-data-logging-carrier"]
+board2 = ["micromod-qwiic-carrier-single", "micromod-main-board-single", "pwm"]
 micromod-qwiic-carrier-single = []
 micromod-main-board-single = []
 micromod-data-logging-carrier = []

@@ -64,25 +64,12 @@ pub(crate) static COMMAND: Signal<CriticalSectionRawMutex, PwmCommand> = Signal:
 pub const DEFAULT_DUTY_CYCLE: u32 = 50;
 
 pub async fn process<'a>(
-    pwm: Option<(
+    #[allow(unused_mut)] mut pwm: Option<(
         impl PwmPin<Duty = u32> + 'a,
         impl PwmPin<Duty = u32> + 'a,
         impl PwmPin<Duty = u32> + 'a,
     )>,
 ) {
-    let mut pwm0: LedcDriver<'a>;
-    let mut pwm1: LedcDriver<'a>;
-    let mut pwm2: LedcDriver<'a>;
-
-    #[cfg(feature = "pwm")]
-    {
-        let (pwm0, pwm1, pwm2) = pwm.expect("Unwraps pwm channels");
-
-        set_duty(&mut pwm0, DEFAULT_DUTY_CYCLE);
-        set_duty(&mut pwm1, DEFAULT_DUTY_CYCLE);
-        set_duty(&mut pwm2, DEFAULT_DUTY_CYCLE);
-    }
-
     loop {
         let (future, index) = select_array([COMMAND.wait()]).await;
 
@@ -91,20 +78,29 @@ pub async fn process<'a>(
             match index {
                 0 => match future {
                     PwmCommand::SetDutyCycle(percentage) => {
+                        let (ref mut pwm0, ref mut pwm1, ref mut pwm2) =
+                            pwm.as_mut().expect("Unwraps pwm channels");
                         log::info!("PwmCommand::SetDutyCycle: {}", percentage);
 
                         if percentage > 100 {
                             log::warn!("PWM duty-cycle cannot exceed 100%");
                             return;
                         } else {
-                            set_duty(&mut pwm0, percentage);
-                            set_duty(&mut pwm1, percentage);
-                            set_duty(&mut pwm2, percentage);
+                            set_duty(pwm0, percentage);
+                            set_duty(pwm1, percentage);
+                            set_duty(pwm2, percentage);
 
                             STATE.update(future);
                         }
                     }
-                    PwmCommand::Initialised => {}
+                    PwmCommand::Initialised => {
+                        let (ref mut pwm0, ref mut pwm1, ref mut pwm2) =
+                            pwm.as_mut().expect("Unwraps pwm channels");
+
+                        set_duty(pwm0, DEFAULT_DUTY_CYCLE);
+                        set_duty(pwm1, DEFAULT_DUTY_CYCLE);
+                        set_duty(pwm2, DEFAULT_DUTY_CYCLE);
+                    }
                 },
                 _ => unreachable!(),
             }

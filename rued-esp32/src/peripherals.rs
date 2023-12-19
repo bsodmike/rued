@@ -60,7 +60,7 @@ pub struct SystemPeripherals<
 impl
     SystemPeripherals<
         Gpio33,
-        ADC1,
+        ADC2,
         Gpio2,
         Gpio32,
         Gpio0,
@@ -92,7 +92,7 @@ impl
                 spi1.sclk,      // SCK
                 spi1.sdo,       // MOSI
                 Some(spi1.sdi), // MISO / NOTE: Default value
-                Dma::Disabled,
+                &spi::SpiDriverConfig::new(),
             )
             .unwrap(),
         );
@@ -116,7 +116,7 @@ impl
             battery: BatteryPeripherals {
                 power: peripherals.pins.gpio35.into(), // A1
                 voltage: peripherals.pins.gpio2,
-                adc: peripherals.adc1,
+                adc: peripherals.adc2,
             },
             buttons: ButtonsPeripherals {
                 button1: peripherals.pins.gpio32, // G5
@@ -277,7 +277,7 @@ impl SystemPeripherals<Gpio0, ADC1, Gpio4, Gpio1, Gpio2, Gpio3, I2C0> {
                 spi1.sclk,      // SCK
                 spi1.sdo,       // MOSI
                 Some(spi1.sdi), // MISO / NOTE: Default value
-                Dma::Disabled,
+                &spi::SpiDriverConfig::new(),
             )
             .unwrap(),
         );

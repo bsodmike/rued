@@ -5,6 +5,7 @@ use embedded_svc::io::{Read, Write as EmbeddedSvcIoWrite};
 use log::trace;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::borrow::BorrowMut;
 use std::fmt::Write;
 use std::ops::Deref;
 use std::primitive::u8;
@@ -75,7 +76,7 @@ pub async fn process(httpd: &mut LazyInitHttpServer<'static>) {
 
         match network_state {
             Some(NetworkStateChange::IpAddressAssigned { ip }) => {
-                let mut s = httpd.create();
+                let mut s: std::cell::RefMut<'_, EspHttpServer<'static>> = httpd.create();
 
                 log::info!("http_server_task: starting httpd on address: {:?}", ip);
                 if let Err(err) = s.handler(
