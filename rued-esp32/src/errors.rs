@@ -5,6 +5,7 @@ use std::io::Error as IoError;
 // use edge_executor::SpawnError;
 use futures::task::SpawnError;
 
+use embedded_sdmmc::SdCardError;
 use esp_idf_svc::hal::i2c::I2cError;
 use esp_idf_svc::io::EspIOError;
 use esp_idf_svc::sys::EspError;
@@ -20,6 +21,7 @@ pub enum InitError {
     IoError(IoError),
     I2cError(I2cError),
     OtaError(OtaError),
+    SdCardError(embedded_sdmmc::Error<SdCardError>),
 }
 
 impl From<EspError> for InitError {
@@ -61,6 +63,18 @@ impl From<I2cError> for InitError {
 impl From<OtaError> for InitError {
     fn from(e: OtaError) -> Self {
         Self::OtaError(e)
+    }
+}
+
+impl From<embedded_sdmmc::Error<SdCardError>> for InitError {
+    fn from(e: embedded_sdmmc::Error<SdCardError>) -> Self {
+        Self::SdCardError(e)
+    }
+}
+
+impl From<SdCardError> for InitError {
+    fn from(e: SdCardError) -> Self {
+        Self::SdCardError(embedded_sdmmc::Error::DeviceError(e))
     }
 }
 
