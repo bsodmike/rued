@@ -322,26 +322,7 @@ fn run(wakeup_reason: WakeupReason) -> Result<(), InitError> {
     let mut sntp_conf = SntpConf::default();
     sntp_conf.servers = servers;
 
-    let sntp = sntp::EspSntp::new(&sntp_conf)?;
-
-    // FIXME
-    // NOTE upgrade
-    // unsafe {
-    //     // stop the sntp instance to redefine the callback
-    //     // https://github.com/esp-rs/esp-idf-svc/blob/v0.42.5/src/sntp.rs#L155-L158
-    //     esp_idf_svc::sys::sntp_stop();
-
-    //     // redefine and restart the callback.
-    //     esp_idf_svc::sys::sntp_set_time_sync_notification_cb(Some(
-    //         esp_idf_svc::sys::sntp_set_time_sync_notification_cb_custom,
-    //     ));
-
-    //     esp_idf_svc::sys::sntp_init()
-    // };
-
-    // FIXME enable in v0.46.0
-    // https://github.com/esp-rs/esp-idf-svc/pull/207
-    // let sntp = sntp::EspSntp::new_with_callback(&sntp_conf, sntp_sync_callback)?;
+    let sntp: EspSntp<'_> = sntp::EspSntp::new_with_callback(&sntp_conf, sntp_sync_callback)?;
 
     // Wifi
 

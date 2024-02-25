@@ -86,9 +86,6 @@ where
         + embedded_hal_0_2::blocking::i2c::WriteRead<Error = I2cError>,
 {
     pub fn new(bus_manager: &'a BusManager<Mutex<I2cDriver<'a>>>) -> Result<Self> {
-        let address = rv8803::i2c0::Address::Default;
-        let rtc = Rv8803::from_i2c0(bus_manager.acquire_i2c(), address)?;
-
         Ok(Self {
             datetime: None,
             bus_manager,
