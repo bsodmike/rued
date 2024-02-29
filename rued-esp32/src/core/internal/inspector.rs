@@ -9,7 +9,7 @@ use embassy_futures::select::select_array;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::blocking_mutex::Mutex;
 
-use embedded_svc::executor::asynch::Unblocker;
+use embedded_svc::utils::asyncify::Unblocker;
 
 use channel_bridge::notification::Notification;
 

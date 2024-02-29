@@ -1,16 +1,16 @@
 use std::marker::PhantomData;
 
-use esp_idf_hal::adc::*;
-use esp_idf_hal::gpio::*;
-use esp_idf_hal::i2c::*;
-use esp_idf_hal::ledc::CHANNEL0;
-use esp_idf_hal::ledc::CHANNEL1;
-use esp_idf_hal::ledc::CHANNEL2;
-use esp_idf_hal::ledc::TIMER0;
-use esp_idf_hal::modem::Modem;
-use esp_idf_hal::peripherals::Peripherals;
-use esp_idf_hal::spi::*;
-use esp_idf_hal::units::Hertz;
+use esp_idf_svc::hal::{
+    adc::*,
+    gpio::*,
+    i2c::*,
+    interrupt::InterruptType,
+    ledc::*,
+    modem::Modem,
+    peripherals::Peripherals,
+    spi::{self, *},
+    units::Hertz,
+};
 use shared_bus::{BusManager, NullMutex};
 
 pub const NO_PIN: Option<AnyIOPin> = None;
@@ -60,7 +60,7 @@ pub struct SystemPeripherals<
 impl
     SystemPeripherals<
         Gpio33,
-        ADC1,
+        ADC2,
         Gpio2,
         Gpio32,
         Gpio0,
@@ -92,7 +92,7 @@ impl
                 spi1.sclk,      // SCK
                 spi1.sdo,       // MOSI
                 Some(spi1.sdi), // MISO / NOTE: Default value
-                Dma::Disabled,
+                &spi::SpiDriverConfig::new(),
             )
             .unwrap(),
         );
@@ -116,7 +116,7 @@ impl
             battery: BatteryPeripherals {
                 power: peripherals.pins.gpio35.into(), // A1
                 voltage: peripherals.pins.gpio2,
-                adc: peripherals.adc1,
+                adc: peripherals.adc2,
             },
             buttons: ButtonsPeripherals {
                 button1: peripherals.pins.gpio32, // G5
@@ -185,15 +185,16 @@ impl SystemPeripherals<Gpio33, ADC1, Gpio35, Gpio27, Gpio13, Gpio12, I2C0> {
             cs: Some(peripherals.pins.gpio15.into()), // HEADER_CS / G0-Processor
         };
 
+        let spi_config = spi::SpiDriverConfig::new();
         let driver = std::sync::Arc::new(
             SpiDriver::new(
                 spi1.spi,
                 spi1.sclk,      // SCK
                 spi1.sdo,       // MOSI
                 Some(spi1.sdi), // MISO / NOTE: Default value
-                Dma::Disabled,
+                &spi_config,
             )
-            .unwrap(),
+            .expect("Initialise an instance of `SpiDriver`"),
         );
 
         let spi1 = SpiBusPeripherals {
@@ -276,7 +277,7 @@ impl SystemPeripherals<Gpio0, ADC1, Gpio4, Gpio1, Gpio2, Gpio3, I2C0> {
                 spi1.sclk,      // SCK
                 spi1.sdo,       // MOSI
                 Some(spi1.sdi), // MISO / NOTE: Default value
-                Dma::Disabled,
+                &spi::SpiDriverConfig::new(),
             )
             .unwrap(),
         );

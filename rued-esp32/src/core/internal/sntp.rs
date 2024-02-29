@@ -3,7 +3,7 @@ use core::fmt::Debug;
 
 use channel_bridge::Receiver;
 use embassy_time::{Duration, Timer};
-use esp_idf_hal::delay::FreeRtos;
+use esp_idf_svc::hal::delay::FreeRtos;
 use serde::{Deserialize, Serialize};
 
 use log::trace;
@@ -13,7 +13,7 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::signal::Signal;
 
-use embedded_svc::executor::asynch::Unblocker;
+use embedded_svc::utils::asyncify::Unblocker;
 
 use channel_bridge::notification::Notification;
 

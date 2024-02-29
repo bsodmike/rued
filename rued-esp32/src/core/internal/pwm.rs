@@ -3,7 +3,8 @@ use core::fmt::Debug;
 
 use channel_bridge::Receiver;
 use embedded_hal_0_2::PwmPin;
-use esp_idf_hal::delay::FreeRtos;
+use esp_idf_svc::hal::delay::FreeRtos;
+use esp_idf_svc::hal::ledc::LedcDriver;
 use serde::{Deserialize, Serialize};
 
 use log::trace;
@@ -13,7 +14,7 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::signal::Signal;
 
-use embedded_svc::executor::asynch::Unblocker;
+use embedded_svc::utils::asyncify::Unblocker;
 
 use channel_bridge::notification::Notification;
 
@@ -63,21 +64,12 @@ pub(crate) static COMMAND: Signal<CriticalSectionRawMutex, PwmCommand> = Signal:
 pub const DEFAULT_DUTY_CYCLE: u32 = 50;
 
 pub async fn process<'a>(
-    pwm: Option<(
+    #[allow(unused_mut)] mut pwm: Option<(
         impl PwmPin<Duty = u32> + 'a,
         impl PwmPin<Duty = u32> + 'a,
         impl PwmPin<Duty = u32> + 'a,
     )>,
 ) {
-    #[cfg(feature = "pwm")]
-    {
-        let (mut pwm0, mut pwm1, mut pwm2) = pwm.expect("Unwraps pwm channels");
-
-        set_duty(&mut pwm0, DEFAULT_DUTY_CYCLE);
-        set_duty(&mut pwm1, DEFAULT_DUTY_CYCLE);
-        set_duty(&mut pwm2, DEFAULT_DUTY_CYCLE);
-    }
-
     loop {
         let (future, index) = select_array([COMMAND.wait()]).await;
 
@@ -86,20 +78,29 @@ pub async fn process<'a>(
             match index {
                 0 => match future {
                     PwmCommand::SetDutyCycle(percentage) => {
+                        let (ref mut pwm0, ref mut pwm1, ref mut pwm2) =
+                            pwm.as_mut().expect("Unwraps pwm channels");
                         log::info!("PwmCommand::SetDutyCycle: {}", percentage);
 
                         if percentage > 100 {
                             log::warn!("PWM duty-cycle cannot exceed 100%");
                             return;
                         } else {
-                            set_duty(&mut pwm0, percentage);
-                            set_duty(&mut pwm1, percentage);
-                            set_duty(&mut pwm2, percentage);
+                            set_duty(pwm0, percentage);
+                            set_duty(pwm1, percentage);
+                            set_duty(pwm2, percentage);
 
                             STATE.update(future);
                         }
                     }
-                    PwmCommand::Initialised => {}
+                    PwmCommand::Initialised => {
+                        let (ref mut pwm0, ref mut pwm1, ref mut pwm2) =
+                            pwm.as_mut().expect("Unwraps pwm channels");
+
+                        set_duty(pwm0, DEFAULT_DUTY_CYCLE);
+                        set_duty(pwm1, DEFAULT_DUTY_CYCLE);
+                        set_duty(pwm2, DEFAULT_DUTY_CYCLE);
+                    }
                 },
                 _ => unreachable!(),
             }

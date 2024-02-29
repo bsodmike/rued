@@ -3,19 +3,19 @@ use std::rc::Rc;
 
 use esp_idf_svc::http::server::{Configuration, EspHttpServer};
 
-pub struct LazyInitHttpServer {
-    data: Rc<RefCell<Option<EspHttpServer>>>,
+pub struct LazyInitHttpServer<'a> {
+    data: Rc<RefCell<Option<EspHttpServer<'a>>>>,
     config: Configuration,
 }
 
-impl LazyInitHttpServer {
+impl LazyInitHttpServer<'static> {
     pub fn new(config: Configuration) -> Self {
         Self {
             data: Rc::new(RefCell::new(None)),
             config,
         }
     }
-    pub fn create(&self) -> RefMut<'_, EspHttpServer> {
+    pub fn create(&self) -> RefMut<'_, EspHttpServer<'static>> {
         if self.data.borrow().is_none() {
             *self.data.borrow_mut() = Some(EspHttpServer::new(&self.config).unwrap());
         }
@@ -24,7 +24,7 @@ impl LazyInitHttpServer {
     }
 
     #[allow(dead_code)]
-    pub fn get(&self) -> Option<RefMut<'_, EspHttpServer>> {
+    pub fn get(&self) -> Option<RefMut<'_, EspHttpServer<'static>>> {
         let m = self.data.borrow_mut();
         if m.is_some() {
             Some(RefMut::map(m, |m| m.as_mut().unwrap()))

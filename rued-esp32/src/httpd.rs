@@ -14,7 +14,7 @@ use embedded_svc::{
     utils::{asyncify::ws::server::Processor, mutex::RawCondvar},
     ws::asynch::server::Acceptor,
 };
-use esp_idf_hal::task::embassy_sync::EspRawMutex;
+use esp_idf_svc::hal::task::embassy_sync::EspRawMutex;
 use esp_idf_svc::http::server::{
     fn_handler,
     ws::{EspHttpWsConnection, EspHttpWsProcessor},
@@ -24,7 +24,7 @@ use middleware::DefaultMiddleware;
 
 pub mod middleware;
 
-pub fn configure_handlers<'a>(httpd: &mut RefMut<'_, EspHttpServer>) -> Result<()> {
+pub fn configure_handlers<'a>(httpd: &mut RefMut<'a, EspHttpServer>) -> Result<()> {
     // HTTPd
     httpd.handler(
         "/health",
@@ -137,21 +137,22 @@ pub fn configure_handlers<'a>(httpd: &mut RefMut<'_, EspHttpServer>) -> Result<(
     Ok(())
 }
 
-pub fn configure_websockets<'a>(server: &mut LazyInitHttpServer) -> Result<impl Acceptor> {
-    let mut httpd = server.create();
+// FIXME Is this needed?
+// pub fn configure_websockets<'a>(server: &mut LazyInitHttpServer<'a>) -> Result<impl Acceptor> {
+//     let mut httpd = server.create();
 
-    // Websockets
-    let (ws_processor, ws_acceptor) =
-        EspHttpWsProcessor::<{ ws::WS_MAX_CONNECTIONS }, { ws::WS_MAX_FRAME_LEN }>::new(());
+//     // Websockets
+//     let (ws_processor, ws_acceptor) =
+//         EspHttpWsProcessor::<{ ws::WS_MAX_CONNECTIONS }, { ws::WS_MAX_FRAME_LEN }>::new(());
 
-    let ws_processor = Mutex::<EspRawMutex, _>::new(RefCell::new(ws_processor));
+//     let ws_processor = Mutex::<EspRawMutex, _>::new(RefCell::new(ws_processor));
 
-    httpd.ws_handler("/ws", move |connection| {
-        ws_processor.lock(|ws_processor| ws_processor.borrow_mut().process(connection))
-    })?;
+//     httpd.ws_handler("/ws", move |connection| {
+//         ws_processor.lock(|ws_processor| ws_processor.borrow_mut().process(connection))
+//     })?;
 
-    Ok(ws_acceptor)
-}
+//     Ok(ws_acceptor)
+// }
 
 fn respond_err(conn: &mut EspHttpConnection, status: StatusCode, error: &str) -> Result<()> {
     conn.initiate_response(

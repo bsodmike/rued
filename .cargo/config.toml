@@ -42,7 +42,7 @@ LIBCLANG_PATH = "/home/mdesilva/.espup/esp-clang"
 
 # Uncomment this to build against ESP-IDF 5.0
 # Don't forget to uncomment also the `rustflags` parameter in your "target" section above
-ESP_IDF_VERSION = "release/v5.0"
+ESP_IDF_VERSION = "v5.1.1"
 
 # Comment out this when using the PlatformIO build, i.e. `cargo build --features pio` (it only supports `v4.3.2`)
 # ESP_IDF_VERSION = "release/v4.4"
