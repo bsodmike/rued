@@ -17,7 +17,10 @@ use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike, NaiveDateTime, T
 use http::{header::SEC_WEBSOCKET_ACCEPT, StatusCode};
 use log::{debug, error, info, warn};
 use peripherals::{ButtonsPeripherals, PulseCounterPeripherals, SPI_BUS_FREQ};
-use rv8803::{i2c0::Bus as I2cBus, Rv8803, Rv8803Bus, TIME_ARRAY_LENGTH};
+use rv8803::{
+    bus::Bus as I2cBus,
+    models::{Rv8803, TIME_ARRAY_LENGTH},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use shared_bus::{BusManager, I2cProxy};

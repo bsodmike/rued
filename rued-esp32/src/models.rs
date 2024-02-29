@@ -1,13 +1,13 @@
 use anyhow::{Error, Result};
 use chrono::{naive::NaiveDate, offset::Utc, DateTime, Datelike};
 use esp_idf_svc::hal::i2c::{I2cDriver, I2cError};
-use esp_idf_svc::sys::settimeofday;
-use esp_idf_svc::sys::time;
-use esp_idf_svc::sys::timeval;
-use esp_idf_svc::sys::timezone;
+use esp_idf_svc::sys::{settimeofday, time, timeval, timezone};
 use heapless::String;
 use log::{debug, info, warn};
-use rv8803::{i2c0::Bus as I2cBus, Rv8803, TIME_ARRAY_LENGTH};
+use rv8803::{
+    bus::Bus as I2cBus,
+    models::{Rv8803, TIME_ARRAY_LENGTH},
+};
 use serde::{Deserialize, Serialize};
 use shared_bus::{BusManager, I2cProxy};
 use std::str::FromStr;
