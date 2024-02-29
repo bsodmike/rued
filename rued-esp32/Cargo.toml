@@ -67,8 +67,8 @@ uncased = { version = "0.9.7" }
 rv8803 = { path = "../../rv8803" }
 
 # monkey patched to remove atomic-polyfill in favour of portable-atomic 
-embedded-sdmmc = { path = "../../embedded-sdmmc-rs_fork" }
-shared-bus = { path = "../../shared-bus_fork", features = ["std"] }
+embedded-sdmmc = { git = "https://github.com/rust-embedded-community/embedded-sdmmc-rs", branch = "develop" }
+shared-bus = { git = "https://github.com/bsodmike/shared-bus", branch = "upgrade_to_portable_atomic", features = ["std"] }
 
 # optional dependencies
 profont = { version = "0.5", optional = true }
